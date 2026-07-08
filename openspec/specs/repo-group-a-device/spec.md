@@ -1,6 +1,6 @@
 # Repository Group A — Device & Enum Management
 
-**Purpose:** 设备管理与 AI 检测枚举相关的 Repository，包含 View 创建/删除时的推流占用检查逻辑。
+**Purpose:** 提供组 A（设备管理与 AI 枚举）的 Repository 层。涵盖计算机节点、视频/音频采集设备、监控视图、电子围栏及三类 AI 检测枚举（YOLO 实体、SlowFast 行为、YAMNet 声音）的数据访问，包含 View 创建/删除时的推流占用检查逻辑。
 
 ## Requirements
 

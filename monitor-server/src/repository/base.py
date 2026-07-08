@@ -1,6 +1,6 @@
-"""泛型 Repository 基类 —— 封装通用 CRUD 操作。"""
+"""Repository 泛型基类 —— 封装通用 CRUD 操作。"""
 
-from typing import Generic, TypeVar
+from typing import TypeVar, Generic
 
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -9,9 +9,12 @@ T = TypeVar("T")
 
 
 class BaseRepo(Generic[T]):
-    """所有 Repository 的抽象基类。
+    """泛型 Repository 基类。
 
-    子类必须覆盖 ``model`` 类变量：:
+    所有具体 Repository 必须继承此类并指定 ``model`` 类变量。
+    仅执行 flush()，commit() 交由 Service 层统一控制。
+
+    用法::
 
         class FooRepo(BaseRepo[Foo]):
             model = Foo
@@ -22,14 +25,14 @@ class BaseRepo(Generic[T]):
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    # ── 查询 ──────────────────────────────────────
+    # ── 查询 ─────────────────────────────────────
 
     def get(self, id: int) -> T | None:
         """按主键查询单条记录。"""
         return self.db.get(self.model, id)
 
     def all(self, *, offset: int = 0, limit: int = 100) -> list[T]:
-        """全表查询，支持分页偏移。"""
+        """全表查询，支持 offset/limit 分页。"""
         return list(
             self.db.scalars(
                 select(self.model).offset(offset).limit(limit)
@@ -37,7 +40,7 @@ class BaseRepo(Generic[T]):
         )
 
     def count(self) -> int:
-        """返回表中总记录数。"""
+        """返回表中记录总数。"""
         result = self.db.scalar(select(func.count()).select_from(self.model))
         return result or 0
 
@@ -45,9 +48,7 @@ class BaseRepo(Generic[T]):
         """检查指定主键的记录是否存在。"""
         return self.get(id) is not None
 
-    def paginate(
-        self, page: int = 1, page_size: int = 20
-    ) -> tuple[list[T], int]:
+    def paginate(self, page: int = 1, page_size: int = 20) -> tuple[list[T], int]:
         """分页查询，返回 ``(当前页数据, 总记录数)``。"""
         total = self.count()
         items = self.all(offset=(page - 1) * page_size, limit=page_size)
