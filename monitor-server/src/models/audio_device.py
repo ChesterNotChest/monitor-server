@@ -1,0 +1,27 @@
+"""音频采集设备模型。"""
+
+from datetime import datetime
+
+from sqlalchemy import ForeignKey, String, DateTime, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from ..extensions import Base
+
+
+class AudioDevice(Base):
+    __tablename__ = "audio_devices"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    node_id: Mapped[int] = mapped_column(
+        ForeignKey("nodes.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # 关联
+    node: Mapped["Node"] = relationship("Node")
+
+    def __repr__(self) -> str:
+        return f"<AudioDevice {self.name}>"
