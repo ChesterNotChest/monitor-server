@@ -8,6 +8,7 @@ pipeline {
 
     parameters {
         booleanParam(name: "DEPLOY_PROD", defaultValue: false, description: "Deploy with docker compose after a successful build")
+        string(name: "HTTP_PORT", defaultValue: "8081", description: "Host port exposed by the nginx container")
     }
 
     environment {
@@ -51,7 +52,7 @@ pipeline {
             steps {
                 sh """
                     set -eu
-                    IMAGE_TAG=${BUILD_NUMBER} docker compose -f ${COMPOSE_FILE} up -d --remove-orphans
+                    HTTP_PORT=${params.HTTP_PORT} IMAGE_TAG=${BUILD_NUMBER} docker compose -f ${COMPOSE_FILE} up -d --remove-orphans
                     docker image prune -f
                 """
             }
