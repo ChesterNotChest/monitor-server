@@ -1,8 +1,20 @@
 pipeline {
     agent any
 
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        booleanParam(name: "DEPLOY_PROD", defaultValue: false, description: "Deploy with docker compose after a successful build")
+    }
+
     environment {
+        APP_DIR = "monitor-server"
         DOCKER_IMAGE = "monitor-server"
+        COMPOSE_FILE = "docker-compose.prod.yml"
+        APP_DEBUG = "false"
     }
 
     stages {
@@ -14,10 +26,12 @@ pipeline {
 
         stage("Test") {
             steps {
-                dir("monitor-server") {
+                dir("${APP_DIR}") {
                     sh """
+                        set -eu
                         python -m venv .venv
                         . .venv/bin/activate
+                        python -m pip install --upgrade pip
                         pip install -r requirements.txt
                         pytest src/tests/ --tb=short
                     """
@@ -25,24 +39,40 @@ pipeline {
             }
         }
 
-        stage("Build") {
+        stage("Docker Build") {
             steps {
-                dir("monitor-server") {
-                    sh "docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} ."
+                dir("${APP_DIR}") {
+                    sh """
+                        set -eu
+                        docker build \\
+                            -t ${DOCKER_IMAGE}:${BUILD_NUMBER} \\
+                            -t ${DOCKER_IMAGE}:latest \\
+                            .
+                    """
                 }
             }
         }
 
-        stage("Deploy") {
+        stage("Deploy Production") {
+            when {
+                expression { return params.DEPLOY_PROD }
+            }
             steps {
-                sh "docker-compose -f docker-compose.prod.yml up -d"
+                sh """
+                    set -eu
+                    IMAGE_TAG=${BUILD_NUMBER} docker compose -f ${COMPOSE_FILE} up -d --remove-orphans
+                    docker image prune -f
+                """
             }
         }
     }
 
     post {
+        success {
+            echo "Pipeline succeeded. Built ${DOCKER_IMAGE}:${BUILD_NUMBER}"
+        }
         failure {
-            echo "Pipeline failed — check logs."
+            echo "Pipeline failed. Check the Jenkins console log."
         }
     }
 }

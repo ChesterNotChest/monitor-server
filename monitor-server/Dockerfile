@@ -1,29 +1,51 @@
-# ---- 构建阶段 ----
-FROM python:3.12-alpine AS builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# 安装构建依赖
-RUN apk add --no-cache gcc musl-dev libffi-dev
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
-# 复制依赖文件并安装
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        libgl1 \
+        libglib2.0-0 \
+        libsm6 \
+        libxext6 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN python -m pip install --upgrade pip \
+    && pip install --user -r requirements.txt
 
-# ---- 运行阶段 ----
-FROM python:3.12-alpine
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# 从构建阶段复制已安装的包
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/root/.local/bin:$PATH \
+    HOST=0.0.0.0 \
+    PORT=8000 \
+    APP_DEBUG=false
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        libgl1 \
+        libglib2.0-0 \
+        libsm6 \
+        libxext6 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /root/.local /root/.local
-
-# 复制源码
-COPY src/ ./src/
-
-# 确保 PATH 包含用户安装的包
-ENV PATH=/root/.local/bin:$PATH
+COPY src ./src
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8000/health || exit 1
 
 CMD ["python", "-m", "src.run"]
