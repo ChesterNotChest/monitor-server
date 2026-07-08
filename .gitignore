@@ -1,0 +1,46 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ===== 虚拟环境 / Conda =====
+.venv/
+venv/
+env/
+*.conda/
+
+# ===== 环境变量（敏感信息） =====
+.env
+*.local.env
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== 数据库 =====
+*.db
+*.sqlite3
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== 测试 =====
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ===== 日志 =====
+*.log
+logs/
+
+# ===== 第三方 =====
+monitor-server/src/third-party/*
+!monitor-server/src/third-party/.gitkeep
