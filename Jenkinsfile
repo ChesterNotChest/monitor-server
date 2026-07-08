@@ -52,7 +52,8 @@ pipeline {
             steps {
                 sh """
                     set -eu
-                    HTTP_PORT=${params.HTTP_PORT} IMAGE_TAG=${BUILD_NUMBER} docker compose -f ${COMPOSE_FILE} up -d --remove-orphans
+                    HOST_WORKSPACE=\$(printf '%s\n' "\$WORKSPACE" | sed 's#^/var/jenkins_home#/home/liusu/jenkins#')
+                    HTTP_PORT=${params.HTTP_PORT} IMAGE_TAG=${BUILD_NUMBER} docker compose --project-directory "\$HOST_WORKSPACE" -f "\$HOST_WORKSPACE/${COMPOSE_FILE}" up -d --remove-orphans
                     docker image prune -f
                 """
             }
