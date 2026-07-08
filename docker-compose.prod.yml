@@ -39,3 +39,17 @@ services:
       app:
         condition: service_healthy
     restart: unless-stopped
+
+  stream-server:
+    image: ossrs/srs:5
+    container_name: monitor-stream
+    environment:
+      CANDIDATE: ${SRS_CANDIDATE:-10.126.59.25}
+    ports:
+      - "${RTMP_PORT:-1935}:1935"
+      - "${STREAM_HTTP_PORT:-8082}:8080"
+      - "${SRS_API_PORT:-1985}:1985"
+      - "${SRS_RTC_PORT:-8000}:8000/udp"
+    volumes:
+      - ./srs/srs.conf:/usr/local/srs/conf/srs.conf:ro
+    restart: unless-stopped
