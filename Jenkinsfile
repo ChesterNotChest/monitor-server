@@ -24,32 +24,23 @@ pipeline {
             }
         }
 
-        stage("Test") {
-            steps {
-                dir("${APP_DIR}") {
-                    sh """
-                        set -eu
-                        python -m venv .venv
-                        . .venv/bin/activate
-                        python -m pip install --upgrade pip
-                        pip install -r requirements.txt
-                        pytest src/tests/ --tb=short
-                    """
-                }
-            }
-        }
-
         stage("Docker Build") {
             steps {
                 dir("${APP_DIR}") {
                     sh """
                         set -eu
-                        docker build \\
-                            -t ${DOCKER_IMAGE}:${BUILD_NUMBER} \\
-                            -t ${DOCKER_IMAGE}:latest \\
-                            .
+                        docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} -t ${DOCKER_IMAGE}:latest .
                     """
                 }
+            }
+        }
+
+        stage("Test") {
+            steps {
+                sh """
+                    set -eu
+                    docker run --rm ${DOCKER_IMAGE}:${BUILD_NUMBER} python -m pytest src/tests/ --tb=short
+                """
             }
         }
 
