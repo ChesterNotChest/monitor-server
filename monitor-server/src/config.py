@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     STREAM_PROBE_TIMEOUT: float = 8.0
     STREAM_READY_INTERVAL: float = 1.0
 
+    # --- Stream readiness ---
+    STREAM_READY_TIMEOUT: float = 30.0
+    STREAM_PROBE_TIMEOUT: float = 8.0
+    STREAM_READY_INTERVAL: float = 1.0
+
     # --- Node WebSocket ---
     WSS_NODE_PORT: int = 8000
     WSS_NODE_DEBUG: bool = False
