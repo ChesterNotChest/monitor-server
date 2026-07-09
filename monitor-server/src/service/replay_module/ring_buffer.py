@@ -12,10 +12,14 @@ class FrameRingBuffer:
     每个 MonitorView 一个实例，缓存最近 max_seconds 秒的帧。
     """
 
-    def __init__(self, max_seconds: int | None = None, fps: int = 25):
+    def __init__(
+        self, max_seconds: int | None = None, fps: int = 25,
+        format: str = "raw_bgr24",
+    ):
         max_sec = max_seconds or settings.CACHE_DURATION_SECONDS
         self._frames: deque[bytes] = deque(maxlen=max_sec * fps)
         self._lock = threading.Lock()
+        self.format = format  # "raw_bgr24" | "jpeg"
 
     def push(self, frame_bytes: bytes) -> None:
         """写入一帧。超出容量时自动丢弃最旧帧。"""

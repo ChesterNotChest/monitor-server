@@ -19,6 +19,9 @@ from .exception import ExceptionDef, exception_entities, exception_actions, exce
 from .response_action import ResponseAction, alert_group_responses
 from .situation_event import SituationEvent
 from .alert_review import AlertReview
+from .face_recognition_result import FaceRecognitionResult
+from .recording import Recording
+from .log_entry import LogEntry
 from .user import User
 
 __all__ = [
@@ -40,5 +43,8 @@ __all__ = [
     "alert_group_responses",
     "SituationEvent",
     "AlertReview",
+    "FaceRecognitionResult",
+    "Recording",
+    "LogEntry",
     "User",
 ]

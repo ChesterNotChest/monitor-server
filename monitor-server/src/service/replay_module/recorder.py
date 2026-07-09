@@ -30,6 +30,7 @@ class RecordingSession:
         self.width = width
         self.height = height
         self.fps = fps
+        self.format = getattr(buffer, "format", "raw_bgr24")
 
         self._silence_seconds = 0
         self._stop_event = threading.Event()
@@ -49,16 +50,28 @@ class RecordingSession:
         filename = f"view_{self.view_id}_{ts}.flv"
         self.output_path = str(cache_dir / filename)
 
-        # 启动 ffmpeg pipe
-        self._ffmpeg_proc = subprocess.Popen(
-            [
+        # 启动 ffmpeg pipe —— 按帧格式切换参数
+        if self.format == "jpeg":
+            ffmpeg_cmd = [
+                "ffmpeg", "-y",
+                "-f", "image2pipe", "-c:v", "mjpeg",
+                "-use_wallclock_as_timestamps", "1",
+                "-i", "pipe:0",
+                "-c:v", "copy", "-f", "flv",
+                self.output_path,
+            ]
+        else:
+            ffmpeg_cmd = [
                 "ffmpeg", "-y",
                 "-f", "rawvideo", "-pix_fmt", "bgr24",
                 "-s", f"{self.width}x{self.height}", "-r", str(self.fps),
                 "-i", "pipe:0",
                 "-c:v", "libx264", "-f", "flv",
                 self.output_path,
-            ],
+            ]
+
+        self._ffmpeg_proc = subprocess.Popen(
+            ffmpeg_cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
