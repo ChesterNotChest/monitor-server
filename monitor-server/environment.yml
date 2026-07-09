@@ -7,7 +7,10 @@ dependencies:
   - ffmpeg>=7.0          # Server-side audio/video stream merge
   - nodejs>=20           # Local RTMP target for DEBUG_WEB_STREAM
   - pip
+  # --- AI / CV 模型（conda 装 dlib，其余 pip） ---
+  - conda-forge::dlib>=19.24     # HOG / CNN 人脸检测 — Windows 必须 conda 装
   - pip:
+    # 核心监控
     - fastapi>=0.110.0
     - uvicorn[standard]>=0.29.0
     - sqlalchemy>=2.0.0
@@ -18,11 +21,10 @@ dependencies:
     - httpx>=0.27.0
     - python-jose[cryptography]>=3.3.0
     - bcrypt>=4.0.0
-    # --- AI / CV 模型 ---
+    # AI / CV 模型（dlib 已在 conda 层安装）
+    - face_recognition>=1.4.0      # dlib wrapper — 128D 人脸特征向量
     - ultralytics>=8.3.0           # YOLO11 — 目标检测 / 跟踪 / 分割
     - opencv-python-headless>=4.10 # OpenCV headless — 帧解码 / 预处理
-    - dlib==19.24.2                # C++ 后端 — HOG / CNN 人脸检测 + landmark
-    - face_recognition>=1.4.0      # dlib wrapper — 128D 人脸特征向量
     - torch>=2.0.0                 # PyTorch — 深度学习运行时
     - torchaudio>=2.1.0            # 音频预处理
     - tensorflow-hub>=0.16.0       # YAMNet AudioSet 521 类音频分类

@@ -41,6 +41,10 @@ coverage.xml
 *.log
 logs/
 
+# ===== Node.js =====
+node_modules/
+*.tsbuildinfo
+
 # ===== 第三方模型权重 =====
 monitor-server/src/third-party/*
 !monitor-server/src/third-party/.gitkeep

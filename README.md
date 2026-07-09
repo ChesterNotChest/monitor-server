@@ -40,9 +40,9 @@ Jenkinsfile                  # Jenkins CI/CD 流水线
 
 ## Miniconda 部署（无需 Docker）
 
-### 1. 创建 & 激活环境（推荐）
+`environment.yml` 是唯一的环境描述文件，涵盖核心监控和 AI 识别全部依赖。
 
-仓库内已提供 Server 侧 Conda 环境文件：
+### 1. 创建 & 激活环境
 
 ```bash
 cd monitor-server
@@ -53,25 +53,35 @@ conda activate monitor-server
 该环境会安装：
 
 - `python=3.12`
-- `ffmpeg`：Server 侧拉取 audio/video 并合并推流需要
-- `nodejs`：`DEBUG_WEB_STREAM=true` 时启动本地 RTMP 靶子需要
-- `requirements.txt` 中的 Python 依赖
+- `ffmpeg`：Server 侧拉取 audio/video 并合并推流
+- `nodejs`：`DEBUG_WEB_STREAM=true` 时启动本地 RTMP 靶子
+- `dlib`（conda-forge 预编译）：人脸检测，Windows 无编译问题
+- 其余 Python 依赖（fastapi、sqlalchemy、torch、ultralytics 等）通过 pip
 
 如果环境已存在，可更新：
 
 ```bash
-cd monitor-server
 conda env update -f environment.yml --prune
 conda activate monitor-server
 ```
 
-### 2. 安装依赖（仅手动环境需要）
+> **Windows 注意**：`dlib` 通过 conda-forge 预编译安装，无需 CMake 或 Visual Studio Build Tools。
 
-使用 `environment.yml` 创建环境时可跳过本步；如果是手动创建环境，则执行：
+### 2. 仅安装核心依赖（如不需要 AI 模块）
+
+如果暂时不需要 AI 识别能力，可手动创建精简环境：
 
 ```bash
-cd monitor-server
-pip install -r requirements.txt
+conda create -n monitor-server python=3.12 ffmpeg nodejs -c conda-forge
+conda activate monitor-server
+pip install fastapi uvicorn[standard] sqlalchemy pydantic-settings python-multipart pytest pytest-asyncio httpx python-jose[cryptography] bcrypt
+```
+
+后续需要 AI 时再补：
+
+```bash
+conda install -c conda-forge dlib
+pip install face_recognition ultralytics opencv-python-headless torch torchaudio tensorflow-hub tensorflow torchvision pytorchvideo "setuptools<70"
 ```
 
 ### 3. 安装 DEBUG_WEB_STREAM 依赖（可选）
@@ -79,17 +89,21 @@ pip install -r requirements.txt
 仅当需要 `DEBUG_WEB_STREAM=true` 并启动本地 RTMP 靶子时需要：
 
 ```bash
+# 在仓库根目录执行
 cd tools
-npm install node-media-server
+npm install
 cd ..
 ```
 
 ### 4. 检查环境
 
 ```bash
+# 核心依赖
 python -c "import fastapi, sqlalchemy, pytest; print('python deps ok')"
 ffmpeg -version
-node -v
+
+# Debug 靶子（可选）
+node -v && cd tools && node -e "require('node-media-server')" && cd ..
 ```
 
 ### 5. 配置环境变量
@@ -97,17 +111,29 @@ node -v
 `.env` 已提供默认值，按需修改：
 
 ```bash
-# 数据库（默认 SQLite，可改为 PostgreSQL / MySQL）
+# ── 数据库 ──
 DATABASE_URL=sqlite:///./monitor.db
 
-# 监听地址
+# ── 监听地址 ──
 HOST=0.0.0.0
 PORT=8000
 
-# Raw RTMP readiness probe
-STREAM_READY_TIMEOUT=30
-STREAM_PROBE_TIMEOUT=8
-STREAM_READY_INTERVAL=1
+# ── RTMP (SRS) ──
+RTMP_HOST=127.0.0.1
+RTMP_PORT=1935
+RTMP_DEBUG=true
+
+# ── SRS ──
+SRS_HOST=127.0.0.1
+SRS_RTMP_PORT=1935
+SRS_HTTP_PORT=8082
+
+# ── WSS (Node) ──
+WSS_NODE_PORT=9000
+WSS_NODE_DEBUG=false
+
+# ── Debug ──
+DEBUG_WEB_STREAM=false
 ```
 
 ### 6. 启动服务
@@ -184,12 +210,11 @@ POST /api/v1/auth/login  →  {access_token, user}
 
 ## AI 模型安装
 
-智能分析模块依赖以下模型，存放于 `src/third-party/`，通过 conda 环境统一管理：
+智能分析模块依赖以下模型，存放于 `src/third-party/`。环境由 `environment.yml` 统一管理，首次 `conda env create` 即包含全部 AI 依赖。
 
-### 环境部署
+### 验证模型
 
 ```bash
-conda env create -f monitor-server/environment.yml
 conda activate monitor-server
 cd monitor-server/src/third-party
 python verify_models.py
