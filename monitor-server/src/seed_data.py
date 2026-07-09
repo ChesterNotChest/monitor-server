@@ -1,9 +1,10 @@
 """种子数据脚本 —— 预置 AI 检测枚举值与异常规则。
 
-用法: python -m src.seed_data
+用法: cd monitor-server && python -m src.seed_data
 幂等：重复执行不报错、不重复插入。
 """
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.extensions import SessionLocal, Base, engine
@@ -13,6 +14,7 @@ from src.repository.sound_type_repo import SoundTypeRepo
 from src.repository.response_action_repo import ResponseActionRepo
 from src.repository.alert_group_repo import AlertGroupRepo
 from src.repository.exception_def_repo import ExceptionDefRepo
+from src.repository.face_recognition_result_repo import FaceRecognitionResultRepo
 from src.constants import SeverityLevel
 from src.models.alert_group import AlertGroup
 from src.models.exception import ExceptionDef
@@ -20,45 +22,31 @@ from src.models.response_action import ResponseAction
 
 
 def _upsert_enum(db: Session, repo_cls, name: str):
-    """幂等插入枚举记录：按名称查找，存在则跳过，不存在则创建。"""
+    """幂等插入枚举记录：按名称查找，存在则返回，不存在则创建。"""
     repo = repo_cls(db)
-    existing = db.scalar(
-        __import__("sqlalchemy").select(repo.model).where(repo.model.name == name)
-    )
+    existing = db.scalar(select(repo.model).where(repo.model.name == name))
     if existing:
         return existing
     return repo.create(name=name)
 
 
-def _upsert_alert_group(db: Session, name: str) -> AlertGroup:
-    """幂等插入告警分组。"""
-    existing = db.scalar(
-        __import__("sqlalchemy").select(AlertGroup).where(AlertGroup.name == name)
-    )
-    if existing:
-        return existing
-    return AlertGroupRepo(db).create(name=name)
+# ── 人脸识别结果 ────────────────────────────────
+
+FACE_RESULTS = [
+    ("NO_RESULT", "无结果"),
+    ("STRANGER", "陌生人"),
+    ("NORMAL", "正常"),
+]
+
+FACE_RESULT_MAP = {}  # name -> id, 供后续异常规则引用
 
 
-def _upsert_exception(db: Session, severity: SeverityLevel, group_id: int) -> ExceptionDef:
-    """幂等插入异常规则（按 severity + group_id 查重）。"""
-    from sqlalchemy import select, and_
-    existing = db.scalar(
-        select(ExceptionDef).where(
-            and_(ExceptionDef.severity == severity, ExceptionDef.group_id == group_id)
-        )
-    )
-    if existing:
-        return existing
-    return ExceptionDefRepo(db).create(severity=severity, group_id=group_id)
-
-
-def _bind_m2m(db: Session, exc: ExceptionDef, attr: str, target):
-    """幂等绑定 M2M 关系。"""
-    collection = getattr(exc, attr)
-    if target not in collection:
-        collection.append(target)
-        db.flush()
+def seed_face_recognition_results(db: Session) -> None:
+    for name, display in FACE_RESULTS:
+        obj = _upsert_enum(db, FaceRecognitionResultRepo, name)
+        FACE_RESULT_MAP[name] = obj.id
+    db.flush()
+    print(f"  face_recognition_results: {len(FACE_RESULTS)} 条已就绪")
 
 
 # ── YOLO 实体类型 ───────────────────────────────
@@ -141,7 +129,12 @@ ALERT_GROUP_BINDINGS = [
 
 def seed_alert_groups(db: Session, responses: dict[str, ResponseAction]) -> None:
     for group_name, resp_names in ALERT_GROUP_BINDINGS:
-        group = _upsert_alert_group(db, group_name)
+        existing = db.scalar(select(AlertGroup).where(AlertGroup.name == group_name))
+        if existing:
+            group = existing
+        else:
+            group = AlertGroupRepo(db).create(name=group_name)
+
         for resp_name in resp_names:
             resp = responses[resp_name]
             if resp not in group.responses:
@@ -160,6 +153,7 @@ EXCEPTION_RULES = [
         "entities": ["PERSON"],
         "actions": [],
         "sounds": [],
+        "face_result": "STRANGER",
     },
     {
         "name": "暴力事件",
@@ -168,6 +162,7 @@ EXCEPTION_RULES = [
         "entities": ["PERSON"],
         "actions": ["FIGHTING", "PUSHING", "FALLING"],
         "sounds": [],
+        "face_result": None,
     },
     {
         "name": "武器检测",
@@ -176,6 +171,7 @@ EXCEPTION_RULES = [
         "entities": ["KNIFE", "GUN"],
         "actions": [],
         "sounds": [],
+        "face_result": None,
     },
     {
         "name": "火灾检测",
@@ -184,6 +180,7 @@ EXCEPTION_RULES = [
         "entities": ["FIRE", "SMOKE"],
         "actions": [],
         "sounds": [],
+        "face_result": None,
     },
     {
         "name": "声音异常",
@@ -192,6 +189,7 @@ EXCEPTION_RULES = [
         "entities": [],
         "actions": [],
         "sounds": ["GUNSHOT", "SCREAM", "EXPLOSION"],
+        "face_result": None,
     },
     {
         "name": "非法攀爬",
@@ -200,6 +198,7 @@ EXCEPTION_RULES = [
         "entities": ["PERSON"],
         "actions": ["CLIMBING"],
         "sounds": [],
+        "face_result": None,
     },
     {
         "name": "人员倒地",
@@ -208,6 +207,7 @@ EXCEPTION_RULES = [
         "entities": ["PERSON"],
         "actions": ["LYING_DOWN"],
         "sounds": [],
+        "face_result": None,
     },
     {
         "name": "可疑徘徊",
@@ -216,41 +216,47 @@ EXCEPTION_RULES = [
         "entities": ["PERSON"],
         "actions": ["LOITERING"],
         "sounds": [],
+        "face_result": None,
     },
 ]
 
 
 def seed_exceptions(db: Session) -> None:
-    from sqlalchemy import select
+    from src.models.entity_type import EntityType
+    from src.models.action_type import ActionType
+    from src.models.sound_type import SoundType
 
-    # 预加载所有枚举的 id→obj 映射
-    entity_map = {e.name: e for e in db.scalars(
-        select(__import__("src.models.entity_type", fromlist=["EntityType"]).EntityType)
+    # 预加载所有枚举的 name→obj 映射
+    entity_map = {e.name: e for e in db.scalars(select(EntityType)).all()}
+    action_map = {a.name: a for a in db.scalars(select(ActionType)).all()}
+    sound_map = {s.name: s for s in db.scalars(select(SoundType)).all()}
+    group_map = {g.name: g for g in db.scalars(
+        select(AlertGroup).where(AlertGroup.name.in_(["信息", "警告", "严重", "紧急"]))
     ).all()}
-    action_map = {a.name: a for a in db.scalars(
-        select(__import__("src.models.action_type", fromlist=["ActionType"]).ActionType)
-    ).all()}
-    sound_map = {s.name: s for s in db.scalars(
-        select(__import__("src.models.sound_type", fromlist=["SoundType"]).SoundType)
-    ).all()}
-    group_map = {g.name: g for g in db.scalars(select(AlertGroup).where(AlertGroup.name.in_(
-        ["信息", "警告", "严重", "紧急"]
-    ))).all()}
 
     for rule in EXCEPTION_RULES:
-        group = group_map[rule["group"]]
-        exc = _upsert_exception(db, severity=rule["severity"], group_id=group.id)
+        # 幂等：按 name 查重
+        existing = db.scalar(select(ExceptionDef).where(ExceptionDef.name == rule["name"]))
+        if existing:
+            exc = existing
+        else:
+            face_result_id = FACE_RESULT_MAP.get(rule["face_result"]) if rule["face_result"] else None
+            exc = ExceptionDefRepo(db).create(
+                name=rule["name"],
+                severity=rule["severity"],
+                group_id=group_map[rule["group"]].id,
+                face_result_id=face_result_id,
+            )
 
+        # M2M 绑定
         for ename in rule["entities"]:
             entity = entity_map.get(ename)
             if entity and entity not in exc.entities:
                 exc.entities.append(entity)
-
         for aname in rule["actions"]:
             action = action_map.get(aname)
             if action and action not in exc.actions:
                 exc.actions.append(action)
-
         for sname in rule["sounds"]:
             sound = sound_map.get(sname)
             if sound and sound not in exc.sounds:
@@ -269,6 +275,7 @@ def main():
     db = SessionLocal()
     try:
         print("=== 种子数据脚本 ===")
+        seed_face_recognition_results(db)
         seed_entity_types(db)
         seed_action_types(db)
         seed_sound_types(db)

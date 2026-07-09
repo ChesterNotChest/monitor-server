@@ -40,7 +40,7 @@ def _to_response(obj) -> ExceptionResponse:
 
 @router.post("", response_model=ExceptionResponse, status_code=201)
 def create(body: ExceptionCreate, db: Session = Depends(get_db)):
-    result = create_exception(db, severity=body.severity, group_id=body.group_id)
+    result = create_exception(db, name=body.name, severity=body.severity, group_id=body.group_id, face_result_id=body.face_result_id)
     db.commit()
     return _to_response(result)
 
@@ -71,7 +71,7 @@ def get_one(id: int, db: Session = Depends(get_db)):
 
 @router.put("/{id}", response_model=ExceptionResponse)
 def update(id: int, body: ExceptionUpdate, db: Session = Depends(get_db)):
-    result = update_exception(db, id, severity=body.severity, group_id=body.group_id)
+    result = update_exception(db, id, name=body.name, severity=body.severity, group_id=body.group_id, face_result_id=body.face_result_id)
     if result is None:
         db.rollback()
         raise HTTPException(status_code=404, detail="异常规则不存在")

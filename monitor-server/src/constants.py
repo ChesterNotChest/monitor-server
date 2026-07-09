@@ -98,3 +98,10 @@ class ResponseActionType(enum.IntEnum):
     ACTIVATE_ALARM = 3
     CALL_API = 4
     SEND_EMAIL = 5
+
+
+class FaceRecognitionResult(enum.IntEnum):
+    """人脸识别结果枚举。"""
+    NO_RESULT = 1   # 画面中未检测到人脸
+    STRANGER = 2    # 检测到人脸但不在录入人员库中
+    NORMAL = 3      # 检测到人脸且匹配已录入人员

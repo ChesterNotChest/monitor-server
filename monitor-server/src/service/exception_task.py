@@ -25,8 +25,11 @@ def _repo(db: Session) -> ExceptionDefRepo:
 # ── CRUD ────────────────────────────────────────
 
 
-def create_exception(db: Session, severity: SeverityLevel, group_id: int) -> ExceptionDef:
-    return _repo(db).create(severity=severity, group_id=group_id)
+def create_exception(
+    db: Session, name: str, severity: SeverityLevel, group_id: int,
+    face_result_id: int | None = None,
+) -> ExceptionDef:
+    return _repo(db).create(name=name, severity=severity, group_id=group_id, face_result_id=face_result_id)
 
 
 def list_exceptions(
@@ -44,9 +47,13 @@ def get_exception(db: Session, id: int) -> ExceptionDef | None:
 
 
 def update_exception(
-    db: Session, id: int, severity: SeverityLevel | None = None, group_id: int | None = None
+    db: Session, id: int,
+    name: str | None = None,
+    severity: SeverityLevel | None = None,
+    group_id: int | None = None,
+    face_result_id: int | None = None,
 ) -> ExceptionDef | None:
-    return _repo(db).update(id, severity=severity, group_id=group_id)
+    return _repo(db).update(id, name=name, severity=severity, group_id=group_id, face_result_id=face_result_id)
 
 
 def delete_exception(db: Session, id: int) -> bool:

@@ -34,23 +34,29 @@ class AlertGroupRef(BaseModel):
 class ExceptionCreate(BaseModel):
     """创建异常规则请求体。"""
 
+    name: str = Field(..., min_length=1, max_length=128, description="异常规则名称")
     severity: SeverityLevel = Field(..., description="严重级别")
     group_id: int = Field(..., description="告警分组 ID")
+    face_result_id: int | None = Field(None, description="人脸识别结果条件 ID（可选）")
 
 
 class ExceptionUpdate(BaseModel):
     """更新异常规则请求体。"""
 
+    name: str | None = Field(None, min_length=1, max_length=128, description="异常规则名称")
     severity: SeverityLevel | None = Field(None, description="严重级别")
     group_id: int | None = Field(None, description="告警分组 ID")
+    face_result_id: int | None = Field(None, description="人脸识别结果条件 ID（可选）")
 
 
 class ExceptionResponse(BaseModel):
     """异常规则响应体（含所有关联）。"""
 
     id: int
+    name: str
     severity: SeverityLevel
     group_id: int
+    face_result_id: int | None = None
     created_at: datetime
     alert_group: AlertGroupRef | None = None
     entities: list[EnumTypeRef] = []
