@@ -2,16 +2,19 @@
 
 **Purpose:** 定义 `src/network/` 三层网络传输架构（api / wss / rtmp）的目录结构与职责边界。
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: 三层网络架构
+
 系统 SHALL 将网络传输层统一放置在 `src/network/` 目录下，按协议分为三个子包：`network/api/`（REST HTTP）、`network/wss/`（WebSocket）、`network/rtmp/`（RTMP 推拉流）。现有的 `src/api/` 目录 SHALL 被迁移到 `src/network/api/`。
 
 #### Scenario: 目录结构完整
+
 - **WHEN** 查看 `src/network/` 目录
 - **THEN** 包含 `api/`、`wss/`、`rtmp/` 三个子包，每个子包有 `__init__.py`
 
 #### Scenario: 旧 api 目录已迁移
+
 - **WHEN** 构建完成后
 - **THEN** `src/api/` 不存在，所有路由已迁移到 `src/network/api/`
 
