@@ -35,3 +35,19 @@
 
 - **WHEN** 断流超过 3 次连续重连失败
 - **THEN** 状态转为 ERROR，记录日志，继续尝试重连但不阻塞主循环
+
+### Requirement: Pipeline 帧上下文与钩子注册
+
+系统 SHALL 定义 `FrameContext` 数据类作为帧处理管线中所有模块的统一数据契约。系统 SHALL 提供 `AIPipeline.register_frame_hook()` 方法允许外部模块注册帧处理回调。每个帧的所有 hook 依次执行，单个 hook 异常 SHALL 不中断主循环。
+
+`FrameContext` SHALL 包含：`frame (np.ndarray BGR24)`、`frame_id (int)`、`timestamp (float)`、`detections (list[Detection])`、`tracks (list[Track] | None)`、`view_id (int)`。
+
+#### Scenario: B 模块注册帧处理钩子
+
+- **WHEN** Part B 的 ByteTrack 模块调用 `pipeline.register_frame_hook(byte_tracker.process)`
+- **THEN** 主循环每帧依次调用 YOLO 产出 detections、ByteTrack 填充 tracks、后续 hook 消费二者的结果
+
+#### Scenario: 单个 hook 异常不中断
+
+- **WHEN** FaceRecognizer hook 对某帧抛出异常
+- **THEN** 该帧的后续 hook（SlowFast、Fence）继续执行，标注叠加正常产出

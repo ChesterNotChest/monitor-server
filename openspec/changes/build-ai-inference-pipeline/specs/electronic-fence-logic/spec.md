@@ -2,6 +2,8 @@
 
 **Purpose:** YOLO person_bbox × fence polygon 交集检测 + 滑动窗口密度判定 → FenceEventType 枚举事件。
 
+电子围栏本质是"禁区"——任何人不得进入围栏区域。围栏事件（ENTERED）作为独立枚举事件接入告警引擎，不与 SlowFast/YAMNet 等做复杂 AND 排列组合。ENTERED 由围栏状态机维护为持久状态——一旦触发持续保持，直到判定离开。
+
 ## ADDED Requirements
 
 ### Requirement: 交集检测
@@ -36,12 +38,14 @@
 
 同一 `(fence_id, track_id)` SHALL 维护 ENTERED / NOT_ENTERED 状态。触发 ENTERED 后 SHALL 抑制后续触发，直到连续 `leave_frames` 帧无重叠才重置为 NOT_ENTERED。
 
+ENTERED 状态 SHALL 作为持久事件发布到 EventBus——告警引擎将其视为"当前活跃"，不受 `ALERT_EVENT_TTL` 过期机制影响。仅当状态机重置为 NOT_ENTERED 时，SHALL 发布 ENTERED 清除事件。
+
 #### Scenario: 持续抑制
 
 - **WHEN** track_id=A 已触发 ENTERED 且仍在围栏内
-- **THEN** 不再产生新 ENTERED 事件
+- **THEN** 不再产生新 ENTERED 事件，但 ENTERED 在 EventBus 中持续活跃
 
 #### Scenario: 离开重置
 
 - **WHEN** track_id=A 连续 `leave_frames=5` 帧无重叠
-- **THEN** 状态重置为 NOT_ENTERED，允许再次触发
+- **THEN** 状态重置为 NOT_ENTERED，发布 ENTERED 清除事件，允许再次触发

@@ -4,7 +4,7 @@
 
 | 文件 | 负责人 | 依赖 | 任务数 |
 |------|--------|------|--------|
-| [tasks-a-foundation.md](tasks-a-foundation.md) | ___ | 无 | 25 |
+| [tasks-a-foundation.md](tasks-a-foundation.md) | ___ | 无 | 36 |
 | [tasks-b-video-ai.md](tasks-b-video-ai.md) | ___ | A（EventBus + Detection 格式） | 20 |
 | [tasks-c-audio-alert.md](tasks-c-audio-alert.md) | ___ | A（EventBus 接口） | 28 |
 

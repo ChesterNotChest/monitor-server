@@ -1,8 +1,13 @@
-"""source: node-media-server 本地 RTMP 靶子服务器。
-
-Debug 模式下接收 Server 推来的合并 View 流，供 OBS 拉流测试。
-复用 Node 项目 rtmp_server/index.js 的模式，端口改用 1936 避免冲突。
-"""
+/**
+ * Embedded RTMP server for local DEBUG_WEB_STREAM verification.
+ *
+ * Accepts ffmpeg RTMP pushes on  rtmp://127.0.0.1:1936/live/<stream-key>
+ * Serves RTMP pulls on the same address for OBS / VLC.
+ * HTTP on :8001 for status / flv playback.
+ *
+ * Launched automatically by Server when DEBUG_WEB_STREAM=true,
+ * or manually:  node tools/rtmp_debug_server.js
+ */
 
 const NodeMediaServer = require('node-media-server');
 
@@ -21,6 +26,10 @@ const config = {
 };
 
 const nms = new NodeMediaServer(config);
-nms.run();
 
-console.log('RTMP debug server running on rtmp://127.0.0.1:1936/live');
+// Signal handling — must be registered BEFORE nms.run()
+process.on('SIGINT', () => { nms.stop(); process.exit(0); });
+process.on('SIGTERM', () => { nms.stop(); process.exit(0); });
+
+console.log('[RTMP debug server] rtmp://127.0.0.1:1936/live');
+nms.run();

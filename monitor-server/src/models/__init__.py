@@ -10,6 +10,7 @@ from .video_device import VideoDevice
 from .audio_device import AudioDevice
 from .monitor_view import MonitorView
 from .electronic_fence import ElectronicFence
+from .fence_event_type import FenceEventType
 from .entity_type import EntityType
 from .action_type import ActionType
 from .sound_type import SoundType
@@ -30,6 +31,7 @@ __all__ = [
     "AudioDevice",
     "MonitorView",
     "ElectronicFence",
+    "FenceEventType",
     "EntityType",
     "ActionType",
     "SoundType",

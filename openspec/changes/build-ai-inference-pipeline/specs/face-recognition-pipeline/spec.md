@@ -6,7 +6,7 @@
 
 ### Requirement: 人脸检测
 
-系统 SHALL 对 ByteTrack 产出的每个 person 区域裁剪（person crop），在 crop 内使用 face_recognition 做人脸检测。若 crop 尺寸小于 50×50 px，SHALL 跳过。
+系统 SHALL 对 ByteTrack 产出的每个 person 区域裁剪（person crop），在 crop 内使用 face_recognition 做人脸检测。输入前 SHALL 做 BGR→RGB 转换（OpenCV 默认 BGR，face_recognition 期望 RGB）。若 crop 尺寸小于 50×50 px，SHALL 跳过。
 
 #### Scenario: 检测到人脸
 

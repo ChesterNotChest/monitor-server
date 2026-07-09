@@ -35,8 +35,9 @@
   → TRIGGER
   ```
 - [ ] 12.6 去重：`(view_id, exception_def_id, timestamp // ALERT_CHECK_INTERVAL)` → 不重复
-- [ ] 12.7 触发：创建 `SituationEvent(view_id, exception_id)` + 查 AlertGroup → 写 DB
-- [ ] 12.8 去重保持 `ALERT_COOLDOWN` 秒（默认 30s）：同一规则触发后冷却期内不再触发
+- [ ] 12.7 触发：创建 `SituationEvent(view_id, exception_id)` + 查 AlertGroup → 写 DB + 同时写 `LogEntry(view_id, event_id, severity, summary)` 一条日志
+- [ ] 12.8 去重：`(view_id, exception_def_id)` 在 `ALERT_COOLDOWN`（默认 30s）内 → 不重复写 SituationEvent，但向 EventBus topic `RECORDING` 发 `{"action": "keep_alive", "view_id": ...}` 保持录制活跃
+- [ ] 12.9 异异常独立：不同 ExceptionDef 互不抑制——规则 A 去重不影响规则 B 触发
 
 ## 13. FenceEventType CRUD API（枚举管理）
 
@@ -60,13 +61,26 @@
 - [ ] 15.1.2 无声片段 → SILENCE 事件
 - [ ] 15.1.3 FFmpeg 拉流 mock → 断流重连
 
-### 15.2 告警引擎
+### 15.2 告警引擎单元测试
 - [ ] 15.2.1 ExceptionDef 全部条件满足 → 触发
 - [ ] 15.2.2 部分条件 → 不触发
 - [ ] 15.2.3 同窗口去重
 - [ ] 15.2.4 SituationEvent + AlertGroup 写入 DB
 - [ ] 15.2.5 冷却期内不重复触发
 - [ ] 15.2.6 混合条件（实体 + 围栏）、（声音 + 人脸）AND 逻辑正确
+
+### 15.3 全链路集成测试——枚举事件 → ResponseAction
+
+- [ ] 15.3.1 **FIGHTING 全链路**：seed ExceptionDef "FIGHTING"（PERSON + FIGHTING → AlertGroup → TRIGGER_RECORDING）→ mock EventBus 发布双事件 → 断言 `SituationEvent` 写入 DB + `ResponseAction.TRIGGER_RECORDING` 被执行
+- [ ] 15.3.2 **INTRUDER 全链路**：seed ExceptionDef "INTRUDER"（ENTERED → AlertGroup → SEND_NOTIFICATION）→ mock EventBus 发布 FENCE 事件 → 断言全链路触发
+- [ ] 15.3.3 **静默测试**：只满足部分条件（PERSON 无 FIGHTING）→ 断言 `SituationEvent` 表无新增行
+- [ ] 15.3.4 **多规则独立**：同时满足 FIGHTING 和 INTRUDER → 断言各行其是，互不干扰
+
+### 15.4 HTTP API 层集成测试——前端到 DB 全链路
+
+- [ ] 15.4.1 **规则创建到告警产出**：seed EntityType/ActionType/AlertGroup → `POST /api/v1/exceptions` 创建 FIGHTING 规则 → `POST /api/v1/views` 创建 View → mock EventBus 触发 → `GET /api/v1/alerts` 断言告警出现且包含 `view_id`、`exception_name`、`severity`
+- [ ] 15.4.2 **告警处置**：`PUT /api/v1/alerts/{id}/handle` → 断言状态变更 → `GET /api/v1/alerts` 过滤已处理
+- [ ] 15.4.3 **平静状态**：无事件活跃 → `GET /api/v1/alerts` 断言空列表
 
 ### 15.3 FenceEventType CRUD
 - [ ] 15.3.1 POST fence-event-types → 201

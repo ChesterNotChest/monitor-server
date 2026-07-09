@@ -53,7 +53,11 @@ class ExceptionDef(Base):
         nullable=True,
         index=True,
     )
-    # TODO: 额外触发条件字段（如时间窗口、次数阈值等），后续 service 层实现
+    fence_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("fence_event_types.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -61,6 +65,7 @@ class ExceptionDef(Base):
     # 关联
     alert_group: Mapped["AlertGroup"] = relationship("AlertGroup")
     face_recognition_result: Mapped["FaceRecognitionResult | None"] = relationship("FaceRecognitionResult")
+    fence_event_type: Mapped["FenceEventType | None"] = relationship("FenceEventType")
     entities: Mapped[list["EntityType"]] = relationship(
         "EntityType", secondary=exception_entities, lazy="selectin"
     )

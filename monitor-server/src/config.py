@@ -51,10 +51,22 @@ class Settings(BaseSettings):
     STREAM_PROBE_TIMEOUT: float = 8.0
     STREAM_READY_INTERVAL: float = 1.0
 
-    # --- Stream readiness ---
-    STREAM_READY_TIMEOUT: float = 30.0
-    STREAM_PROBE_TIMEOUT: float = 8.0
-    STREAM_READY_INTERVAL: float = 1.0
+    # --- AI 推理管线 ---
+    FPS_TARGET: int = 15
+    YOLO_CONFIDENCE: float = 0.5
+    YOLO_MODEL_PATH: str = "src/third-party/yolo/yolo11n.pt"
+    STREAM_RECONNECT_MAX_RETRIES: int = 10
+    FACE_MATCH_TOLERANCE: float = 0.6
+    FACE_SKIP_FRAMES: int = 5
+    YAMNET_THRESHOLD: float = 0.5
+    DWELL_TIME_DEFAULT: int = 10
+    DENSITY_DEFAULT: float = 0.6
+    LEAVE_FRAMES_DEFAULT: int = 5
+    ALERT_CHECK_INTERVAL: int = 5
+    ALERT_EVENT_TTL: int = 5
+    ALERT_COOLDOWN: int = 30
+    BYTETRACK_TRACK_THRESH: float = 0.5
+    BYTETRACK_MATCH_THRESH: float = 0.8
 
     # --- Node WebSocket ---
     WSS_NODE_PORT: int = 8000

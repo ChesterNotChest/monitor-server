@@ -25,7 +25,7 @@ YOLO11 COCO 80 类中 SHALL 映射到 `EntityType` 枚举的类别为：
 | SUITCASE (11) | suitcase (28) |
 | KNIFE (12) | knife (43) |
 
-未覆盖的枚举值 GUN (13)、FIRE (14)、SMOKE (15) SHALL 通过后续微调补齐。
+COCO 12/12 类全覆盖。
 
 #### Scenario: 检测行人
 
@@ -49,16 +49,16 @@ Kinetics-400 中 SHALL 映射到 `SlowFastActionType` 枚举的类别为：
 | RUNNING (2) | running |
 | FALLING (3) | falling down |
 | FIGHTING (4) | fighting |
-| CLIMBING (7) | climbing |
-| THROWING (8) | throwing |
-| POINTING (9) | pointing |
-| WAVING (10) | waving hand |
-| HUGGING (11) | hugging |
-| PUSHING (12) | pushing |
-| SITTING (14) | sitting |
-| STANDING (15) | standing |
+| CLIMBING (5) | climbing |
+| THROWING (6) | throwing |
+| POINTING (7) | pointing |
+| WAVING (8) | waving hand |
+| HUGGING (9) | hugging |
+| PUSHING (10) | pushing |
+| SITTING (11) | sitting |
+| STANDING (12) | standing |
 
-LOITERING (5)、CROWDING (6)、LYING_DOWN (13) SHALL 通过时序逻辑推导（如站立超过 N 秒→徘徊，多人近距离→聚集），而非依赖模型直接输出。
+Kinetics-400 12/12 类全覆盖。
 
 #### Scenario: 检测跌倒
 

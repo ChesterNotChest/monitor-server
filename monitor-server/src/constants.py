@@ -34,7 +34,7 @@ class Role(enum.StrEnum):
 # ══════════════════════════════════════════════
 
 class YOLOEntityType(enum.IntEnum):
-    """YOLO 目标检测实体类别（整数枚举，数据库存整数值）。"""
+    """YOLO 目标检测实体类别（整数枚举，数据库存整数值）。COCO 预训练 12 类。"""
     PERSON = 1
     CAR = 2
     TRUCK = 3
@@ -47,28 +47,22 @@ class YOLOEntityType(enum.IntEnum):
     BACKPACK = 10
     SUITCASE = 11
     KNIFE = 12
-    GUN = 13
-    FIRE = 14
-    SMOKE = 15
 
 
 class SlowFastActionType(enum.IntEnum):
-    """SlowFast 行为识别类别（整数枚举，数据库存整数值）。"""
+    """SlowFast 行为识别类别（整数枚举，数据库存整数值）。Kinetics-400 预训练 12 类。"""
     WALKING = 1
     RUNNING = 2
     FALLING = 3
     FIGHTING = 4
-    LOITERING = 5
-    CROWDING = 6
-    CLIMBING = 7
-    THROWING = 8
-    POINTING = 9
-    WAVING = 10
-    HUGGING = 11
-    PUSHING = 12
-    LYING_DOWN = 13
-    SITTING = 14
-    STANDING = 15
+    CLIMBING = 5
+    THROWING = 6
+    POINTING = 7
+    WAVING = 8
+    HUGGING = 9
+    PUSHING = 10
+    SITTING = 11
+    STANDING = 12
 
 
 class YAMNetSoundType(enum.IntEnum):
@@ -116,6 +110,11 @@ class FaceRecognitionResult(enum.IntEnum):
     NO_RESULT = 1   # 画面中未检测到人脸
     STRANGER = 2    # 检测到人脸但不在录入人员库中
     NORMAL = 3      # 检测到人脸且匹配已录入人员
+
+
+class FenceEventResult(enum.IntEnum):
+    """电子围栏事件枚举。"""
+    ENTERED = 1  # 闯入禁区
 
 
 # ══════════════════════════════════════════════

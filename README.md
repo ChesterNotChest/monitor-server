@@ -112,6 +112,49 @@ python src/third-party/download_weights.py
 
 脚本会自动下载并跳过已存在的文件，可放心重复运行。首次下载约 460 MB。
 
+### 4b. 准备测试数据
+
+**单元测试**（CI 中运行）——小数据集直接提交在 `tests/fixtures/` 中，无需额外操作：
+
+| 数据集 | 大小 | 用途 |
+|--------|------|------|
+| COCO8 | 1 MB | YOLO 单元测试（8 张图片 + 标签） |
+| LFW subset | 500 KB | 人脸识别单元测试（10 张人脸） |
+| UrbanSound8K subset | 5 MB | 音频分类单元测试（5 个 WAV） |
+
+**端到端视觉验证**（本地运行）——使用 Node 真实推流 + 两个 Node.js RTMP 靶子，无需 SRS 或 Docker。
+
+两个靶子端口不冲突：
+
+| 靶子 | 位置 | 端口 | 启动方式 | 用途 |
+|------|------|------|----------|------|
+| Node RTMP Server | `monitor-node/rtmp_server/index.js` | 1935 | Node `STREAM_DEBUG=true` 自动启动 | 接收 Node FFmpeg 推来的 raw 流 |
+| Server RTMP Target | `monitor-server/tools/rtmp_debug_server.js` | 1936 (+8001 HTTP) | `DEBUG_WEB_STREAM=true` 时 Server 自动启动 | 接收 Server 推来的标注 View 流，供 OBS/VLC 拉流 |
+
+```bash
+# ── Terminal 1: 启动 Node（自动启动 :1935 RTMP Server） ──
+cd monitor-node/rtmp_server
+npm install          # 首次
+cd ..
+set STREAM_DEBUG=true
+python -m src.run
+# Node 枚举设备 → FFmpeg 推流 → rtmp://127.0.0.1:1935/live/{device_id}
+
+# ── Terminal 2: 启动 Server（自动启动 :1936 RTMP Target） ──
+cd monitor-server/tools
+npm install          # 首次：安装 node-media-server
+cd ..
+set DEBUG_WEB_STREAM=true
+python -m src.run
+# Server 自动启动 rtmp_debug_server.js → WSS 连 Node → 创建 View → 从 :1935 拉 raw 流 → AI 推理标注 → 推标注流到 :1936
+
+# ── Terminal 3: 播放标注流 ──
+# OBS: 添加媒体源 → rtmp://127.0.0.1:1936/view/{view_id}
+# VLC: 打开网络串流 → rtmp://127.0.0.1:1936/view/{view_id}
+```
+
+> 两个靶子均自带 SIGINT/SIGTERM 信号处理（`CTRL+C` 自动停止），均由各自 `app.py` 在 Debug 模式下自动启动。
+
 ### 5. 检查环境
 
 ```bash

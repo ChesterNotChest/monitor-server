@@ -6,7 +6,7 @@
 
 ### Requirement: YOLO11 目标检测
 
-系统 SHALL 使用 YOLO11n（COCO 预训练，`yolo11n.pt`）对每帧进行目标检测。SHALL 筛选 `ai-model-capability` spec 定义的 15 类映射 EntityType。检测结果 SHALL 产出 `[{bbox, class_id, confidence, entity_type_id}, ...]`。
+系统 SHALL 使用 YOLO11n（COCO 预训练，`yolo11n.pt`）对每帧进行目标检测。SHALL 筛选 `ai-model-capability` spec 定义的 12 类映射 EntityType。检测结果 SHALL 产出 `[{bbox, class_id, confidence, entity_type_id}, ...]`。
 
 #### Scenario: 检测行人
 

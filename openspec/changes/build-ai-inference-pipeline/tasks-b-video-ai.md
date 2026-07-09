@@ -15,7 +15,7 @@
 
 - [ ] 8.1 创建 `src/service/ai_module/face_recognizer.py`：`FaceRecognizer` 类
 - [ ] 8.2 启动时加载所有 NamedPerson：`{128d_encoding: person_name}` 到内存
-- [ ] 8.3 `recognize(frame, tracks) -> list[FaceResult]`：对每个 track 的 bbox 区域裁剪 → dlib 人脸检测 → 128D 提取 → 比对
+- [ ] 8.3 `recognize(frame, tracks) -> list[FaceResult]`：对每个 track 的 bbox 区域裁剪 → **BGR→RGB 转换**（OpenCV 默认 BGR，face_recognition 期望 RGB）→ dlib 人脸检测 → 128D 提取 → 比对
 - [ ] 8.4 比对逻辑：`face_recognition.compare_faces(known_encodings, face_encoding, tolerance=FACE_MATCH_TOLERANCE)`
 - [ ] 8.5 `FaceResult = {track_id, person_name|None, result: NO_RESULT|STRANGER|NORMAL}`
 - [ ] 8.6 跳帧：`FACE_SKIP_FRAMES`（默认 5），中间帧复用上次结果
