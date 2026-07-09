@@ -38,6 +38,19 @@ class Settings(BaseSettings):
     SRS_HOST: str = "127.0.0.1"
     SRS_RTMP_PORT: int = 1935
     SRS_HTTP_PORT: int = 8080
+    SRS_PUBLIC_HOST: str | None = None
+    SRS_PUBLIC_RTMP_PORT: int | None = None
+    SRS_PUBLIC_HTTP_PORT: int | None = None
+
+    # --- Stream readiness ---
+    STREAM_READY_TIMEOUT: float = 30.0
+    STREAM_PROBE_TIMEOUT: float = 8.0
+    STREAM_READY_INTERVAL: float = 1.0
+
+    # --- Stream readiness ---
+    STREAM_READY_TIMEOUT: float = 30.0
+    STREAM_PROBE_TIMEOUT: float = 8.0
+    STREAM_READY_INTERVAL: float = 1.0
 
     # --- Node WebSocket ---
     WSS_NODE_PORT: int = 8000
