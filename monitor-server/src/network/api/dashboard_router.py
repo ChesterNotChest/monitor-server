@@ -1,4 +1,4 @@
-"""Dashboard API 路由 —— 所有角色可访问。"""
+﻿"""Dashboard API 路由 —— 所有角色可访问。"""
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from src.extensions import get_db
 from src.middleware.rbac import require_permission
 from src.schema.http.dashboard_schema import DashboardStats, DashboardTrends
-from src.service import dashboard_service
+from src.service import dashboard_task
 
 router = APIRouter(prefix="/dashboard", tags=["仪表板"])
 
@@ -17,7 +17,7 @@ def stats(
     _user=Depends(require_permission("dashboard:view")),
 ):
     """整体态势统计。"""
-    return dashboard_service.get_stats(db)
+    return dashboard_task.get_stats(db)
 
 
 @router.get("/trends", response_model=DashboardTrends)
@@ -26,4 +26,4 @@ def trends(
     _user=Depends(require_permission("dashboard:view")),
 ):
     """告警趋势数据。"""
-    return dashboard_service.get_trends(db)
+    return dashboard_task.get_trends(db)

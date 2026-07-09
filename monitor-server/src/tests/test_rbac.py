@@ -1,11 +1,11 @@
-"""RBAC 权限矩阵测试 —— 三个角色分别测试越权拒绝。"""
+﻿"""RBAC 权限矩阵测试 —— 三个角色分别测试越权拒绝。"""
 
 import pytest
 from fastapi.testclient import TestClient
 
 from src.app import app
 from src.repository.user_repo import UserRepo
-from src.service.auth_service import hash_password
+from src.service.auth_task import hash_password
 from src.constants import Role
 
 

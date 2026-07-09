@@ -1,4 +1,4 @@
-"""RBAC 中间件 —— JWT 认证 + 角色/权限检查。
+﻿"""RBAC 中间件 —— JWT 认证 + 角色/权限检查。
 
 用法::
 
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from src.constants import Role
 from src.extensions import get_db
 from src.repository.user_repo import UserRepo
-from src.service.auth_service import verify_token
+from src.service.auth_task import verify_token
 
 oauth2_scheme = HTTPBearer()
 

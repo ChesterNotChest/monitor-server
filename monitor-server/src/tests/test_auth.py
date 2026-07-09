@@ -1,11 +1,11 @@
-"""认证测试 —— 登录 / Token / 角色校验。"""
+﻿"""认证测试 —— 登录 / Token / 角色校验。"""
 
 import pytest
 from fastapi.testclient import TestClient
 
 from src.app import app
 from src.extensions import Base, SessionLocal
-from src.service.auth_service import hash_password
+from src.service.auth_task import hash_password
 from src.repository.user_repo import UserRepo
 from src.constants import Role
 

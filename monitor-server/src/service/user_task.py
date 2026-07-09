@@ -1,9 +1,9 @@
-"""用户管理服务 —— 运维员专用。"""
+﻿"""用户管理服务 —— 运维员专用。"""
 
 from sqlalchemy.orm import Session
 
 from src.repository.user_repo import UserRepo
-from src.service.auth_service import hash_password
+from src.service.auth_task import hash_password
 
 
 def list_users(db: Session) -> list:

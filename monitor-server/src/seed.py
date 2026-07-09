@@ -1,4 +1,4 @@
-"""数据库种子数据 —— 首次启动时创建默认管理员。
+﻿"""数据库种子数据 —— 首次启动时创建默认管理员。
 
 密码写入项目目录下的 ``admin_password.txt``，生产部署前删除此文件。
 """
@@ -9,7 +9,7 @@ import string
 
 from src.extensions import SessionLocal
 from src.repository.user_repo import UserRepo
-from src.service.auth_service import hash_password
+from src.service.auth_task import hash_password
 
 ADMIN_PASSWORD_FILE = os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "admin_password.txt"

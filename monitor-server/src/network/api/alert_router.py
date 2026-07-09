@@ -1,4 +1,4 @@
-"""告警 API 路由。"""
+﻿"""告警 API 路由。"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -7,7 +7,7 @@ from src.constants import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from src.extensions import get_db
 from src.middleware.rbac import require_permission
 from src.schema.http.alert_schema import AlertListResponse, AlertResponse
-from src.service import alert_service
+from src.service import alert_task
 
 router = APIRouter(prefix="/alerts", tags=["告警"])
 

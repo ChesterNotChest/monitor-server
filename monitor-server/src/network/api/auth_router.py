@@ -1,11 +1,11 @@
-"""认证 REST API 路由。"""
+﻿"""认证 REST API 路由。"""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from src.extensions import get_db
 from src.schema.http.auth_schema import LoginRequest, LoginResponse, UserResponse
-from src.service import auth_service
+from src.service import auth_task
 from src.middleware.rbac import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["认证"])
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/auth", tags=["认证"])
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, db: Session = Depends(get_db)):
     """用户登录。"""
-    result = auth_service.login(db, body.username, body.password)
+    result = auth_task.login(db, body.username, body.password)
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -1,4 +1,4 @@
-"""告警处理服务测试。"""
+﻿"""告警处理服务测试。"""
 
 import pytest
 
@@ -11,8 +11,8 @@ from src.repository.node_repo import NodeRepo
 from src.repository.situation_event_repo import SituationEventRepo
 from src.repository.user_repo import UserRepo
 from src.repository.video_device_repo import VideoDeviceRepo
-from src.service.alert_service import list_alerts, mark_handled, mark_false_alarm
-from src.service.auth_service import hash_password
+from src.service.alert_task import list_alerts, mark_handled, mark_false_alarm
+from src.service.auth_task import hash_password
 from src.constants import Role, SeverityLevel
 
 
