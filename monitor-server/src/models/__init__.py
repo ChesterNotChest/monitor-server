@@ -1,4 +1,9 @@
-"""SQLAlchemy 模型包 —— 导入所有模型以便 Base.metadata.create_all 自动建表。"""
+"""SQLAlchemy 模型包 —— 导入所有模型以便 Base.metadata.create_all 自动建表。
+
+注意：Part A 模型变更（Node.is_connected/last_seen, VideoDevice/AudioDevice.streaming,
+联合唯一约束, MonitorView.audio_id NOT NULL）需在对应模型文件中实现后，
+Base.metadata.create_all 才会覆盖新字段 + 新约束。
+"""
 
 from .node import Node
 from .video_device import VideoDevice
