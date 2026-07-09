@@ -65,7 +65,14 @@ conda env update -f environment.yml --prune
 conda activate monitor-server
 ```
 
-> **Windows 注意**：`dlib` 通过 conda-forge 预编译安装，无需 CMake 或 Visual Studio Build Tools。
+环境创建后，`face_recognition` 需额外手动安装（pip 不认 conda 已装的 dlib，会尝试拉取 dlib 源码并编译失败）。`--no-deps` 跳过 dlib 重装，`face_recognition_models` 也需一同安装：
+
+```bash
+conda activate monitor-server
+pip install --no-deps face_recognition_models face_recognition
+```
+
+> **Windows 注意**：`dlib` 通过 conda-forge 预编译安装，无需 CMake 或 Visual Studio Build Tools。`face_recognition` 用 `--no-deps` 跳过 pip 对 dlib 的重复拉取。
 
 ### 2. 仅安装核心依赖（如不需要 AI 模块）
 
@@ -81,7 +88,8 @@ pip install fastapi uvicorn[standard] sqlalchemy pydantic-settings python-multip
 
 ```bash
 conda install -c conda-forge dlib
-pip install face_recognition ultralytics opencv-python-headless torch torchaudio tensorflow-hub tensorflow torchvision pytorchvideo "setuptools<70"
+pip install --no-deps face_recognition_models face_recognition
+pip install ultralytics opencv-python-headless torch torchaudio tensorflow-hub tensorflow torchvision pytorchvideo "setuptools<70"
 ```
 
 ### 3. 安装 DEBUG_WEB_STREAM 依赖（可选）
@@ -95,7 +103,16 @@ npm install
 cd ..
 ```
 
-### 4. 检查环境
+### 4. 下载 AI 模型权重（如不需要智能分析可跳过）
+
+```bash
+cd monitor-server
+python src/third-party/download_weights.py
+```
+
+脚本会自动下载并跳过已存在的文件，可放心重复运行。首次下载约 460 MB。
+
+### 5. 检查环境
 
 ```bash
 # 核心依赖
@@ -106,7 +123,7 @@ ffmpeg -version
 node -v && cd tools && node -e "require('node-media-server')" && cd ..
 ```
 
-### 5. 配置环境变量
+### 6. 配置环境变量
 
 `.env` 已提供默认值，按需修改：
 
@@ -136,7 +153,7 @@ WSS_NODE_DEBUG=false
 DEBUG_WEB_STREAM=false
 ```
 
-### 6. 启动服务
+### 7. 启动服务
 
 ```bash
 # 开发模式（自动 reload）
@@ -146,7 +163,7 @@ python -m src.run
 uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 7. 验证
+### 8. 验证
 
 | 端点 | 地址 |
 |---|---|
@@ -154,7 +171,7 @@ uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
 | Swagger UI | http://localhost:8000/docs |
 | ReDoc | http://localhost:8000/redoc |
 
-### 8. 运行测试
+### 9. 运行测试
 
 ```bash
 pytest src/tests/ --tb=short
@@ -210,41 +227,39 @@ POST /api/v1/auth/login  →  {access_token, user}
 
 ## AI 模型安装
 
-智能分析模块依赖以下模型，存放于 `src/third-party/`。环境由 `environment.yml` 统一管理，首次 `conda env create` 即包含全部 AI 依赖。
+智能分析模块依赖以下模型，存放于 `src/third-party/`。Python 依赖由 `environment.yml` 统一管理，模型权重文件需额外下载。
 
-### 验证模型
+### 下载模型权重
 
 ```bash
 conda activate monitor-server
-cd monitor-server/src/third-party
-python verify_models.py
+cd monitor-server
+python src/third-party/download_weights.py
 ```
+
+脚本会自动下载以下权重并跳过已存在的文件（可重复运行）：
+
+| 模型 | 文件 | 大小 | 说明 |
+|------|------|------|------|
+| YOLO11 | `yolo/yolo11n.pt` | ~5 MB | 目标检测 / 跟踪（nano 版） |
+| SlowFast (Kinetics) | `slowfast/SLOWFAST_8x8_R50.pkl` | ~140 MB | 场景级行为分类 |
+| SlowFast (AVA) | `slowfast/SLOWFAST_8x8_R50_DETECTION.pyth` | ~258 MB | 人物级动作检测 60 类 |
+| YAMNet | `yamnet/yamnet_tfhub/` | ~55 MB | AudioSet 521 类音频分类 |
+| face_recognition | 随包内置 | — | 无需单独下载 |
 
 ### 模型清单
 
 | 模型 | 版本 | 安装方式 | 用途 |
 |------|------|----------|------|
 | YOLO11 | ≥8.3.0 | `pip install ultralytics>=8.3.0` | 目标检测 / 跟踪 / 分割 |
-| Dlib | 19.24.2 | `conda install -c conda-forge dlib=19.24.2` | HOG + CNN 人脸检测，68 点 landmark |
-| face_recognition | ≥1.4.0 | `pip install face_recognition>=1.4.0` | dlib wrapper，128D 人脸特征向量 |
+| Dlib | ≥19.24 | `conda install -c conda-forge dlib` | HOG + CNN 人脸检测，68 点 landmark |
+| face_recognition | ≥1.3.0 | `pip install --no-deps face_recognition_models face_recognition` | dlib wrapper，128D 人脸特征向量 |
 | SlowFast (Kinetics) | R-50 | `pip install pytorchvideo>=0.1.5` | 场景级行为分类（打架/跌倒/奔跑等） |
 | SlowFast (AVA) | R-50 | pytorchvideo 内置 | 人物级动作检测：抽烟/打电话/喝水等 60 类 |
 | YAMNet | torchaudio 内置 | 随 `torchaudio>=2.1.0` 安装 | AudioSet 521 类音频分类 |
 | OpenCV | ≥4.10 | `pip install opencv-python-headless>=4.10` | 帧解码 / 预处理 / 标注叠加 |
 
-> **注意**：`dlib` 建议通过 conda 安装（避免 Windows C++ 编译问题）。`setuptools` 需 <70 版本（`face_recognition_models` 依赖 `pkg_resources`）。
-
-### 模型权重文件
-
-预训练权重文件存放于 `src/third-party/`。CD 部署时此目录挂载为宿主机路径（如 `/data/models/`），容器重启无需重新下载。
-
-首次使用或本地调试时，运行以下脚本自动下载：
-
-```bash
-python src/third-party/download_weights.py
-```
-
-模型在首次调用时缓存于 `~/.cache/torch/hub/`。手动下载后放入 `src/third-party/` 并修改模型加载路径即可离线运行。
+> **注意**：`dlib` 通过 conda-forge 预编译安装（Windows 无需 CMake）。`setuptools` 需 <70 版本（`face_recognition_models` 依赖 `pkg_resources`）。CD 部署时 `src/third-party/` 挂载为宿主机路径，权重文件一次下载、容器重启不丢失。
 
 ---
 
