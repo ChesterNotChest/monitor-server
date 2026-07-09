@@ -2,6 +2,7 @@
 
 from typing import TypeVar, Generic
 
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 T = TypeVar("T")
@@ -10,8 +11,13 @@ T = TypeVar("T")
 class BaseRepo(Generic[T]):
     """泛型 Repository 基类。
 
-    所有具体 Repository 必须继承此类并指定 `model` 类变量。
+    所有具体 Repository 必须继承此类并指定 ``model`` 类变量。
     仅执行 flush()，commit() 交由 Service 层统一控制。
+
+    用法::
+
+        class FooRepo(BaseRepo[Foo]):
+            model = Foo
     """
 
     model: type[T]
@@ -27,42 +33,41 @@ class BaseRepo(Generic[T]):
 
     def all(self, *, offset: int = 0, limit: int = 100) -> list[T]:
         """全表查询，支持 offset/limit 分页。"""
-        return (
-            self.db.query(self.model)
-            .offset(offset)
-            .limit(limit)
-            .all()
+        return list(
+            self.db.scalars(
+                select(self.model).offset(offset).limit(limit)
+            )
         )
 
     def count(self) -> int:
         """返回表中记录总数。"""
-        return self.db.query(self.model).count()
+        result = self.db.scalar(select(func.count()).select_from(self.model))
+        return result or 0
 
     def exists(self, id: int) -> bool:
         """检查指定主键的记录是否存在。"""
-        return self.db.get(self.model, id) is not None
+        return self.get(id) is not None
 
     def paginate(self, page: int = 1, page_size: int = 20) -> tuple[list[T], int]:
-        """分页查询，返回 (当前页数据, 总记录数)。"""
+        """分页查询，返回 ``(当前页数据, 总记录数)``。"""
         total = self.count()
-        offset = (page - 1) * page_size
-        items = self.all(offset=offset, limit=page_size)
+        items = self.all(offset=(page - 1) * page_size, limit=page_size)
         return items, total
 
-    # ── 写入 ─────────────────────────────────────
+    # ── 写操作 ────────────────────────────────────
 
-    def create(self, **kwargs) -> T:
-        """创建新记录并 flush（不 commit）。返回模型实例。"""
-        instance = self.model(**kwargs)
-        self.db.add(instance)
+    def create(self, **kwargs: object) -> T:
+        """创建一条新记录并 flush（不 commit）。"""
+        obj = self.model(**kwargs)
+        self.db.add(obj)
         self.db.flush()
-        return instance
+        return obj
 
     def delete(self, id: int) -> bool:
-        """按主键删除记录并 flush（不 commit）。返回 True 表示删除成功。"""
-        instance = self.db.get(self.model, id)
-        if instance is None:
+        """按主键删除记录。存在则删除并 flush，返回 True；否则返回 False。"""
+        obj = self.get(id)
+        if obj is None:
             return False
-        self.db.delete(instance)
+        self.db.delete(obj)
         self.db.flush()
         return True

@@ -19,7 +19,7 @@
 
 ## 8. Service 层 — Node Task（轻量包装）
 
-- [ ] 8.1 创建 `src/service/node_task.py` 门户函数：`list_nodes(db)`→ `node_repo.get_all()`、`get_node(db, node_id)` → `node_repo.get_by_id()`、`list_videos_by_node(db, node_id)` → `device_repo.get_videos_by_node()`、`list_audios_by_node(db, node_id)` → `device_repo.get_audios_by_node()`
+- [ ] 8.1 创建 `src/service/node_task.py` 门户函数：`list_nodes(db)`→ `NodeRepo(db).all()`、`get_node(db, node_id)` → `NodeRepo(db).get(node_id)`、`list_videos_by_node(db, node_id)` → `VideoDeviceRepo(db).by_node(node_id)`、`list_audios_by_node(db, node_id)` → `AudioDeviceRepo(db).by_node(node_id)`
 
 > 这些是简单只读透传，但为保持分层一致性和可读性，Router 不直接调 Repository。
 
@@ -28,28 +28,28 @@
 - [ ] 9.1 创建 `src/service/view_task.py` 门户函数：`create_view(db, audio_id, video_id)`、`delete_view(db, view_id)`、`list_views(db)`、`get_view(db, view_id)`
 - [ ] 9.2 创建 `src/service/view_module/` 包（`__init__.py`、`lifecycle.py`、`ffmpeg_manager.py`）
 - [ ] 9.3 `lifecycle.py` 实现：
-  - `get_ref_count(db, device_type, device_id)` — 调 view_repo.count_by_*
-  - `check_and_start_stream(db, device_type, device_id)` — 先通过 device_repo 查设备获取 `node_id`，再查引用计数（=0 表示无 View 在用）→ 0 则发 `UPDATE_STREAM {device_type, device_id, enable=true}` + update_streaming(True) → 返回 True；>0 → 返回 False。Node 侧通过连接握手时的映射表反查 device_name
-  - `check_and_stop_stream(db, device_type, device_id)` — 先查设备获取 `node_id`，删除后查引用计数（=0 表示无 View 在用）→ 0 则发 `UPDATE_STREAM {device_type, device_id, enable=false}` + update_streaming(False) → 返回 True；>0 → 返回 False
+  - `get_ref_count(db, device_type, device_id)` — 调 `MonitorViewRepo(db).count_by_video_id()` / `count_by_audio_id()`
+  - `check_and_start_stream(db, device_type, device_id)` — 通过 `VideoDeviceRepo(db).get()` / `AudioDeviceRepo(db).get()` 查设备获取 `node_id`；查引用计数（=0 表示无 View 在用）→ 0 则发 `UPDATE_STREAM` + `update_streaming(id, True)` → 返回 True；>0 → 返回 False
+  - `check_and_stop_stream(db, device_type, device_id)` — 删除后查引用计数 → 0 则发 `UPDATE_STREAM` + `update_streaming(id, False)` → 返回 True；>0 → 返回 False
 - [ ] 9.4 `ffmpeg_manager.py` 实现：
-  - `start_merge(view_id, video_id, audio_id)` — 内部通过 device_repo 查设备，构建 RTMP 拉流地址，推流目标由 `pusher.build_push_url(view_id)` 决定（生产→SRS，debug→本地靶子 `rtmp://127.0.0.1:1936/view/{view_id}`），用 `asyncio.create_subprocess_exec` 启动 FFmpeg 合并+推流
-  - `stop_merge(view_id)` — SIGTERM 终止，失败时仅记日志不抛异常
+  - `start_merge(view_id, video_id, audio_id)` — 通过 `VideoDeviceRepo(db).get(video_id)` / `AudioDeviceRepo(db).get(audio_id)` 查设备名称，构建 RTMP 拉流地址，推流目标由 `pusher.build_push_url(view_id)` 决定（生产→SRS，debug→本地靶子 `rtmp://127.0.0.1:1936/view/{view_id}`），`asyncio.create_subprocess_exec` 启动 FFmpeg
+  - `stop_merge(view_id)` — SIGTERM 终止，失败仅记日志
   - `active_processes` 字典（`{view_id: subprocess}`）
   - `cleanup_all()` — atexit 注册，遍历终止所有
 
 `create_view` 内部逻辑（关键函数）：
-1. 验证设备存在：`device_repo.get_device_by_id(...)` — 任一不存在返回 404
+1. 验证设备存在：`VideoDeviceRepo(db).get(video_id)` / `AudioDeviceRepo(db).get(audio_id)` — 任一不存在返回 404
 2. `warnings = []`
 3. `check_and_start_stream("video", video_id)` — False 则 warnings.append(...)
 4. `check_and_start_stream("audio", audio_id)` — False 则 warnings.append(...)
-5. `view = view_repo.create(db, audio_id, video_id)`
-6. `ffmpeg_manager.start_merge(view.id, video_id, audio_id)`（内部查 device_repo 获取 device_name 用于 RTMP URL）
+5. `view = MonitorViewRepo(db).create(audio_id=audio_id, video_id=video_id)`
+6. `ffmpeg_manager.start_merge(view.id, video_id, audio_id)`
 7. `urls = pusher.build_play_urls(view.id)`
 8. 返回 ViewResponse（含 flv_url、webrtc_url、warnings）
 
 `delete_view` 内部逻辑（DB 优先，FFmpeg 后杀）：
-1. `view = view_repo.get_by_id(db, view_id)` — 不存在返回 404
-2. `view_repo.delete(db, view_id)` — **先删 DB（事务保护）**
+1. `view = MonitorViewRepo(db).get(view_id)` — 不存在返回 404
+2. `MonitorViewRepo(db).delete(view_id)` — **先删 DB（事务保护）**
 3. `ffmpeg_manager.stop_merge(view_id)` — 成功后再杀 FFmpeg，失败仅记日志
 4. `check_and_stop_stream("video", view.video_id)`
 5. `check_and_stop_stream("audio", view.audio_id)`
@@ -86,16 +86,16 @@
 - [ ] 14.1.5 不同 node 下同名 VideoDevice → 验证成功插入（联合唯一不跨 node）
 - [ ] 14.1.6 MonitorView 插入时 `audio_id=NULL` → 验证 non-nullable 约束拒绝
 
-### 14.2 Repository 层
+### 14.2 Repository 层 — 扩展方法测试
 
-- [ ] 14.2.1 `node_repo.get_by_token("valid")` → 返回 Node
-- [ ] 14.2.2 `node_repo.get_by_token("invalid")` → 返回 None
-- [ ] 14.2.3 `node_repo.update_connection_status(...)` → 验证 `is_connected` / `last_seen` 更新
-- [ ] 14.2.4 `device_repo.upsert_device` 新设备 → INSERT 成功
-- [ ] 14.2.5 `device_repo.upsert_device` 已有设备（同 node_id + name）→ 不重复 INSERT
-- [ ] 14.2.6 `view_repo.create` + `count_by_video_id` → 引用计数为 1
-- [ ] 14.2.7 创建第二个 View 引用同一 video → 引用计数为 2
-- [ ] 14.2.8 `view_repo.delete` 后查计数 → 归零
+> 基础 CRUD 测试已存在（`tests/repository/test_node_repo.py` 等 14 个文件）。本节仅测试本次新增的方法。
+
+- [ ] 14.2.1 `NodeRepo(db).update_connection_status(node_id, True, now)` → 验证 `is_connected` / `last_seen` 更新
+- [ ] 14.2.2 `NodeRepo(db).reset_device_streaming_by_node(node_id)` → 验证该 Node 下所有设备 `streaming=false`
+- [ ] 14.2.3 `VideoDeviceRepo(db).upsert(node_id, "cam0")` 新设备 → INSERT 成功
+- [ ] 14.2.4 `VideoDeviceRepo(db).upsert(node_id, "cam0")` 已有设备（同 node_id + name）→ 不重复 INSERT
+- [ ] 14.2.5 `MonitorViewRepo(db).count_by_video_id(video_id)` → 计数正确（含多 View 共享场景）
+- [ ] 14.2.6 `MonitorViewRepo(db).count_by_audio_id(audio_id)` → 计数正确
 
 ### 14.3 Schema 层
 
@@ -137,27 +137,30 @@
 如果 Part A 尚未完成，可用以下 mock 先行开发：
 
 ```python
-# 示例：mock repository
+# 示例：mock repository（匹配现有 BaseRepo 类模式）
 class MockNodeRepo:
-    async def get_all(self):
-        return [{"id": 1, "token": "test", "is_connected": True, "last_seen": None}]
-    async def get_by_id(self, node_id):
-        return {"id": node_id, "token": "test", "is_connected": True}
+    def all(self): pass  # 实际由 pytest fixture 提供真实 SQLite 内存库
+    def get(self, id): pass
+    def by_token(self, token): pass
+    def update_connection_status(self, node_id, is_connected, last_seen): pass
+    def reset_device_streaming_by_node(self, node_id): pass
 
-class MockDeviceRepo:
-    async def get_videos_by_node(self, node_id):
-        return [{"id": 1, "name": "cam0", "node_id": node_id, "streaming": False}]
-    async def get_audios_by_node(self, node_id):
-        return [{"id": 1, "name": "mic0", "node_id": node_id, "streaming": False}]
-    async def get_device_by_id(self, device_type, device_id):
-        return {"id": device_id, "name": f"{device_type}_{device_id}", "node_id": 1, "streaming": False}
+class MockVideoDeviceRepo:
+    def get(self, id): pass
+    def by_node(self, node_id): pass
+    def upsert(self, node_id, name): pass
+    def update_streaming(self, device_id, streaming): pass
 
-class MockViewRepo:
-    async def create(self, audio_id, video_id):
-        return type("View", (), {"id": 1, "audio_id": audio_id, "video_id": video_id})()
-    async def delete(self, view_id): pass
-    async def count_by_video_id(self, video_id): return 0
-    async def count_by_audio_id(self, audio_id): return 0
+class MockAudioDeviceRepo:
+    # 同 VideoDeviceRepo 结构
+    pass
+
+class MockMonitorViewRepo:
+    def create(self, **kw): pass
+    def delete(self, id): pass
+    def get(self, id): pass
+    def count_by_video_id(self, video_id): return 0
+    def count_by_audio_id(self, audio_id): return 0
 
 class MockConnectionRegistry:
     def __init__(self):

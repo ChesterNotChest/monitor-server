@@ -1,6 +1,6 @@
-## Purpose
+# Repository Base Class
 
-提供泛型 Repository 基类 `BaseRepo[T]`，封装所有数据模型的通用 CRUD 操作。所有具体 Repository 继承此基类，通过 `model` 类变量绑定目标模型，通过构造函数注入 `Session`。
+**Purpose:** 提供泛型 `BaseRepo[T]` 基类，封装所有 SQLAlchemy 模型通用的 CRUD 操作，消除样板代码。所有具体 Repository 继承此基类，通过 `model` 类变量绑定目标模型，通过构造函数注入 `Session`。
 
 ## Requirements
 

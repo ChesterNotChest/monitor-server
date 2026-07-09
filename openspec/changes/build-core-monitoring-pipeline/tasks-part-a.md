@@ -28,12 +28,13 @@
 - [ ] 3.4 创建 `src/schema/wss/` 包，包含 `__init__.py`
 - [ ] 3.5 创建 `src/schema/wss/node_commands.py`：`ConnectRequest`（node token）、`ConnectResponse`（session_token + videos 列表 + audios 列表）、`UpdateStreamRequest`（`device_type`、`device_id`、`enable`）、`UpdateStreamResponse` Pydantic 模型。注：`device_id` 泛指 audio_id / video_id
 
-## 4. Repository 层
+## 4. Repository 层 — 扩展已有类
 
-- [ ] 4.1 创建 `src/repository/node_repo.py`：按 id/token 查 Node（token 存 SHA256 hash，查询时对输入做 hash 后匹配）、查全部 Node、更新连接状态、按 node_id 查询设备并批量更新 streaming 状态（供断连级联清理使用）
-- [ ] 4.2 创建 `src/repository/device_repo.py`：按 node_id 查 VideoDevice/AudioDevice 列表、按 device_type + device_id 查单个设备、upsert 设备（基于 (node_id, name) 联合唯一判重）、更新 streaming 字段
-- [ ] 4.3 创建 `src/repository/view_repo.py`：创建 View、按 id 删 View、查全部 View、按 id 查 View、查引用计数（`count_by_video_id` / `count_by_audio_id`）
-- [ ] 4.4 更新 `src/repository/__init__.py`：导入并导出三个 repo 模块
+> 仓库已有 `BaseRepo[T]` 泛型基类 + `NodeRepo`、`VideoDeviceRepo`、`AudioDeviceRepo`、`MonitorViewRepo` 四个具体类。本节在现有类上追加方法，不新建文件。
+
+- [ ] 4.1 `NodeRepo` 追加方法：`update_connection_status(node_id, is_connected, last_seen)` — 更新连接状态和最后活跃时间；`reset_device_streaming_by_node(node_id)` — 断连级联清理，将该 Node 下所有设备 `streaming=false`。token 存储 SHALL 做 SHA256 hash（存入时 hash，`by_token()` 比对时对输入 hash 后匹配）
+- [ ] 4.2 `VideoDeviceRepo` 追加方法：`upsert(node_id, name)` — 基于 `(node_id, name)` 联合唯一判重，存在跳过、不存在 INSERT；`update_streaming(device_id, streaming: bool)` — 更新推流状态。`AudioDeviceRepo` 追加相同方法
+- [ ] 4.3 `MonitorViewRepo` 追加方法：`count_by_video_id(video_id) -> int` — 引用计数；`count_by_audio_id(audio_id) -> int` — 引用计数。现有 `device_in_use()` 返回 bool，需新增计数版本
 
 ## 5. Network 层 — 迁移与新建
 
@@ -49,13 +50,14 @@
 
 以下接口是 Part B 依赖的，Part A 完成后需要稳定：
 
-| 模块 | 接口 | 说明 |
+| 模块 | 接口（类.方法 形式） | 说明 |
 |------|------|------|
 | `models/*.py` | Node/VideoDevice/AudioDevice/MonitorView 类 | 新字段 + 联合唯一约束就位 |
 | `config.py` | `settings.RTMP_*`, `settings.SRS_*`, `settings.WSS_*` | 所有配置项可用 |
-| `repository/node_repo.py` | `get_all()`, `get_by_id()`, `get_by_token()`, `update_connection_status()`, `reset_device_streaming_by_node(node_id)` — 断连级联清理用 | |
-| `repository/device_repo.py` | `get_videos_by_node()`, `get_audios_by_node()`, `get_device_by_id()`, `upsert_device()`, `update_streaming()` | |
-| `repository/view_repo.py` | `create()`, `delete()`, `get_all()`, `get_by_id()`, `count_by_video_id()`, `count_by_audio_id()` | |
+| `repository/node_repo.py` | `NodeRepo(db).all()`, `.get(id)`, `.by_token(t)`, `.create(**kw)`, `.update_connection_status()`, `.reset_device_streaming_by_node()` | 继承 BaseRepo |
+| `repository/video_device_repo.py` | `VideoDeviceRepo(db).by_node(nid)`, `.get(id)`, `.upsert(nid, name)`, `.update_streaming(id, bool)` | 继承 BaseRepo |
+| `repository/audio_device_repo.py` | `AudioDeviceRepo(db).by_node(nid)`, `.get(id)`, `.upsert(nid, name)`, `.update_streaming(id, bool)` | 继承 BaseRepo |
+| `repository/monitor_view_repo.py` | `MonitorViewRepo(db).create(**kw)`, `.delete(id)`, `.all()`, `.get(id)`, `.count_by_video_id()`, `.count_by_audio_id()` | 继承 BaseRepo |
 | `schema/http/*.py` | NodeResponse, ViewCreateRequest, ViewResponse | Pydantic 模型 |
 | `schema/wss/node_commands.py` | ConnectRequest, ConnectResponse, UpdateStreamRequest, UpdateStreamResponse | 连接握手 + 流控制 |
 | `network/wss/node_handler.py` | `ConnectionRegistry.get()`, `send_command()` | |

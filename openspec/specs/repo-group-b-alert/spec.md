@@ -1,6 +1,6 @@
-## Purpose
+# Repository Group B — Personnel, Alert & Event
 
-提供组 B（人员、告警与事件）的 Repository 层。涵盖命名人物、告警分组、异常定义、响应动作及异常事件的数据访问。
+**Purpose:** 提供组 B（人员、告警与事件）的 Repository 层。涵盖命名人物、告警分组、异常定义、响应动作及异常事件的数据访问，包含 eager load 多对多关联关系的查询方法。
 
 ## Requirements
 
