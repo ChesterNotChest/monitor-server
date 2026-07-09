@@ -8,6 +8,13 @@ pipeline {
 
     parameters {
         booleanParam(name: "DEPLOY_PROD", defaultValue: false, description: "Deploy with docker compose after a successful build")
+        string(name: "HTTP_PORT", defaultValue: "8081", description: "Host port exposed by the nginx container")
+        string(name: "RTMP_PORT", defaultValue: "1935", description: "Host port for RTMP ingest")
+        string(name: "STREAM_HTTP_PORT", defaultValue: "8082", description: "Host port for SRS HTTP/WebRTC access")
+        string(name: "SRS_API_PORT", defaultValue: "1985", description: "Host port for SRS HTTP API")
+        string(name: "SRS_RTC_PORT", defaultValue: "8000", description: "Host UDP port for SRS WebRTC media")
+        string(name: "SRS_CANDIDATE", defaultValue: "10.126.59.25", description: "Public IP or domain returned by SRS for WebRTC")
+        string(name: "MODEL_DIR", defaultValue: "/home/liusu/video/models", description: "Host directory mounted read-only to /app/models")
     }
 
     environment {
@@ -51,7 +58,8 @@ pipeline {
             steps {
                 sh """
                     set -eu
-                    IMAGE_TAG=${BUILD_NUMBER} docker compose -f ${COMPOSE_FILE} up -d --remove-orphans
+                    HOST_WORKSPACE=\$(printf '%s\n' "\$WORKSPACE" | sed 's#^/var/jenkins_home#/home/liusu/jenkins#')
+                    HTTP_PORT=${params.HTTP_PORT} RTMP_PORT=${params.RTMP_PORT} STREAM_HTTP_PORT=${params.STREAM_HTTP_PORT} SRS_API_PORT=${params.SRS_API_PORT} SRS_RTC_PORT=${params.SRS_RTC_PORT} SRS_CANDIDATE=${params.SRS_CANDIDATE} MODEL_DIR=${params.MODEL_DIR} IMAGE_TAG=${BUILD_NUMBER} docker compose --project-directory "\$HOST_WORKSPACE" -f "\$HOST_WORKSPACE/${COMPOSE_FILE}" up -d --remove-orphans
                     docker image prune -f
                 """
             }
