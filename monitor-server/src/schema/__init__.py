@@ -1,1 +1,5 @@
-# Schema 层 —— Pydantic 请求 / 响应模型
+"""Pydantic schema 包。"""
+
+from . import http, wss
+
+__all__ = ["http", "wss"]

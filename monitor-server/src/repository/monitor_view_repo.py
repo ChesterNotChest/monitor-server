@@ -37,3 +37,13 @@ class MonitorViewRepo(BaseRepo[MonitorView]):
         if audio_id is not None:
             query = query.filter(MonitorView.audio_id == audio_id)
         return query.all()
+
+    def count_by_video_id(self, video_id: int) -> int:
+        """查询引用指定视频设备的 View 数量。"""
+
+        return self.db.query(MonitorView).filter(MonitorView.video_id == video_id).count()
+
+    def count_by_audio_id(self, audio_id: int) -> int:
+        """查询引用指定音频设备的 View 数量。"""
+
+        return self.db.query(MonitorView).filter(MonitorView.audio_id == audio_id).count()

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import settings
 from src.constants import API_PREFIX
+from src.service.view_module.ffmpeg_manager import cleanup_all
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -46,7 +47,22 @@ async def print_urls():
     print(f"{'='*60}\n")
 
 
+@app.on_event("shutdown")
+async def shutdown_cleanup():
+    """服务关闭时终止所有 FFmpeg 子进程。"""
+    cleanup_all()
+
+
 # ---- 注册子路由 ----
 from src.network.api.named_person import router as named_person_router
 
 app.include_router(named_person_router)
+
+# ---- 注册 API 路由 ----
+from src.network.api import routers as api_routers
+for router in api_routers:
+    app.include_router(router, prefix=API_PREFIX)
+
+# ---- 注册 WebSocket 端点（Part A 完成后取消注释） ----
+# from src.network.wss.node_handler import router as wss_router
+# app.include_router(wss_router, prefix=API_PREFIX)

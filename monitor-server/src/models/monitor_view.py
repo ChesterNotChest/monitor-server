@@ -15,8 +15,8 @@ class MonitorView(Base):
     video_id: Mapped[int] = mapped_column(
         ForeignKey("video_devices.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    audio_id: Mapped[int | None] = mapped_column(
-        ForeignKey("audio_devices.id", ondelete="SET NULL"), nullable=True, index=True
+    audio_id: Mapped[int] = mapped_column(
+        ForeignKey("audio_devices.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     cache_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -25,7 +25,7 @@ class MonitorView(Base):
 
     # 关联
     video_device: Mapped["VideoDevice"] = relationship("VideoDevice")
-    audio_device: Mapped["AudioDevice | None"] = relationship("AudioDevice")
+    audio_device: Mapped["AudioDevice"] = relationship("AudioDevice")
 
     def __repr__(self) -> str:
         return f"<MonitorView {self.id} (video={self.video_id}, audio={self.audio_id})>"

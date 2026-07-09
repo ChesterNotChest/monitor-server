@@ -21,3 +21,26 @@ class AudioDeviceRepo(BaseRepo[AudioDevice]):
             .filter(AudioDevice.node_id == node_id)
             .all()
         )
+
+    def upsert(self, node_id: int, name: str) -> AudioDevice:
+        """按 (node_id, name) 判重，不存在时插入。"""
+
+        device = (
+            self.db.query(AudioDevice)
+            .filter(AudioDevice.node_id == node_id, AudioDevice.name == name)
+            .first()
+        )
+        if device is not None:
+            return device
+        return self.create(node_id=node_id, name=name)
+
+    def update_streaming(self, device_id: int, streaming: bool) -> AudioDevice | None:
+        """更新设备推流状态。"""
+
+        device = self.get(device_id)
+        if device is None:
+            return None
+        device.streaming = streaming
+        self.db.add(device)
+        self.db.flush()
+        return device
