@@ -96,7 +96,23 @@ docker-compose -f docker-compose.prod.yml up -d
 
 ## 开发约定
 
-- **路由** → `src/api/`，每个模块一个 Router，在 `app.py` 中注册
-- **模型** → `src/models/`，继承 `src.extensions.Base`
-- **业务** → `src/service/`，一个 task 对应一个子包
-- **数据库会话** → `Depends(get_db)` 注入
+### 分层架构（详见 `openspec/specs/`）
+
+| 层 | 目录 | 职责 | 规范 |
+|---|---|---|---|
+| 网络层 | `src/network/api/` | HTTP Router，调 `service/*_task.py` | `network-layer` |
+| | `src/network/wss/` | WebSocket 端点，被 service 调取 | |
+| | `src/network/rtmp/` | RTMP 地址构建 | |
+| 业务层 | `src/service/*_task.py` | 门户函数，编排业务流程 | `service-layer` |
+| | `src/service/*_module/` | 内部逻辑包，一个 task 对应一个 module | |
+| 数据层 | `src/repository/` | BaseRepo 泛型基类，每模型一个 Repo | `repo-base` |
+| 模型层 | `src/models/` | SQLAlchemy 模型，继承 `extensions.Base` | 各 model spec |
+| Schema层 | `src/schema/http/` | REST 请求/响应 → Swagger 自动渲染 | `schema-convention` |
+| | `src/schema/wss/` | WSS 命令协议 → Pydantic + markdown | |
+
+### 代码约定
+
+- 占位文件 SHALL 在顶部包含中文 docstring 说明模块预期职责
+- Router 不直接操作数据库，通过 `service/*_task.py` 调用
+- 数据库会话通过 `db: Session` 参数注入（FastAPI `Depends(get_db)`）
+- `*_task.py` 不持有全局连接，不直接操作网络层
