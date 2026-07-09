@@ -46,6 +46,7 @@ async def print_urls():
     print(f"{'='*60}\n")
 
 
-# ---- 注册子路由（后续按模块扩展） ----
-# from src.api.xxx import router as xxx_router
-# app.include_router(xxx_router, prefix=API_PREFIX)
+# ---- 注册子路由 ----
+from src.network.api.named_person import router as named_person_router
+
+app.include_router(named_person_router)

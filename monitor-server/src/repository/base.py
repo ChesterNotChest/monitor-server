@@ -71,3 +71,14 @@ class BaseRepo(Generic[T]):
         self.db.delete(obj)
         self.db.flush()
         return True
+
+    def update(self, id: int, **kwargs: object) -> T | None:
+        """按主键更新记录。仅更新 kwargs 中非 None 字段，flush 后返回实例；不存在返回 None。"""
+        obj = self.get(id)
+        if obj is None:
+            return None
+        for key, value in kwargs.items():
+            if value is not None:
+                setattr(obj, key, value)
+        self.db.flush()
+        return obj
