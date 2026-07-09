@@ -1,23 +1,55 @@
 # Auth Service
 
-**Purpose:** JWT 签发/验证、密码哈希、登录/注销认证流程。
+## Purpose
+
+Define login, logout, current-user lookup, JWT signing/verification, and
+password hashing behavior for Server authentication.
 
 ## Requirements
 
-### Requirement: 用户登录
-系统 SHALL 提供 `POST /api/v1/auth/login` 端点。接收 `{username, password}`，验证密码后返回 JWT access_token 和用户信息。token 有效期 8 小时，使用 HS256 签名。
+### Requirement: Auth runtime dependencies are declared
 
-#### Scenario: 登录成功
-- **WHEN** 提供正确的 username 和 password
-- **THEN** 返回 `{access_token: "<jwt>", token_type: "bearer", user: {id, username, role}}`
+The system SHALL declare JWT and password hashing runtime dependencies in both
+`requirements.txt` and `environment.yml`. JWT handling SHALL use
+`python-jose[cryptography]`, and password hashing SHALL use `bcrypt`.
 
-#### Scenario: 密码错误
-- **WHEN** 提供错误的 password
-- **THEN** 返回 401
+#### Scenario: Fresh CI image imports auth service
 
-### Requirement: 获取当前用户
-系统 SHALL 提供 `GET /api/v1/auth/me` 端点。从 Authorization header 解析 JWT，返回当前用户信息。
+- **WHEN** Docker CI builds from `requirements.txt`
+- **THEN** importing `src.service.auth_task` succeeds
 
-#### Scenario: 有效 token
-- **WHEN** 携带有效 Authorization: Bearer <token>
-- **THEN** 返回当前用户的 id、username、role
+#### Scenario: Conda development environment imports auth service
+
+- **WHEN** developers update from `environment.yml`
+- **THEN** importing `src.service.auth_task` succeeds
+
+### Requirement: User login
+
+The system SHALL expose `POST /api/v1/auth/login`. The endpoint SHALL accept
+`username` and `password`, verify the password hash, and return a JWT access
+token and user information when authentication succeeds.
+
+#### Scenario: Login succeeds
+
+- **WHEN** valid credentials are provided
+- **THEN** Server returns `access_token`, `token_type`, and `user`
+
+#### Scenario: Login fails
+
+- **WHEN** the password is invalid or the user is inactive
+- **THEN** Server returns 401
+
+### Requirement: Current user lookup
+
+The system SHALL expose `GET /api/v1/auth/me`. The endpoint SHALL parse the
+Authorization bearer token, verify the JWT, and return the current user.
+
+#### Scenario: Valid token
+
+- **WHEN** the request includes a valid `Authorization: Bearer <token>` header
+- **THEN** Server returns the current user's `id`, `username`, and `role`
+
+#### Scenario: Missing or invalid token
+
+- **WHEN** the token is missing or invalid
+- **THEN** Server returns an authentication error
