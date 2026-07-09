@@ -17,7 +17,7 @@
 - [ ] 2.1 `config.py` 新增 RTMP 配置：`RTMP_HOST`、`RTMP_PORT`、`RTMP_DEBUG`
 - [ ] 2.2 `config.py` 新增 SRS 配置：`SRS_RTMP_PORT`、`SRS_HTTP_PORT`、`SRS_HOST`
 - [ ] 2.3 `config.py` 新增 WSS 配置：`WSS_NODE_PORT`、`WSS_NODE_DEBUG`
-- [ ] 2.4 `config.py` 新增 `DEBUG_WEB_STREAM` 开关（预留，本次不实现）
+- [ ] 2.4 `config.py` 新增 `DEBUG_WEB_STREAM` 开关（默认 false）。启用后 FFmpeg 将合并后的 View 流推到本地 Node.js RTMP 靶子（`rtmp://127.0.0.1:1936/view/{view_id}`），而非 SRS。配合 Node 项目已有的 `rtmp_server/index.js`（node-media-server），可用 OBS 直接拉流验证。**本次实现**——启动/停止 RTMP 靶子子进程的逻辑
 - [ ] 2.5 `.env` 添加新配置项的默认值
 
 ## 3. Schema 层
@@ -41,7 +41,7 @@
 - [ ] 5.2 将现有 `src/api/` 内容迁移到 `src/network/api/`，删除 `src/api/`
 - [ ] 5.3 创建 `src/network/wss/node_handler.py`：WebSocket 端点（接收 Node 连接，首条消息校验 token，查该 Node 下已有设备列表，返回 `ConnectResponse{session_token, videos, audios}`）、ConnectionRegistry 类（内存 `{node_id: WebSocket}` 映射）、`send_command()` 异步方法（向指定 Node 发 JSON 命令并等响应）、**断连回调中级联清理**：更新 Node `is_connected=false` + 该 Node 下所有设备 `streaming=false` + 从 registry 移除
 - [ ] 5.4 创建 `src/network/rtmp/puller.py`：`build_pull_url(device_name, device_type, device_id)` 地址构建函数，格式 `rtmp://{host}:{port}/live/{device_name}_{device_type}_{device_id}`
-- [ ] 5.5 创建 `src/network/rtmp/pusher.py`：`build_push_url(view_id)` 和 `build_play_urls(view_id)` 地址构建函数
+- [ ] 5.5 创建 `src/network/rtmp/pusher.py`：`build_push_url(view_id)` — 生产推 SRS `rtmp://{host}:{srs_port}/view/{id}`；`DEBUG_WEB_STREAM=true` 时推本地靶子 `rtmp://127.0.0.1:1936/view/{id}`。`build_play_urls(view_id)` — 生产返回 SRS HTTP-FLV/WebRTC 地址，debug 模式返回本地 RTMP 地址供 OBS 使用
 
 ---
 

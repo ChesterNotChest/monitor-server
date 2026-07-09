@@ -32,7 +32,7 @@
   - `check_and_start_stream(db, device_type, device_id)` — 先通过 device_repo 查设备获取 `node_id`，再查引用计数（=0 表示无 View 在用）→ 0 则发 `UPDATE_STREAM {device_type, device_id, enable=true}` + update_streaming(True) → 返回 True；>0 → 返回 False。Node 侧通过连接握手时的映射表反查 device_name
   - `check_and_stop_stream(db, device_type, device_id)` — 先查设备获取 `node_id`，删除后查引用计数（=0 表示无 View 在用）→ 0 则发 `UPDATE_STREAM {device_type, device_id, enable=false}` + update_streaming(False) → 返回 True；>0 → 返回 False
 - [ ] 9.4 `ffmpeg_manager.py` 实现：
-  - `start_merge(view_id, video_id, audio_id)` — 内部通过 device_repo 查设备获取 `name`，按 `{name}_{type}_{id}` 格式构建 RTMP 拉流地址，用 `asyncio.create_subprocess_exec` 启动 FFmpeg 合并+推流
+  - `start_merge(view_id, video_id, audio_id)` — 内部通过 device_repo 查设备，构建 RTMP 拉流地址，推流目标由 `pusher.build_push_url(view_id)` 决定（生产→SRS，debug→本地靶子 `rtmp://127.0.0.1:1936/view/{view_id}`），用 `asyncio.create_subprocess_exec` 启动 FFmpeg 合并+推流
   - `stop_merge(view_id)` — SIGTERM 终止，失败时仅记日志不抛异常
   - `active_processes` 字典（`{view_id: subprocess}`）
   - `cleanup_all()` — atexit 注册，遍历终止所有
@@ -60,70 +60,75 @@
 - [ ] 10.2 创建 `src/network/api/view_router.py`：`POST /api/v1/views`、`GET /api/v1/views`、`GET /api/v1/views/{view_id}`、`DELETE /api/v1/views/{view_id}`
 - [ ] 10.3 创建 `src/network/api/__init__.py` 汇总所有 Router
 
-## 11. 包初始化更新
+## 11. DEBUG_WEB_STREAM 本地靶子
 
-- [ ] 11.1 更新 `src/service/__init__.py`：导入 `node_task`、`node_stream_task`、`view_task`
+- [ ] 11.1 创建 `tools/rtmp_debug_server.js`：基于 node-media-server，监听 `rtmp://127.0.0.1:1936/live`，接受 Server 推来的合并 View 流，可供 OBS 拉流测试。复用 Node 项目 `rtmp_server/index.js` 的模式，改端口避免与 Node 的 STREAM_DEBUG 用 `1935` 冲突
+- [ ] 11.2 `ffmpeg_manager.py` 的 debug 模式：`DEBUG_WEB_STREAM=true` 时，`start_merge` 推流到 `rtmp://127.0.0.1:1936/view/{view_id}`；`stop_merge` 正常终止；`build_play_urls` 返回 `rtmp://127.0.0.1:1936/view/{view_id}` 供 OBS 使用
 
-## 12. App 集成
+## 12. 包初始化更新
 
-- [ ] 13.1 更新 `src/app.py`：导入 `src/network/api/` 的汇总 Router 并 `include_router`、导入 `src/network/wss/node_handler.py` 的 WebSocket 端点并注册、注册 `atexit` 清理回调（终止所有 FFmpeg 子进程）
-- [ ] 13.2 更新 `src/models/__init__.py` 确保 `Base.metadata.create_all` 覆盖所有新字段 + 联合唯一约束（与 Part A 1.5 协调）
-- [ ] 13.3 更新 README.md 目录结构说明，反映 `src/network/` 三层架构
+- [ ] 12.1 更新 `src/service/__init__.py`：导入 `node_task`、`node_stream_task`、`view_task`
 
-## 13. 测试
+## 13. App 集成
 
-### 13.1 模型层
+- [ ] 14.1 更新 `src/app.py`：导入 `src/network/api/` 的汇总 Router 并 `include_router`、导入 `src/network/wss/node_handler.py` 的 WebSocket 端点并注册、注册 `atexit` 清理回调（终止所有 FFmpeg 子进程）
+- [ ] 14.2 更新 `src/models/__init__.py` 确保 `Base.metadata.create_all` 覆盖所有新字段 + 联合唯一约束（与 Part A 1.5 协调）
+- [ ] 14.3 更新 README.md 目录结构说明，反映 `src/network/` 三层架构
 
-- [ ] 13.1.1 创建 Node → 验证 `is_connected` 默认 false、`last_seen` 默认 NULL
-- [ ] 13.1.2 创建 VideoDevice → 验证 `streaming` 默认 false
-- [ ] 13.1.3 创建 AudioDevice → 验证 `streaming` 默认 false
-- [ ] 13.1.4 同一 node 下重名 VideoDevice → 验证联合唯一约束拒绝
-- [ ] 13.1.5 不同 node 下同名 VideoDevice → 验证成功插入（联合唯一不跨 node）
-- [ ] 13.1.6 MonitorView 插入时 `audio_id=NULL` → 验证 non-nullable 约束拒绝
+## 14. 测试
 
-### 13.2 Repository 层
+### 14.1 模型层
 
-- [ ] 13.2.1 `node_repo.get_by_token("valid")` → 返回 Node
-- [ ] 13.2.2 `node_repo.get_by_token("invalid")` → 返回 None
-- [ ] 13.2.3 `node_repo.update_connection_status(...)` → 验证 `is_connected` / `last_seen` 更新
-- [ ] 13.2.4 `device_repo.upsert_device` 新设备 → INSERT 成功
-- [ ] 13.2.5 `device_repo.upsert_device` 已有设备（同 node_id + name）→ 不重复 INSERT
-- [ ] 13.2.6 `view_repo.create` + `count_by_video_id` → 引用计数为 1
-- [ ] 13.2.7 创建第二个 View 引用同一 video → 引用计数为 2
-- [ ] 13.2.8 `view_repo.delete` 后查计数 → 归零
+- [ ] 14.1.1 创建 Node → 验证 `is_connected` 默认 false、`last_seen` 默认 NULL
+- [ ] 14.1.2 创建 VideoDevice → 验证 `streaming` 默认 false
+- [ ] 14.1.3 创建 AudioDevice → 验证 `streaming` 默认 false
+- [ ] 14.1.4 同一 node 下重名 VideoDevice → 验证联合唯一约束拒绝
+- [ ] 14.1.5 不同 node 下同名 VideoDevice → 验证成功插入（联合唯一不跨 node）
+- [ ] 14.1.6 MonitorView 插入时 `audio_id=NULL` → 验证 non-nullable 约束拒绝
 
-### 13.3 Schema 层
+### 14.2 Repository 层
 
-- [ ] 13.3.1 `ConnectRequest(token="abc")` → 序列化验证通过
-- [ ] 13.3.2 `ConnectResponse` 反序列化 → 正确解析 `session_token`、`videos`、`audios` 字段
-- [ ] 13.3.3 `ViewCreateRequest(audio_id=1, video_id=1)` → 校验通过
-- [ ] 13.3.4 `ViewCreateRequest(audio_id=None, video_id=1)` → 校验失败
-- [ ] 13.3.5 `UpdateStreamRequest` 序列化 → JSON 格式符合 `{command, device_type, device_id, enable}`
+- [ ] 14.2.1 `node_repo.get_by_token("valid")` → 返回 Node
+- [ ] 14.2.2 `node_repo.get_by_token("invalid")` → 返回 None
+- [ ] 14.2.3 `node_repo.update_connection_status(...)` → 验证 `is_connected` / `last_seen` 更新
+- [ ] 14.2.4 `device_repo.upsert_device` 新设备 → INSERT 成功
+- [ ] 14.2.5 `device_repo.upsert_device` 已有设备（同 node_id + name）→ 不重复 INSERT
+- [ ] 14.2.6 `view_repo.create` + `count_by_video_id` → 引用计数为 1
+- [ ] 14.2.7 创建第二个 View 引用同一 video → 引用计数为 2
+- [ ] 14.2.8 `view_repo.delete` 后查计数 → 归零
 
-### 13.4 ConnectionRegistry + 断连级联
+### 14.3 Schema 层
 
-- [ ] 13.4.1 `register(node_id, mock_ws)` → `get(node_id)` 返回 mock_ws
-- [ ] 13.4.2 `unregister(node_id)` → `get(node_id)` 返回 None
-- [ ] 13.4.3 `is_online` 正确反映注册状态
-- [ ] 13.4.4 `send_command` 目标离线 → 抛出 NodeOfflineError
-- [ ] 13.4.5 `send_command` 成功 → 发送 JSON 并返回解析后的 Response
-- [ ] 13.4.6 Node 断连 → 验证级联清理：`is_connected=false` + 该 Node 下所有设备 `streaming=false`
+- [ ] 14.3.1 `ConnectRequest(token="abc")` → 序列化验证通过
+- [ ] 14.3.2 `ConnectResponse` 反序列化 → 正确解析 `session_token`、`videos`、`audios` 字段
+- [ ] 14.3.3 `ViewCreateRequest(audio_id=1, video_id=1)` → 校验通过
+- [ ] 14.3.4 `ViewCreateRequest(audio_id=None, video_id=1)` → 校验失败
+- [ ] 14.3.5 `UpdateStreamRequest` 序列化 → JSON 格式符合 `{command, device_type, device_id, enable}`
 
-### 13.5 引用计数逻辑 (lifecycle)
+### 14.4 ConnectionRegistry + 断连级联
 
-- [ ] 13.5.1 `check_and_start_stream` 计数=0 → 调 send_command + update_streaming(True)，返回 True
-- [ ] 13.5.2 `check_and_start_stream` 计数>0 → 不调 send_command，返回 False
-- [ ] 13.5.3 `check_and_stop_stream` 计数=0 → 调 send_command + update_streaming(False)，返回 True
-- [ ] 13.5.4 `check_and_stop_stream` 计数>0 → 不调 send_command，返回 False
+- [ ] 14.4.1 `register(node_id, mock_ws)` → `get(node_id)` 返回 mock_ws
+- [ ] 14.4.2 `unregister(node_id)` → `get(node_id)` 返回 None
+- [ ] 14.4.3 `is_online` 正确反映注册状态
+- [ ] 14.4.4 `send_command` 目标离线 → 抛出 NodeOfflineError
+- [ ] 14.4.5 `send_command` 成功 → 发送 JSON 并返回解析后的 Response
+- [ ] 14.4.6 Node 断连 → 验证级联清理：`is_connected=false` + 该 Node 下所有设备 `streaming=false`
 
-### 13.6 集成测试（端到端，需 mock WSS + SRS）
+### 14.5 引用计数逻辑 (lifecycle)
 
-- [ ] 13.6.1 `POST /views`（新设备）→ 200, warnings=[], srs_urls 非空
-- [ ] 13.6.2 `POST /views`（流已被占用）→ 200, warnings 非空
-- [ ] 13.6.3 `POST /views`（设备不存在）→ 404
-- [ ] 13.6.4 `DELETE /views`（最后一个引用）→ 200, DB 记录已删除, FFmpeg 进程已终止
-- [ ] 13.6.5 `DELETE /views`（仍有其他 View 引用同一设备）→ 200, 不发送 UPDATE_STREAM=false
-- [ ] 13.6.6 `GET /nodes` → 返回列表含 `is_connected`、`last_seen` 字段
+- [ ] 14.5.1 `check_and_start_stream` 计数=0 → 调 send_command + update_streaming(True)，返回 True
+- [ ] 14.5.2 `check_and_start_stream` 计数>0 → 不调 send_command，返回 False
+- [ ] 14.5.3 `check_and_stop_stream` 计数=0 → 调 send_command + update_streaming(False)，返回 True
+- [ ] 14.5.4 `check_and_stop_stream` 计数>0 → 不调 send_command，返回 False
+
+### 14.6 集成测试（端到端，需 mock WSS + SRS）
+
+- [ ] 14.6.1 `POST /views`（新设备）→ 200, warnings=[], srs_urls 非空
+- [ ] 14.6.2 `POST /views`（流已被占用）→ 200, warnings 非空
+- [ ] 14.6.3 `POST /views`（设备不存在）→ 404
+- [ ] 14.6.4 `DELETE /views`（最后一个引用）→ 200, DB 记录已删除, FFmpeg 进程已终止
+- [ ] 14.6.5 `DELETE /views`（仍有其他 View 引用同一设备）→ 200, 不发送 UPDATE_STREAM=false
+- [ ] 14.6.6 `GET /nodes` → 返回列表含 `is_connected`、`last_seen` 字段
 
 ---
 
