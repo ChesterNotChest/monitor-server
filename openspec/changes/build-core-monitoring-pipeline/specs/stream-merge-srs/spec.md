@@ -1,3 +1,23 @@
+# RTMP Readiness Delta
+
+## ADDED Requirements
+
+### Requirement: RTMP readiness is verified by Server-side probes
+
+Before spawning the merge FFmpeg process, Server SHALL verify that both raw
+RTMP inputs for the selected video and audio devices are reachable. Readiness
+checking SHALL use Server-side RTMP probes rather than repeated WSS status
+queries. The wait SHALL be bounded so API calls do not block indefinitely.
+
+The total wait timeout, per-probe timeout, and retry interval SHALL be
+configurable.
+
+#### Scenario: Configurable probe windows
+
+- **WHEN** `STREAM_READY_TIMEOUT=30`, `STREAM_PROBE_TIMEOUT=8`, and `STREAM_READY_INTERVAL=1`
+- **THEN** Server keeps retrying raw RTMP probes until both inputs are reachable or the total timeout expires
+- **AND** each ffprobe attempt is bounded by the configured probe timeout and remaining total time
+
 # Stream Merge & SRS
 
 **Purpose:** Server 从 SRS 拉取 raw audio+video 流，FFmpeg 合并后推回 SRS，供前端播放。
@@ -63,3 +83,21 @@
 
 - **WHEN** `SRS_HOST=10.126.59.25`，`SRS_HTTP_PORT=8082`，`view_id=1`
 - **THEN** 返回 `flv_url: "http://10.126.59.25:8082/live/view_1.flv"` 和 `webrtc_url: "webrtc://10.126.59.25:8082/live/view_1"`
+
+### Requirement: Merge waits for raw RTMP inputs
+
+Before spawning the merge FFmpeg process, Server SHALL verify that both raw
+RTMP inputs for the selected video and audio devices are reachable. The wait
+SHALL be bounded so API calls do not block indefinitely.
+
+#### Scenario: Raw streams become available
+
+- **WHEN** Node accepts `UPDATE_STREAM=true` and publishes raw audio/video RTMP streams
+- **THEN** Server waits until both pull URLs are reachable
+- **AND** Server starts the merge FFmpeg process after the inputs are available
+
+#### Scenario: Raw streams do not become available before timeout
+
+- **WHEN** raw audio or video RTMP input remains unreachable until the timeout
+- **THEN** Server SHALL NOT start the merge FFmpeg process
+- **AND** Server SHALL return the created View with a warning describing the unavailable inputs

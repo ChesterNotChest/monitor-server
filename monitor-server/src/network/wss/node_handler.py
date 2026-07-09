@@ -1,5 +1,7 @@
 """Node WebSocket 连接处理与命令发送。"""
 
+import asyncio
+from collections import deque
 from secrets import token_urlsafe
 from typing import Any
 
@@ -27,12 +29,25 @@ class ConnectionRegistry:
 
     def __init__(self) -> None:
         self._connections: dict[int, WebSocket] = {}
+        self._loops: dict[int, asyncio.AbstractEventLoop] = {}
+        self._locks: dict[int, asyncio.Lock] = {}
+        self._pending_responses: dict[int, deque[asyncio.Future[dict[str, Any]]]] = {}
 
     def register(self, node_id: int, websocket: WebSocket) -> None:
         self._connections[node_id] = websocket
+        self._loops[node_id] = asyncio.get_running_loop()
+        self._locks[node_id] = asyncio.Lock()
+        self._pending_responses[node_id] = deque()
 
     def unregister(self, node_id: int) -> None:
         self._connections.pop(node_id, None)
+        self._loops.pop(node_id, None)
+        self._locks.pop(node_id, None)
+        pending = self._pending_responses.pop(node_id, deque())
+        while pending:
+            future = pending.popleft()
+            if not future.done():
+                future.set_exception(NodeOfflineError(f"Node {node_id} is offline"))
 
     def get(self, node_id: int) -> WebSocket | None:
         return self._connections.get(node_id)
@@ -43,13 +58,71 @@ class ConnectionRegistry:
     async def send_command(
         self, node_id: int, request: UpdateStreamRequest
     ) -> UpdateStreamResponse:
-        websocket = self.get(node_id)
-        if websocket is None:
+        loop = self._loops.get(node_id)
+        if loop is None:
             raise NodeOfflineError(f"Node {node_id} is offline")
 
-        await websocket.send_json(request.model_dump())
-        payload = await websocket.receive_json()
-        return UpdateStreamResponse.model_validate(payload)
+        if loop is asyncio.get_running_loop():
+            return await self._send_command_on_owner_loop(node_id, request)
+
+        future = asyncio.run_coroutine_threadsafe(
+            self._send_command_on_owner_loop(node_id, request),
+            loop,
+        )
+        return await asyncio.wrap_future(future)
+
+    async def _send_command_on_owner_loop(
+        self, node_id: int, request: UpdateStreamRequest
+    ) -> UpdateStreamResponse:
+        websocket = self.get(node_id)
+        lock = self._locks.get(node_id)
+        if websocket is None or lock is None:
+            raise NodeOfflineError(f"Node {node_id} is offline")
+
+        async with lock:
+            future = asyncio.get_running_loop().create_future()
+            self._pending_responses.setdefault(node_id, deque()).append(future)
+            try:
+                await websocket.send_json(request.model_dump())
+                payload = await asyncio.wait_for(future, timeout=30)
+            except WebSocketDisconnect as exc:
+                self.unregister(node_id)
+                raise NodeOfflineError(f"Node {node_id} is offline") from exc
+            except asyncio.TimeoutError as exc:
+                pending = self._pending_responses.get(node_id)
+                if pending is not None:
+                    try:
+                        pending.remove(future)
+                    except ValueError:
+                        pass
+                raise TimeoutError(f"Timed out waiting for Node {node_id} response") from exc
+            return UpdateStreamResponse.model_validate(payload)
+
+    def dispatch_inbound_message(self, node_id: int, payload: dict[str, Any]) -> bool:
+        """Classify inbound Node messages and route command responses.
+
+        Returns True when the message was consumed by the registry. Heartbeat
+        messages are intentionally handled by the caller so it can update DB
+        state using its request-scoped session.
+        """
+        message_type = payload.get("type")
+        if message_type == "heartbeat":
+            return False
+
+        is_command_response = (
+            message_type == "update_stream_response" or "success" in payload
+        )
+        if not is_command_response:
+            return False
+
+        pending = self._pending_responses.get(node_id)
+        if not pending:
+            return True
+
+        future = pending.popleft()
+        if not future.done():
+            future.set_result(payload)
+        return True
 
 
 registry = ConnectionRegistry()
@@ -96,7 +169,11 @@ async def handle_node_websocket(websocket: WebSocket, db: Session) -> None:
         await websocket.send_json(response.model_dump())
 
         while True:
-            await websocket.receive_text()
+            inbound_payload: dict[str, Any] = await websocket.receive_json()
+            if inbound_payload.get("type") == "heartbeat":
+                node_repo.update_connection_status(db, node_id, True)
+                continue
+            registry.dispatch_inbound_message(node_id, inbound_payload)
     except (WebSocketDisconnect, ValidationError):
         pass
     finally:

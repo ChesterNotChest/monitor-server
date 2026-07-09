@@ -1,51 +1,80 @@
 # Schema Convention
 
-**Purpose:** 定义 `src/schema/` 的目录结构与 HTTP / WSS 协议模型的分家规则。
+## Purpose
+
+Define how `src/schema/` is organized for HTTP and WSS protocol models, and
+keep FastAPI/OpenAPI behavior aligned with declared runtime dependencies.
 
 ## Requirements
 
-### Requirement: Schema 层分家
+### Requirement: Schema modules are split by protocol
 
-`src/schema/` SHALL 按通信协议分为两个子包：`schema/http/`（REST 请求/响应模型）和 `schema/wss/`（WSS 命令协议模型）。两者的受众和文档化方式不同，SHALL 分开管理。
+`src/schema/` SHALL be split into `schema/http/` for REST request/response
+models and `schema/wss/` for WebSocket command models. HTTP and WSS schemas
+SHALL be maintained independently because their consumers and documentation
+mechanisms differ.
 
-#### Scenario: 目录结构
+#### Scenario: Schema directory layout
 
-- **WHEN** 查看 `src/schema/` 目录
-- **THEN** 包含 `http/` 和 `wss/` 两个子包，各含 `__init__.py`
+- **WHEN** developers inspect `src/schema/`
+- **THEN** it contains separate `http/` and `wss/` packages
+- **AND** each package contains its own `__init__.py`
 
-### Requirement: HTTP Schema — Swagger 自动渲染
+### Requirement: HTTP schemas render in Swagger
 
-`schema/http/` 中的 Pydantic 模型 SHALL 用作 FastAPI Router 的 `response_model` 和请求体参数。这些模型 SHALL 被 OpenAPI 自动渲染到 Swagger UI（`/docs`）——包括字段名、类型、必选/可选标记、示例值。
+Pydantic models under `schema/http/` SHALL be used as FastAPI router request
+body parameters and `response_model` declarations. These models SHALL be
+rendered automatically in Swagger UI at `/docs`, including field names, types,
+and required/optional markers.
 
-#### Scenario: REST 接口模型在 Swagger 中可见
+#### Scenario: REST schema is visible in Swagger
 
-- **WHEN** 前端开发者打开 `/docs`
-- **THEN** 每个 REST 端点的 Request Body 和 Response Schema SHALL 自动展示字段结构，无需额外文档
+- **WHEN** a frontend developer opens `/docs`
+- **THEN** REST request bodies and response schemas are visible without
+  separate manual API documentation
 
-#### Scenario: 新增 REST 接口
+#### Scenario: View creation request body
 
-- **WHEN** 开发者在 `schema/http/view_schema.py` 中定义 `ViewCreateRequest` 和 `ViewResponse`
-- **THEN** 在 Router 中引用后，Swagger UI 自动反映最新字段定义
+- **WHEN** `ViewCreateRequest` is used by the `POST /api/v1/views` router
+- **THEN** Swagger shows `audio_id` and `video_id` as JSON request body fields
 
-### Requirement: WSS Schema — Pydantic 校验 + 手写文档
+### Requirement: Multipart REST dependencies are declared
 
-`schema/wss/` 中的 Pydantic 模型 SHALL 定义 Node 与 Server 之间的 WebSocket 消息格式。这些模型 SHALL 在代码中用于消息的序列化与反序列化校验（`model_validate()` / `model_dump()`），但 SHALL NOT 被 OpenAPI 自动文档化——WebSocket 消息级协议不在 OpenAPI 规范范围内。
+The system SHALL declare the `python-multipart` runtime dependency in both
+`requirements.txt` and `environment.yml` whenever FastAPI routes use multipart
+form handling, including `File` and `UploadFile` parameters. This keeps Docker
+CI builds and Conda development environments aligned with OpenAPI route
+registration.
 
-#### Scenario: WSS 协议文档独立维护
+#### Scenario: Avatar upload route is imported in CI
 
-- **WHEN** 需要查阅 Server ↔ Node 的 WSS 消息格式
-- **THEN** 开发者查看 `src/schema/wss/node_commands.py` 中的 Pydantic 模型定义及配套 markdown 文档，而非 Swagger UI
+- **WHEN** a REST router defines an avatar or file upload endpoint with
+  `UploadFile`
+- **THEN** application import during pytest collection succeeds in a fresh
+  Docker image built from `requirements.txt`
 
-#### Scenario: 新增加密/签名增强
+### Requirement: WSS schemas use Pydantic and manual protocol docs
 
-- **WHEN** 后续引入公私钥签名后 WSS 消息格式需要变更
-- **THEN** 仅修改 `schema/wss/` 下的模型，`schema/http/` 不受影响
+Pydantic models under `schema/wss/` SHALL define WebSocket message formats
+between Server and Node. These models SHALL be used for serialization and
+deserialization validation in code, but SHALL NOT rely on OpenAPI for message
+level documentation because WebSocket command payloads are outside the REST
+OpenAPI surface.
 
-### Requirement: 跨协议模型不混用
+#### Scenario: WSS protocol lookup
 
-`schema/http/` 和 `schema/wss/` 中的模型 SHALL 各自独立，不互相引用。如果一个数据结构同时出现在 REST 和 WSS 中（如设备信息），SHALL 在两侧各自定义，保持解耦。
+- **WHEN** developers need the Server-to-Node WSS message format
+- **THEN** they inspect `src/schema/wss/node_commands.py` and the paired
+  markdown/OpenSpec documentation
 
-#### Scenario: 设备信息在两处出现
+### Requirement: Cross-protocol models are not shared
 
-- **WHEN** REST API（`GET /nodes/{id}/videos`）和 WSS 响应（`get_devices_response`）都返回设备信息
-- **THEN** `schema/http/` 和 `schema/wss/` 各定义一个设备模型，不共享引用——两边的字段需求可能随时间分化
+HTTP and WSS schema packages SHALL not import each other's protocol models.
+If a concept appears in both REST and WSS, each protocol SHALL define its own
+model so the field sets can evolve independently.
+
+#### Scenario: Device information appears in REST and WSS
+
+- **WHEN** REST `GET /nodes/{id}/videos` and WSS `get_devices_response` both
+  return device information
+- **THEN** `schema/http/` and `schema/wss/` each define their own device model
