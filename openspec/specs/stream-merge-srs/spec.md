@@ -7,6 +7,24 @@ FFmpeg, and publishes the merged View stream back to SRS for Web playback.
 
 ## Requirements
 
+### Requirement: RTMP readiness is verified by Server-side probes
+
+Before spawning the merge FFmpeg process, Server SHALL verify that both raw
+RTMP inputs for the selected video and audio devices are reachable. Readiness
+checking SHALL use Server-side RTMP probes rather than repeated WSS status
+queries. The wait SHALL be bounded so API calls do not block indefinitely.
+
+The total wait timeout, per-probe timeout, and retry interval SHALL be
+configurable.
+
+#### Scenario: Configurable probe windows
+
+- **WHEN** `STREAM_READY_TIMEOUT=30`, `STREAM_PROBE_TIMEOUT=8`, and `STREAM_READY_INTERVAL=1`
+- **THEN** Server keeps retrying raw RTMP probes until both inputs are reachable or the total timeout expires
+- **AND** each ffprobe attempt is bounded by the configured probe timeout and remaining total time
+
+## Requirements
+
 ### Requirement: Server pulls raw streams using the shared normalized stream name
 
 Server SHALL build raw RTMP pull URLs with the same stream naming rule used by
