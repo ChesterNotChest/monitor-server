@@ -1,3 +1,24 @@
+## Test Quality Addendum
+
+### Requirement: Empty placeholder tests are not kept as passing tests
+
+The test suite SHALL NOT keep placeholder test files whose test bodies only
+contain `pass` or comments. Placeholder plans MAY live in OpenSpec tasks or
+`_test.md` notes, but pytest-discovered files SHALL contain executable
+assertions or be removed.
+
+#### Scenario: Placeholder integration tests become obsolete
+
+- **WHEN** concrete tests such as `test_view_runtime_hardening.py` and
+  `test_wss_app_integration.py` cover the intended behavior
+- **THEN** older placeholder files with empty `pass` tests are removed from
+  `src/tests`
+
+#### Scenario: pytest result quality
+
+- **WHEN** CI reports passed test counts
+- **THEN** the count reflects executable assertions rather than empty stubs
+
 ## ADDED Requirements
 
 ### Requirement: 测试目录镜像源码结构

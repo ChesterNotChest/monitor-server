@@ -7,15 +7,20 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from src.extensions import get_db
+from src.schema.http import ViewCreateRequest
 from src.service import view_task
 
 router = APIRouter(prefix="/views", tags=["views"])
 
 
 @router.post("/")
-def create_view(audio_id: int, video_id: int, db: Session = Depends(get_db)):
+def create_view(request: ViewCreateRequest, db: Session = Depends(get_db)):
     """POST /api/v1/views — 创建监控视图，启动 FFmpeg 合流。"""
-    result = view_task.create_view(db, audio_id=audio_id, video_id=video_id)
+    result = view_task.create_view(
+        db,
+        audio_id=request.audio_id,
+        video_id=request.video_id,
+    )
     if result is None:
         raise HTTPException(status_code=404, detail="Device not found")
     return result

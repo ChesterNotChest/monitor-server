@@ -4,6 +4,19 @@
 
 ## Requirements
 
+### Requirement: WSS remains a bounded control plane
+
+Server SHALL use WSS for bounded Node control commands only. Stream start and
+stop SHALL be represented by `UPDATE_STREAM` commands. Stream readiness SHALL
+NOT be determined by repeatedly polling Node over WSS.
+
+#### Scenario: UPDATE_STREAM start command
+
+- **WHEN** Server needs a raw device stream for a View
+- **THEN** Server sends one `UPDATE_STREAM enable=true` command to the Node
+- **AND** Server waits for the bounded command response only
+- **AND** Server verifies actual readiness by probing RTMP pull URLs
+
 ### Requirement: 推流引用计数查询
 系统 SHALL 在创建或删除 View 时实时查询 `monitor_views` 表，计算指定 audio 设备或 video 设备的当前引用计数。引用计数定义为 `SELECT COUNT(*) FROM monitor_views WHERE video_id = ?` 或 `audio_id = ?`。
 

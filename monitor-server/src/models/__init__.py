@@ -14,14 +14,12 @@ from .entity_type import EntityType
 from .action_type import ActionType
 from .sound_type import SoundType
 from .named_person import NamedPerson
-from .face_recognition_result import FaceRecognitionResult
 from .alert_group import AlertGroup
 from .exception import ExceptionDef, exception_entities, exception_actions, exception_sounds
 from .response_action import ResponseAction, alert_group_responses
 from .situation_event import SituationEvent
+from .alert_review import AlertReview
 from .user import User
-from .log_entry import LogEntry
-from .recording import Recording
 
 __all__ = [
     "Node",
@@ -33,7 +31,6 @@ __all__ = [
     "ActionType",
     "SoundType",
     "NamedPerson",
-    "FaceRecognitionResult",
     "AlertGroup",
     "ExceptionDef",
     "exception_entities",
@@ -42,7 +39,6 @@ __all__ = [
     "ResponseAction",
     "alert_group_responses",
     "SituationEvent",
+    "AlertReview",
     "User",
-    "LogEntry",
-    "Recording",
 ]

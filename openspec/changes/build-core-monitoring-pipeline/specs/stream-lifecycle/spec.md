@@ -1,3 +1,20 @@
+# Control Plane Delta
+
+## ADDED Requirements
+
+### Requirement: WSS remains a bounded control plane
+
+Server SHALL use WSS for bounded Node control commands only. Stream start and
+stop SHALL be represented by `UPDATE_STREAM` commands. Stream readiness SHALL
+NOT be determined by repeatedly polling Node over WSS.
+
+#### Scenario: UPDATE_STREAM start command
+
+- **WHEN** Server needs a raw device stream for a View
+- **THEN** Server sends one `UPDATE_STREAM enable=true` command to the Node
+- **AND** Server waits for the bounded command response only
+- **AND** Server verifies actual readiness by probing RTMP pull URLs
+
 # Stream Lifecycle
 
 **Purpose:** 基于 View 引用计数的推流启停逻辑，通过 WSS 向 Node 发送 UPDATE_STREAM 命令。

@@ -46,6 +46,11 @@ logs/
 # ===== 人脸图片存储 =====
 face_images/
 
-# ===== 第三方 =====
+# ===== Node.js =====
+node_modules/
+*.tsbuildinfo
+
+# ===== 第三方模型权重 =====
 monitor-server/src/third-party/*
 !monitor-server/src/third-party/.gitkeep
+!monitor-server/src/third-party/download_weights.py

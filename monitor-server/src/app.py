@@ -46,6 +46,12 @@ async def print_urls():
     print(f"  Health Check: http://{host}:{port}/health")
     print(f"{'='*60}\n")
 
+    from src.seed import seed_admin
+    try:
+        seed_admin()
+    except Exception:
+        pass  # 非致命：种子失败不阻止应用启动（如测试环境 DB 尚未建表）
+
 
 @app.on_event("shutdown")
 async def shutdown_cleanup():
@@ -63,6 +69,8 @@ from src.network.api import routers as api_routers
 for router in api_routers:
     app.include_router(router, prefix=API_PREFIX)
 
-# ---- 注册 WebSocket 端点（Part A 完成后取消注释） ----
-# from src.network.wss.node_handler import router as wss_router
-# app.include_router(wss_router, prefix=API_PREFIX)
+# ---- 注册 Node WebSocket 端点 ----
+from src.network.wss.node_handler import node_websocket_endpoint
+
+app.add_api_websocket_route("/ws", node_websocket_endpoint)
+app.add_api_websocket_route(f"{API_PREFIX}/ws", node_websocket_endpoint)

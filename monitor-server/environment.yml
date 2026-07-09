@@ -1,0 +1,35 @@
+name: monitor-server
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - ffmpeg>=7.0          # Server-side audio/video stream merge
+  - nodejs>=20           # Local RTMP target for DEBUG_WEB_STREAM
+  - pip
+  # --- AI / CV 模型（conda 装 dlib，其余 pip） ---
+  - conda-forge::dlib>=19.24     # HOG / CNN 人脸检测 — Windows 必须 conda 装
+  - pip:
+    # 核心监控
+    - fastapi>=0.110.0
+    - uvicorn[standard]>=0.29.0
+    - sqlalchemy>=2.0.0
+    - pydantic-settings>=2.0.0
+    - python-multipart>=0.0.9
+    - pytest>=8.0.0
+    - pytest-asyncio>=0.23.0
+    - httpx>=0.27.0
+    - python-jose[cryptography]>=3.3.0
+    - bcrypt>=4.0.0
+    # AI / CV 模型（dlib 已在 conda 层安装）
+    # face_recognition>=1.3.0 需 dlib 预装，pip 不认 conda 包，在 README 中用 --no-deps 单独装 face_recognition_models + face_recognition
+    - ultralytics>=8.3.0           # YOLO11 — 目标检测 / 跟踪 / 分割
+    - opencv-python-headless>=4.10 # OpenCV headless — 帧解码 / 预处理
+    - torch>=2.0.0                 # PyTorch — 深度学习运行时
+    - torchaudio>=2.1.0            # 音频预处理
+    - tensorflow-hub>=0.16.0       # YAMNet AudioSet 521 类音频分类
+    - tensorflow>=2.16.0           # YAMNet 运行时
+    - torchvision>=0.16.0          # 图像预处理 & 模型工具
+    - pytorchvideo>=0.1.5          # Meta 官方 — SlowFast Kinetics-400 预训练
+    - setuptools<70                # face_recognition_models 需要 pkg_resources
+
