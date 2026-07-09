@@ -14,6 +14,7 @@ pipeline {
         string(name: "SRS_API_PORT", defaultValue: "1985", description: "Host port for SRS HTTP API")
         string(name: "SRS_RTC_PORT", defaultValue: "8000", description: "Host UDP port for SRS WebRTC media")
         string(name: "SRS_CANDIDATE", defaultValue: "10.126.59.25", description: "Public IP or domain returned by SRS for WebRTC")
+        string(name: "SRS_PUBLIC_HOST", defaultValue: "10.126.59.25", description: "Public IP or domain returned to Web clients for SRS playback")
         string(name: "MODEL_DIR", defaultValue: "/home/liusu/video/models", description: "Host directory mounted read-only to /app/models")
     }
 
@@ -59,7 +60,7 @@ pipeline {
                 sh """
                     set -eu
                     HOST_WORKSPACE=\$(printf '%s\n' "\$WORKSPACE" | sed 's#^/var/jenkins_home#/home/liusu/jenkins#')
-                    HTTP_PORT=${params.HTTP_PORT} RTMP_PORT=${params.RTMP_PORT} STREAM_HTTP_PORT=${params.STREAM_HTTP_PORT} SRS_API_PORT=${params.SRS_API_PORT} SRS_RTC_PORT=${params.SRS_RTC_PORT} SRS_CANDIDATE=${params.SRS_CANDIDATE} MODEL_DIR=${params.MODEL_DIR} IMAGE_TAG=${BUILD_NUMBER} docker compose --project-directory "\$HOST_WORKSPACE" -f "\$HOST_WORKSPACE/${COMPOSE_FILE}" up -d --remove-orphans
+                    HTTP_PORT=${params.HTTP_PORT} RTMP_PORT=${params.RTMP_PORT} STREAM_HTTP_PORT=${params.STREAM_HTTP_PORT} SRS_API_PORT=${params.SRS_API_PORT} SRS_RTC_PORT=${params.SRS_RTC_PORT} SRS_CANDIDATE=${params.SRS_CANDIDATE} SRS_PUBLIC_HOST=${params.SRS_PUBLIC_HOST} MODEL_DIR=${params.MODEL_DIR} IMAGE_TAG=${BUILD_NUMBER} docker compose --project-directory "\$HOST_WORKSPACE" -f "\$HOST_WORKSPACE/${COMPOSE_FILE}" up -d --remove-orphans
                     docker image prune -f
                 """
             }

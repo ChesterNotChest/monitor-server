@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     SRS_HOST: str = "127.0.0.1"
     SRS_RTMP_PORT: int = 1935
     SRS_HTTP_PORT: int = 8080
+    SRS_PUBLIC_HOST: str | None = None
+    SRS_PUBLIC_RTMP_PORT: int | None = None
+    SRS_PUBLIC_HTTP_PORT: int | None = None
 
     # --- Stream readiness ---
     STREAM_READY_TIMEOUT: float = 30.0

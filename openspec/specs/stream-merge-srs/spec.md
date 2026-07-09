@@ -68,18 +68,25 @@ inputs into one FLV/RTMP output stream.
 
 ### Requirement: Server publishes merged View streams to SRS
 
-Server SHALL build merged View push URLs through the RTMP pusher module.
+Server SHALL build merged View push URLs through the RTMP pusher module. Push
+URLs SHALL use the internal SRS endpoint configured by `SRS_HOST` and
+`SRS_RTMP_PORT`.
 
 #### Scenario: Production push URL
 
-- **WHEN** `SRS_HOST=10.126.59.25`, `SRS_RTMP_PORT=1935`, and `view_id=1`
-- **THEN** Server pushes to `rtmp://10.126.59.25:1935/view/1`
+- **WHEN** `SRS_HOST=stream-server`, `SRS_RTMP_PORT=1935`, and `view_id=1`
+- **THEN** Server pushes to `rtmp://stream-server:1935/view/1`
 
 ### Requirement: Server returns playback URLs for Views
 
-Server SHALL return SRS playback URLs in View responses.
+Server SHALL return SRS playback URLs in View responses. Playback URLs SHALL use
+the public SRS endpoint configured by `SRS_PUBLIC_HOST`,
+`SRS_PUBLIC_RTMP_PORT`, and `SRS_PUBLIC_HTTP_PORT`. When these public values are
+not configured, Server SHALL fall back to `SRS_HOST`, `SRS_RTMP_PORT`, and
+`SRS_HTTP_PORT`.
 
 #### Scenario: Playback URL response
 
-- **WHEN** `SRS_HOST=10.126.59.25`, `SRS_HTTP_PORT=8082`, and `view_id=1`
-- **THEN** Server returns HTTP-FLV and WebRTC playback URLs for View `1`
+- **WHEN** `SRS_HOST=stream-server`, `SRS_PUBLIC_HOST=10.126.59.25`, `SRS_PUBLIC_RTMP_PORT=1935`, `SRS_PUBLIC_HTTP_PORT=8082`, and `view_id=1`
+- **THEN** Server returns `rtmp://10.126.59.25:1935/view/1`
+- **AND** Server returns HTTP-FLV and WebRTC playback URLs on `10.126.59.25:8082`
