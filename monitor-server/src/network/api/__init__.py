@@ -8,6 +8,7 @@ from .exception import router as exception_router
 from .event import router as event_router, stats_router
 from .user import router as user_router
 from .log import router as log_router
+from .replay import router as replay_router
 
 routers = [
     node_router,
@@ -22,6 +23,7 @@ routers = [
     stats_router,
     user_router,
     log_router,
+    replay_router,
 ]
 
 __all__ = [

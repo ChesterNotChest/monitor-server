@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     FACE_IMAGE_DIR: str = "./face_images"
     MAX_AVATAR_SIZE: int = 10 * 1024 * 1024  # 10MB
 
+    # --- 录制回放 ---
+    CACHE_DURATION_SECONDS: int = 30     # 环形缓冲区保留时长
+    RECORD_STOP_SILENCE_SECONDS: int = 60  # 连续无告警多少秒后停止录制
+
     # --- 服务 ---
     HOST: str = "0.0.0.0"
     PORT: int = 8000

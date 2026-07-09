@@ -21,6 +21,7 @@ from .response_action import ResponseAction, alert_group_responses
 from .situation_event import SituationEvent
 from .user import User
 from .log_entry import LogEntry
+from .recording import Recording
 
 __all__ = [
     "Node",
@@ -43,4 +44,5 @@ __all__ = [
     "SituationEvent",
     "User",
     "LogEntry",
+    "Recording",
 ]
