@@ -32,6 +32,20 @@ async def health_check():
     return {"status": "ok", "version": settings.APP_VERSION}
 
 
+@app.on_event("startup")
+async def print_urls():
+    """启动时输出可点击的访问地址。"""
+    host = settings.HOST if settings.HOST != "0.0.0.0" else "localhost"
+    port = settings.PORT
+    print(f"\n{'='*60}")
+    print(f"  {settings.APP_NAME} v{settings.APP_VERSION}")
+    print(f"{'='*60}")
+    print(f"  API Docs:     http://{host}:{port}/docs")
+    print(f"  ReDoc:        http://{host}:{port}/redoc")
+    print(f"  Health Check: http://{host}:{port}/health")
+    print(f"{'='*60}\n")
+
+
 # ---- 注册子路由（后续按模块扩展） ----
 # from src.api.xxx import router as xxx_router
 # app.include_router(xxx_router, prefix=API_PREFIX)
