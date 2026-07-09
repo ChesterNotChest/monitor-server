@@ -47,7 +47,10 @@ async def print_urls():
     print(f"{'='*60}\n")
 
     from src.seed import seed_admin
-    seed_admin()
+    try:
+        seed_admin()
+    except Exception:
+        pass  # 非致命：种子失败不阻止应用启动（如测试环境 DB 尚未建表）
 
 
 @app.on_event("shutdown")
