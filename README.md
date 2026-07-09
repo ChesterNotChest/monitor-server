@@ -146,6 +146,29 @@ docker-compose -f docker-compose.prod.yml up -d
 
 ---
 
+## 认证
+
+### 默认管理员
+
+首次启动时自动生成管理员账户，密码写入 `monitor-server/admin_password.txt`。
+
+```
+POST /api/v1/auth/login  →  {access_token, user}
+ GET /api/v1/auth/me     →  当前用户信息
+```
+
+### 角色与权限
+
+| 角色 | 标识 | 权限范围 |
+|------|------|----------|
+| 安全员 | `security_guard` | 仪表板、监控、告警处理、电子围栏 |
+| 负责人 | `manager` | 安全员权限 + 枚举管理、异常/告警分级、报表、命名人物查看 |
+| 运维员 | `operator` | 仪表板、告警查看、设备管理、系统日志、用户管理、异常/告警分级 |
+
+所有受保护端点需在请求头携带 `Authorization: Bearer <access_token>`。
+
+---
+
 ## 开发约定
 
 ### 分层架构（详见 `openspec/specs/`）

@@ -46,12 +46,23 @@ async def print_urls():
     print(f"  Health Check: http://{host}:{port}/health")
     print(f"{'='*60}\n")
 
+    from src.seed import seed_admin
+    try:
+        seed_admin()
+    except Exception:
+        pass  # 非致命：种子失败不阻止应用启动（如测试环境 DB 尚未建表）
+
 
 @app.on_event("shutdown")
 async def shutdown_cleanup():
     """服务关闭时终止所有 FFmpeg 子进程。"""
     cleanup_all()
 
+
+# ---- 注册子路由 ----
+from src.network.api.named_person import router as named_person_router
+
+app.include_router(named_person_router)
 
 # ---- 注册 API 路由 ----
 from src.network.api import routers as api_routers

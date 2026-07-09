@@ -12,6 +12,7 @@ class NamedPerson(Base):
     __tablename__ = "named_persons"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     avatar_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     feat_json_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

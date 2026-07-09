@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # --- 数据库 ---
     DATABASE_URL: str = "sqlite:///./monitor.db"
 
+    # --- 人脸图片存储 ---
+    FACE_IMAGE_DIR: str = "./face_images"
+    MAX_AVATAR_SIZE: int = 10 * 1024 * 1024  # 10MB
+
     # --- 服务 ---
     HOST: str = "0.0.0.0"
     PORT: int = 8000
@@ -46,6 +50,11 @@ class Settings(BaseSettings):
 
     # --- 本地 View 流调试 ---
     DEBUG_WEB_STREAM: bool = False
+
+    # --- JWT 认证 ---
+    JWT_SECRET: str = "change-me-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_HOURS: int = 8
 
 
 settings = Settings()
