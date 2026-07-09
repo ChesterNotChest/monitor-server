@@ -64,3 +64,28 @@
 
 - **WHEN** 前端请求 `GET /api/v1/nodes`
 - **THEN** 返回 Node 列表，每个 Node 包含 `id`、`token`、`is_connected`、`last_seen` 和 `created_at`
+
+### Requirement: Inbound Node messages are classified before command response handling
+
+Server SHALL keep a single receive loop per authenticated Node WebSocket
+connection. Each inbound JSON message SHALL be classified by message shape
+before it can satisfy a pending command response.
+
+#### Scenario: Heartbeat is received while a command is pending
+
+- **WHEN** Server has sent `UPDATE_STREAM` and is waiting for the command response
+- **AND** Node sends `{"type": "heartbeat"}` before the command response
+- **THEN** Server updates the Node connection heartbeat state
+- **AND** Server SHALL NOT validate the heartbeat as `UpdateStreamResponse`
+- **AND** Server continues waiting for the command response
+
+#### Scenario: Typed update stream response is received
+
+- **WHEN** Node sends `{"type": "update_stream_response", "success": true, "message": "ok"}`
+- **THEN** Server routes the message to the pending `send_command()` waiter
+- **AND** Server returns an `UpdateStreamResponse` to the caller
+
+#### Scenario: Legacy command response is received
+
+- **WHEN** Node sends `{"success": true, "message": "ok"}` without a `type` field
+- **THEN** Server treats the payload as a command response for backward compatibility

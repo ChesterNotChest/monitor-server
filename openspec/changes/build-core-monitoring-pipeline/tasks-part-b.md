@@ -174,3 +174,28 @@ class MockConnectionRegistry:
 ```
 
 接口规范参见 `tasks-part-a.md` 末尾的契约表。切换真实实现时，只需改 import 路径即可。
+
+## 15. WSS message classification
+
+- [x] 15.1 Server keeps one receive loop per authenticated Node WebSocket connection.
+- [x] 15.2 Server classifies inbound Node messages before command response validation.
+- [x] 15.3 Server handles `{"type": "heartbeat"}` as heartbeat state and does not satisfy pending command responses.
+- [x] 15.4 Server routes `update_stream_response` and legacy `{success, message}` payloads to pending `send_command()` callers.
+- [x] 15.5 Tests cover heartbeat arriving before an `UPDATE_STREAM` response.
+
+## 16. View persistence and raw-stream readiness
+
+- [x] 16.1 Update OpenSpec proposal/specs for durable View transactions and bounded raw RTMP readiness checks.
+- [x] 16.2 Add RTMP pull readiness helpers in `src/network/rtmp/puller.py`.
+- [x] 16.3 Commit successful `create_view` / `delete_view` service operations and roll back failed operations.
+- [x] 16.4 Wait for both raw audio/video streams before starting merge FFmpeg; return warnings on timeout.
+- [x] 16.5 Add tests for View persistence after create/delete and merge readiness behavior.
+- [x] 16.6 Run server test suite and validate the OpenSpec change.
+
+## 17. Control/data plane stream readiness
+
+- [x] 17.1 Specify that WSS remains the control plane for list/update commands.
+- [x] 17.2 Move raw RTMP readiness timing to configurable Server settings.
+- [x] 17.3 Ensure Server probes RTMP repeatedly until success or bounded total timeout.
+- [x] 17.4 Add tests covering configured probe timeout behavior.
+- [x] 17.5 Run server tests and validate the OpenSpec change.

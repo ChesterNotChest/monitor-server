@@ -59,3 +59,26 @@
 
 - **WHEN** 前端请求 `GET /api/v1/views/{view_id}`
 - **THEN** 返回 View 详情，包含关联的 video device 和 audio device 信息、SRS 拉流地址、创建时间
+
+### Requirement: View lifecycle changes are transactionally durable
+
+The View service SHALL explicitly commit successful create/delete lifecycle
+changes and SHALL roll back the active database session when an exception
+prevents completion.
+
+#### Scenario: Created View is visible after request completion
+
+- **WHEN** `POST /api/v1/views` returns success
+- **THEN** a subsequent `GET /api/v1/views` SHALL include the created View
+- **AND** the referenced devices SHALL keep their updated `streaming` state
+
+#### Scenario: Delete View commits release state
+
+- **WHEN** `DELETE /api/v1/views/{view_id}` returns success
+- **THEN** a subsequent `GET /api/v1/views/{view_id}` SHALL return 404
+- **AND** devices whose reference count reached zero SHALL keep `streaming=false`
+
+#### Scenario: Lifecycle operation fails
+
+- **WHEN** View creation or deletion raises before returning a response
+- **THEN** Server SHALL roll back the database session before propagating the error

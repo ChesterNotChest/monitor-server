@@ -40,21 +40,59 @@ Jenkinsfile                  # Jenkins CI/CD 流水线
 
 ## Miniconda 部署（无需 Docker）
 
-### 1. 创建 & 激活环境
+### 1. 创建 & 激活环境（推荐）
+
+仓库内已提供 Server 侧 Conda 环境文件：
 
 ```bash
-conda create -n monitor python=3.12 -y
-conda activate monitor
+cd monitor-server
+conda env create -f environment.yml
+conda activate monitor-server
 ```
 
-### 2. 安装依赖
+该环境会安装：
+
+- `python=3.12`
+- `ffmpeg`：Server 侧拉取 audio/video 并合并推流需要
+- `nodejs`：`DEBUG_WEB_STREAM=true` 时启动本地 RTMP 靶子需要
+- `requirements.txt` 中的 Python 依赖
+
+如果环境已存在，可更新：
+
+```bash
+cd monitor-server
+conda env update -f environment.yml --prune
+conda activate monitor-server
+```
+
+### 2. 安装依赖（仅手动环境需要）
+
+使用 `environment.yml` 创建环境时可跳过本步；如果是手动创建环境，则执行：
 
 ```bash
 cd monitor-server
 pip install -r requirements.txt
 ```
 
-### 3. 配置环境变量
+### 3. 安装 DEBUG_WEB_STREAM 依赖（可选）
+
+仅当需要 `DEBUG_WEB_STREAM=true` 并启动本地 RTMP 靶子时需要：
+
+```bash
+cd tools
+npm install node-media-server
+cd ..
+```
+
+### 4. 检查环境
+
+```bash
+python -c "import fastapi, sqlalchemy, pytest; print('python deps ok')"
+ffmpeg -version
+node -v
+```
+
+### 5. 配置环境变量
 
 `.env` 已提供默认值，按需修改：
 
@@ -65,9 +103,14 @@ DATABASE_URL=sqlite:///./monitor.db
 # 监听地址
 HOST=0.0.0.0
 PORT=8000
+
+# Raw RTMP readiness probe
+STREAM_READY_TIMEOUT=30
+STREAM_PROBE_TIMEOUT=8
+STREAM_READY_INTERVAL=1
 ```
 
-### 4. 启动服务
+### 6. 启动服务
 
 ```bash
 # 开发模式（自动 reload）
@@ -77,7 +120,7 @@ python -m src.run
 uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 5. 验证
+### 7. 验证
 
 | 端点 | 地址 |
 |---|---|
@@ -85,7 +128,7 @@ uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
 | Swagger UI | http://localhost:8000/docs |
 | ReDoc | http://localhost:8000/redoc |
 
-### 6. 运行测试
+### 8. 运行测试
 
 ```bash
 pytest src/tests/ --tb=short
