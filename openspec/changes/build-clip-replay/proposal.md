@@ -1,36 +1,36 @@
 ## Why
 
-异常事件触发时，需要保留事件前后的录像片段用于回放追溯。目前 `SituationEvent` 只记录时间戳，没有媒体关联。需要补上 clip 存储能力和时间轴回放查询。
+AI 管线文档 §8 定义了缓存区与触发录制的需求：告警触发时，从环形缓冲区取此前 N 秒的加框前原始帧开始录制，持续进行直到连续 M 秒无新告警才停止。录制文件按 `{cache_path}/view_{id}_{timestamp}.flv` 命名。`MonitorView.cache_path` 字段已就绪。需要补上环形缓冲区、持续录制引擎和回放查询 API。
 
-不做截图、不做处置状态机（后续独立 Change）。AI 引擎后续接入时会直接调用 clip 存储接口——只管存和读，不做收口。
+不做截图、不做处置状态机（后续独立 Change）。AI 引擎接入时会调录制服务——只管存和读，不做收口。
 
 ## What Changes
 
-- `SituationEvent` 扩展 `clip_path` 字段（录像片段相对路径）
-- 新增 `ClipService`：环形缓冲区 + "精彩回放"式触发写入
-  - `start(view_id)` — 开始缓冲（View 创建时调）
-  - `trigger(view_id, event_id)` — 从 (now - CLIP_PRE_SECONDS) 开始取帧，继续录 CLIP_POST_SECONDS，写文件到 `clips/event_{id}.mp4`，返回路径
-  - `stop(view_id)` — 停止缓冲（View 删除时调）
-- 可配置参数：`CLIP_BUFFER_SECONDS`(30s) / `CLIP_PRE_SECONDS`(5s) / `CLIP_POST_SECONDS`(10s)
-- 新增时间轴查询 API：`GET /views/{id}/timeline`、`GET /events/{id}/clip`
+- 新增 `FrameRingBuffer`：环形缓冲区，存储加框前原始帧（支持 CACHE_DURATION_SECONDS 配置）
+- 新增 `RecordingSession`：持续录制会话——告警触发时开始，每次新告警重置静默计时器，连续 N 秒无告警则停止并写文件
+- 录制文件格式：FLV，路径 `{MonitorView.cache_path}/view_{id}_{timestamp}.flv`
+- 配置项：`CACHE_DURATION_SECONDS`(30s)、`RECORD_STOP_SILENCE_SECONDS`(60s)
+- 新增 `Recording` 记录表（view_id, file_path, start_time, end_time）供查询
+- 新增回放查询 API：按 view_id + 时间范围查录制文件列表 + 流式读取 flv 文件
 
 ## Capabilities
 
 ### New Capabilities
 
-- `clip-replay`: 录像片段存储与回放 — 环形缓冲区 + clip 写入 + timeline 查询 + clip 文件流式读取
+- `clip-replay`: 持续录制引擎 — 环形缓冲区 + RecordingSession + 回放查询 + flv 文件流式读取
 
 ### Modified Capabilities
 
-- `situation-event-model`: `SituationEvent` 新增 `clip_path` 字段（String 512，可空），指向录像片段相对路径
+<!-- 无 — 纯增量。不修改 SituationEvent。MonitorView.cache_path 已就绪无需改动 -->
 
 ## Impact
 
-- **修改**: `models/situation_event.py` — 新增 `clip_path` 字段
-- **新增**: `service/replay_module/ring_buffer.py` — 帧环形缓冲区
-- **新增**: `service/replay_module/clip.py` — clip 写入服务
-- **新增**: `service/replay_task.py` — 门户（start/stop/trigger）
-- **新增**: `schema/http/replay.py` — TimelineItem / ClipResponse
-- **新增**: `network/api/replay.py` — GET /views/{id}/timeline + GET /events/{id}/clip
-- **新增**: `config.py` — CLIP_BUFFER_SECONDS / CLIP_PRE_SECONDS / CLIP_POST_SECONDS
-- **不修改**任何 Service/API 收口逻辑
+- **新增**: `models/recording.py` — Recording 记录模型
+- **新增**: `service/replay_module/ring_buffer.py` — 环形缓冲区
+- **新增**: `service/replay_module/recorder.py` — 录制引擎（RecordingSession 管理）
+- **新增**: `service/replay_task.py` — 门户函数（alert_triggered / recording lifecycle）
+- **新增**: `schema/http/replay.py` — RecordingResponse
+- **新增**: `network/api/replay.py` — GET /views/{id}/recordings + GET /recordings/{id}/stream
+- **新增**: `config.py` — CACHE_DURATION_SECONDS / RECORD_STOP_SILENCE_SECONDS
+- **使用已有**: `MonitorView.cache_path` — 录制文件存储根目录
+- **不修改**任何现有代码

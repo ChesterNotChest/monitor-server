@@ -1,99 +1,103 @@
 ## Context
 
-`SituationEvent` 记录异常事件的时间戳和关联的 view/exception，但没有媒体文件关联。需要在事件触发时保留录像片段用于回放。
+AI 管线文档 §8 定义了缓存区与触发录制的完整方案。`MonitorView.cache_path` 字段已存在，指向录制文件的存储根目录。环形缓冲区和持续录制引擎需要从零搭建。
 
-AI 检测引擎尚未实现，但 clip 存储接口可以先建——只管存和读，不做收口。
+AI 检测引擎尚未实现，但录制服务的接口先建好——只管存和读，不做 AI 推理收口。
 
 ## Goals / Non-Goals
 
 **Goals:**
-- SituationEvent 模型新增 `clip_path` 字段
-- 环形缓冲区：缓存在推流管线中经过的帧（加框后或原始）
-- "精彩回放"式触发：事件触发时取 (trigger - X 秒) 到 (trigger + Y 秒) 的帧写成 mp4
-- clip 文件流式读取 API
-- 时间轴查询 API（画面 + 时间范围 → 事件列表，含 clip_path）
+- 环形缓冲区：存加框前原始帧，支持配置缓存时长
+- 持续录制：告警触发开始 → 持续写帧 → 静默超时停止 → 写 flv 文件
+- Recording 记录表：view_id, file_path, start_time, end_time
+- 回放查询 API：按 view + 时间范围找录制文件 + 流式读取
 
 **Non-Goals:**
-- 不做截图（screenshot）
-- 不做处置状态机（status / handler / comment）
-- 不做 AI 推理收口——clip 服务的 start/stop/trigger 是公开接口，AI 引擎后续调用
-- 环形缓冲区不负责帧上加框——上游给什么帧就存什么
+- 不做截图
+- 不做处置状态机
+- 不修改 SituationEvent
+- 不做 AI 推理收口——`alert_triggered(view_id)` 是公开接口，AI 引擎后续调用
+- 不做存储清理策略（后续加）
 
 ## Decisions
 
-### 1. 环形缓冲区：每 View 一个
+### 1. 持续录制 vs 离散 clip
 
-**选择**: 每个 MonitorView 一个缓冲区实例，由 `ClipService.start(view_id)` 创建，`stop(view_id)` 销毁。
+**选择**: 持续录制模式——告警触发开始录制，每次新告警重置静默计时器，连续 `RECORD_STOP_SILENCE_SECONDS` 秒无告警则停止。
+
+**理由**: AI 文档 §8 明确定义。多告警密集触发时合并为一段连续录像，比每个事件一个离散 clip 更合理。
 
 ```
-src/service/replay_module/
-├── ring_buffer.py    ← 环形缓冲区 (deque + threading.Lock)
-└── clip.py           ← clip 写入 (从 buffer 取帧 → ffmpeg 编码 → mp4)
+时间线:
+  ├──[30s 缓冲区]──┤
+                   ├─ 告警触发 ──────────────────────────────┤
+                   │  开始录制                                  │
+                   │           ├─ 新告警 ─┤                    │
+                   │           │  重置计时器│                   │
+                   │           │          └── 连续 60s 无告警 ──┤
+                   │           │                                │
+                   ├───────────■────────────────────────────────┤
+                               ↑                                ↑
+                           录制开始                          录制停止 → 写 flv
 ```
 
-`ring_buffer.py`:
+### 2. 缓冲区内容：加框前原始帧
+
+**选择**: 环形缓冲区存储 AI 标注**之前**的原始帧（或已解码的 raw frame）。录制文件为原始画面，不含 AI 标注框。
+
+**理由**: AI 文档 §8："保存最近 N 秒的加框前原始帧"。前端直播看的是标注画面，证据留存用的是原始画面。
+
+### 3. 文件格式：FLV
+
+**选择**: 录制文件使用 FLV 封装，H.264 编码。文件名 `view_{id}_{timestamp}.flv`，存储在 `{MonitorView.cache_path}/` 下。
+
+**理由**: AI 文档 §8 明确定义。FLV 是监控场景的成熟格式（SRS 原生支持），写入过程中断也不会导致整个文件损坏（与 MP4 不同）。
+
+### 4. Recording 记录表
+
+**选择**: 新增 `Recording` 模型记录每次录制会话，与 `SituationEvent` 解耦。
+
 ```python
-class RingBuffer:
-    def __init__(self, max_seconds, fps=25):
-        self._frames = deque(maxlen=max_seconds * fps)
-    
-    def push(self, frame_bytes: bytes) -> None
-    def dump(self, from_offset_seconds: int) -> list[bytes]
+class Recording(Base):
+    id, view_id, file_path, start_time, end_time, created_at
 ```
 
-`clip.py`:
+多告警可能对应同一段录像——通过时间范围关联，而非 FK。
+
+### 5. 录制引擎接口
+
 ```python
-def write_clip(view_id, event_id, buffer, pre_seconds, post_seconds) -> str:
-    # 1. 从 buffer dump 过去 pre_seconds 秒的帧
-    # 2. 继续从 buffer 取 post_seconds 秒的新帧
-    # 3. 调用 ffmpeg (stdin pipe) 编码为 mp4
-    # 4. 写入 clips/event_{id}.mp4
-    # 5. 返回相对路径
+# replay_task.py — 供 AI 告警引擎调用的公开接口
+
+def start_buffer(view_id: int) -> None
+    # View 创建时调用，初始化环形缓冲区
+
+def stop_buffer(view_id: int) -> None
+    # View 删除时调用，清理资源
+
+def push_frame(view_id: int, frame_bytes: bytes) -> None
+    # AI 管线每帧调用，写入缓冲区
+
+def alert_triggered(view_id: int) -> None
+    # 告警引擎触发时调用。首次调用开始录制，后续调用重置静默计时器。
+    # 录制停止时自动写 flv 文件 + 写 Recording 记录。
+
+def get_recordings(view_id: int, start, end) -> list[Recording]
+    # 回放查询
 ```
 
-### 2. 配置
-
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `CLIP_BUFFER_SECONDS` | 30 | 环形缓冲区保留最近 N 秒 |
-| `CLIP_PRE_SECONDS` | 5 | 触发时回退 X 秒开始写 |
-| `CLIP_POST_SECONDS` | 10 | 触发后继续录制 Y 秒 |
-| `CLIP_DIR` | `./clips` | clip 存储根目录 |
-
-### 3. clip 文件格式
-
-**选择**: MP4 (H.264) — 直接适用于浏览器 `<video>` 标签回放。
-
-### 4. API
+### 6. API
 
 ```
-GET  /api/v1/views/{id}/timeline   时间轴
-     ?start=&end=
-     返回: { events: [{id, exception_name, severity, timestamp, clip_path}] }
+GET /api/v1/views/{id}/recordings?start=&end=
+    返回 [{id, file_path, start_time, end_time}]
 
-GET  /api/v1/events/{id}/clip      返回 clip 文件 (StreamingResponse)
+GET /api/v1/recordings/{id}/stream
+    流式返回 flv 文件 (StreamingResponse)
 ```
-
-### 5. 与 SituationEvent 的关联
-
-`ClipService.trigger(view_id, event_id)` 流程：
-1. 调 `write_clip()` 生成文件
-2. 通过 `SituationEventRepo` 更新对应 event 的 `clip_path`
-3. 写一条 ALERT 类型的 LogEntry（如果日志模块已就绪）
-
-### 6. 缓冲区生命周期
-
-```
-View 创建 → ClipService.start(view_id)
-View 运行 → buffer.push(frame) 每帧调用
-事件触发 → ClipService.trigger(view_id, event_id) → 写 clip + 更新 event
-View 删除 → ClipService.stop(view_id) → 清空 buffer
-```
-
-调用方（AI 引擎或 View 管线）负责在帧到达时调 `push()`。本次不实现调用方——只建存储层。
 
 ## Risks / Trade-offs
 
-- **[R] 环形缓冲区内存占用**: 30 秒 × 25fps × 每帧 ~200KB(1080p JPEG) = ~150MB per View → 限制同时缓冲的 View 数量，或降低帧率/分辨率
-- **[R] clip 写入期间阻塞**: trigger 调用需等待 post_seconds 秒才能返回 → 在后台线程中异步写 clip，trigger 立即返回，写完后异步更新 event.clip_path
-- **[R] 没有真正的帧推流**: AI 引擎未就绪时无法测试缓冲区→ 环形缓冲区提供 mock 接口：`push_mock(frame_bytes)` 用于测试
+- **[R] 环形缓冲区内存占用**: 30s × 25fps × ~200KB/帧(1080p JPEG) ≈ 150MB/view → 限制同时缓冲的 View 数量；后续可降分辨率或改为帧索引+共享内存
+- **[R] 录制期间服务重启**: 当前帧 buffer 在内存中，重启丢失 → RecordingSession 记录"录制中"状态到 Recording 表（status=recording），重启后标记为 interrupted 并写已有数据
+- **[R] 多 View 并发**: 每个 View 独立缓冲区，内存线性增长 → 限制最大 View 数量
