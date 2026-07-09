@@ -51,7 +51,8 @@ def test_create_view_commits_view_and_streaming_state(monkeypatch):
     client, engine, ids = _build_client_with_seeded_devices()
     try:
         response = client.post(
-            f"/api/v1/views/?audio_id={ids['audio_id']}&video_id={ids['video_id']}"
+            "/api/v1/views/",
+            json={"audio_id": ids["audio_id"], "video_id": ids["video_id"]},
         )
         assert response.status_code == 200
         view_id = response.json()["view"]["id"]
