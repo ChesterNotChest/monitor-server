@@ -26,9 +26,8 @@
 
 - **模型层**: `src/models/named_person.py` — 新增 `name` 字段
 - **仓库层**: `src/repository/base.py` — 新增 `update` 方法；`src/repository/named_person_repo.py` — 新增按名查询
-- **服务层**: 新增 `src/service/face_image_service.py` — 图片文件存储
-- **Schema 层**: 新增 `src/schema/named_person.py` — Pydantic 请求/响应模型
-- **API 层**: 新增 `src/api/named_person.py` — CRUD 路由
+- **服务层**: 新增 `src/service/named_person_task.py`（门户函数）+ `src/service/named_person_module/`（内部逻辑包，含 `face_image.py`）— 遵循 `service-layer` 规范的 `*_task.py` + `*_module/` 约定，门户编排 CRUD 流程，内部逻辑封装图片文件操作
+- **Schema 层**: 新增 `src/schema/http/named_person.py` — Pydantic 请求/响应模型，遵循 `schema-convention` 规范的 HTTP/WSS 分家规则
+- **网络层**: 新增 `src/network/api/named_person.py` — CRUD 路由，遵循 `network-layer` 规范，Router 通过 `named_person_task.py` 门户函数间接操作，不直接访问 repository
 - **配置**: `src/config.py` — 新增 `FACE_IMAGE_DIR`（默认 `./face_images`）和 `MAX_AVATAR_SIZE`（默认 10MB）
 - **依赖**: 新增 `python-multipart`（文件上传）
-- **注册**: `src/app.py` 注册 named_person 路由
