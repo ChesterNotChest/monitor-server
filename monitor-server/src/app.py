@@ -53,6 +53,11 @@ async def shutdown_cleanup():
     cleanup_all()
 
 
+# ---- 注册子路由 ----
+from src.network.api.named_person import router as named_person_router
+
+app.include_router(named_person_router)
+
 # ---- 注册 API 路由 ----
 from src.network.api import routers as api_routers
 for router in api_routers:

@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # --- 数据库 ---
     DATABASE_URL: str = "sqlite:///./monitor.db"
 
+    # --- 人脸图片存储 ---
+    FACE_IMAGE_DIR: str = "./face_images"
+    MAX_AVATAR_SIZE: int = 10 * 1024 * 1024  # 10MB
+
     # --- 服务 ---
     HOST: str = "0.0.0.0"
     PORT: int = 8000
