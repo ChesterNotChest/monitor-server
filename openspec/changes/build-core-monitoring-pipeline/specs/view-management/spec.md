@@ -1,5 +1,25 @@
 # View Management
 
+## API Contract Delta
+
+### Requirement: View creation uses a JSON request body
+
+The system SHALL expose `POST /api/v1/views` with a JSON request body modeled
+by `ViewCreateRequest`. The request body SHALL contain `audio_id` and
+`video_id`. These fields SHALL NOT be query parameters, so Swagger and frontend
+clients see the same contract.
+
+#### Scenario: Swagger documents view creation input
+
+- **WHEN** a frontend developer opens `POST /api/v1/views` in Swagger
+- **THEN** `audio_id` and `video_id` are shown as JSON request body fields
+
+#### Scenario: View creation request
+
+- **WHEN** the client posts `{"audio_id": 1, "video_id": 1}` to
+  `/api/v1/views`
+- **THEN** Server creates the View using those device ids
+
 **Purpose:** 监控视图的 CRUD——前端选择 audio+video 组成 View，Server 管理流生命周期。
 
 ## ADDED Requirements

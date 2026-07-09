@@ -199,3 +199,9 @@ class MockConnectionRegistry:
 - [x] 17.3 Ensure Server probes RTMP repeatedly until success or bounded total timeout.
 - [x] 17.4 Add tests covering configured probe timeout behavior.
 - [x] 17.5 Run server tests and validate the OpenSpec change.
+
+## 18. View API contract cleanup
+
+- [x] 18.1 Specify `POST /api/v1/views` as a JSON request body contract using `ViewCreateRequest`.
+- [x] 18.2 Update the router and tests away from query parameters.
+- [x] 18.3 Validate the OpenSpec change and run server tests.

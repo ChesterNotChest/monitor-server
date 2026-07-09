@@ -41,3 +41,9 @@
 ## 7. 验证
 
 - [x] 7.1 运行 `pytest tests/ -v` 确认全部测试通过
+
+## 8. Test quality cleanup
+
+- [x] 8.1 Specify that pytest-discovered placeholder tests with only `pass` should not be kept.
+- [x] 8.2 Remove obsolete placeholder files once concrete runtime and WSS integration tests cover the behavior.
+- [x] 8.3 Run the server test suite after cleanup.
