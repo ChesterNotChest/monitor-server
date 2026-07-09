@@ -18,6 +18,8 @@ from .alert_group import AlertGroup
 from .exception import ExceptionDef, exception_entities, exception_actions, exception_sounds
 from .response_action import ResponseAction, alert_group_responses
 from .situation_event import SituationEvent
+from .alert_review import AlertReview
+from .user import User
 
 __all__ = [
     "Node",
@@ -37,4 +39,6 @@ __all__ = [
     "ResponseAction",
     "alert_group_responses",
     "SituationEvent",
+    "AlertReview",
+    "User",
 ]

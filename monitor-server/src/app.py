@@ -46,6 +46,9 @@ async def print_urls():
     print(f"  Health Check: http://{host}:{port}/health")
     print(f"{'='*60}\n")
 
+    from src.seed import seed_admin
+    seed_admin()
+
 
 @app.on_event("shutdown")
 async def shutdown_cleanup():
