@@ -12,12 +12,21 @@ monitor-server/
 │   ├── config.py           # 配置（.env → pydantic-settings）
 │   ├── constants.py        # 全局常量
 │   ├── extensions.py       # SQLAlchemy 引擎 / 会话 / Base
-│   ├── api/                # 路由层（FastAPI Router）
+│   ├── network/            # 网络层（三层体系）
+│   │   ├── api/            #   HTTP API 路由
+│   │   ├── wss/            #   WebSocket 端点（Node 连接）
+│   │   └── rtmp/           #   RTMP 地址构建
 │   ├── models/             # SQLAlchemy 数据模型
 │   ├── schema/             # Pydantic 请求 / 响应模型
+│   │   ├── http/           #   HTTP API Schema
+│   │   └── wss/            #   WebSocket 命令 Schema
 │   ├── service/            # 业务逻辑层
-│   ├── repository/         # 数据仓库层
+│   │   ├── view_module/    #   View 生命周期 + FFmpeg 合流
+│   │   └── node_stream_module/  # Node 连接事件处理
+│   ├── repository/         # 数据仓库层（BaseRepo + 每模型一个 Repo）
 │   └── tests/              # 测试
+├── tools/
+│   └── rtmp_debug_server.js  # Debug RTMP 靶子（node-media-server）
 ├── requirements.txt
 ├── .env
 └── Dockerfile

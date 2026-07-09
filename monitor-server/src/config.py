@@ -27,5 +27,20 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
 
+    # --- RTMP / SRS ---
+    RTMP_HOST: str = "127.0.0.1"
+    RTMP_PORT: int = 1935
+    RTMP_DEBUG: bool = False
+    SRS_HOST: str = "127.0.0.1"
+    SRS_RTMP_PORT: int = 1935
+    SRS_HTTP_PORT: int = 8080
+
+    # --- Node WebSocket ---
+    WSS_NODE_PORT: int = 8000
+    WSS_NODE_DEBUG: bool = False
+
+    # --- 本地 View 流调试 ---
+    DEBUG_WEB_STREAM: bool = False
+
 
 settings = Settings()

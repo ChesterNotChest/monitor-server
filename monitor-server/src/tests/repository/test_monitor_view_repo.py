@@ -24,12 +24,11 @@ class TestMonitorViewRepo:
         assert view.id is not None
         assert view.cache_path == "/tmp/cache"
 
-    def test_create_video_only_view(self, db, devices):
+    def test_create_video_only_view_rejected(self, db, devices):
         node, video, _ = devices
         repo = MonitorViewRepo(db)
-        view = repo.create(video_id=video.id, audio_id=None)
-        assert view.id is not None
-        assert view.audio_id is None
+        with pytest.raises(IntegrityError):
+            repo.create(video_id=video.id, audio_id=None)
 
     def test_device_in_use(self, db, devices):
         node, video, audio = devices
@@ -47,8 +46,9 @@ class TestMonitorViewRepo:
     def test_find_by_device(self, db, devices):
         node, video, audio = devices
         repo = MonitorViewRepo(db)
+        audio2 = AudioDeviceRepo(db).create(name="view-mic-2", node_id=node.id)
         v1 = repo.create(video_id=video.id, audio_id=audio.id)
-        v2 = repo.create(video_id=video.id, audio_id=None)
+        v2 = repo.create(video_id=video.id, audio_id=audio2.id)
         views = repo.find_by_device(video_id=video.id)
         assert len(views) == 2
         views_audio = repo.find_by_device(audio_id=audio.id)

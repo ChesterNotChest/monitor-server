@@ -37,7 +37,7 @@ class TestViewLifecycle:
         assert view_repo.device_in_use(audio_id=audio.id) is True
 
         # 4. 同一视频设备可被多个 View 使用（非独占）
-        view2 = view_repo.create(video_id=video.id, audio_id=None)
+        view2 = view_repo.create(video_id=video.id, audio_id=audio.id)
         assert view_repo.device_in_use(video_id=video.id) is True
         found_views = view_repo.find_by_device(video_id=video.id)
         assert len(found_views) == 2
@@ -51,17 +51,15 @@ class TestViewLifecycle:
         assert view_repo.device_in_use(video_id=video.id) is False
         assert view_repo.device_in_use(audio_id=audio.id) is False
 
-    def test_video_only_view_lifecycle(self, db):
-        """仅视频（无音频）的 View 生命周期。"""
+    def test_video_only_view_is_rejected(self, db):
+        """View 必须同时绑定视频与音频。"""
         node = NodeRepo(db).create(token="video-only-node")
         video = VideoDeviceRepo(db).create(name="solo-cam", node_id=node.id)
         view_repo = MonitorViewRepo(db)
 
-        view = view_repo.create(video_id=video.id, audio_id=None)
-        assert view.audio_id is None
-        assert view_repo.device_in_use(video_id=video.id) is True
-        view_repo.delete(view.id)
-        assert view_repo.device_in_use(video_id=video.id) is False
+        from sqlalchemy.exc import IntegrityError
+        with pytest.raises(IntegrityError):
+            view_repo.create(video_id=video.id, audio_id=None)
 
 
 class TestExceptionAssociationIntegration:
