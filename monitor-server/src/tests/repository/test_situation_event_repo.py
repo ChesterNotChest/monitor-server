@@ -22,7 +22,7 @@ class TestSituationEventRepo:
         audio = AudioDeviceRepo(db).create(name="event-mic", node_id=node.id)
         view = MonitorViewRepo(db).create(video_id=video.id, audio_id=audio.id)
         ag = AlertGroupRepo(db).create(name="事件测试分组")
-        exc = ExceptionDefRepo(db).create(severity=SeverityLevel.WARNING, group_id=ag.id)
+        exc = ExceptionDefRepo(db).create(name="事件异常", severity=SeverityLevel.WARNING, group_id=ag.id)
         return view, exc
 
     def test_create_and_get(self, db, view_and_exception):

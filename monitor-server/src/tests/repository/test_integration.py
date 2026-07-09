@@ -74,7 +74,7 @@ class TestExceptionAssociationIntegration:
 
         # 2. 创建异常定义
         exc_repo = ExceptionDefRepo(db)
-        exc = exc_repo.create(severity=SeverityLevel.EMERGENCY, group_id=ag.id)
+        exc = exc_repo.create(name="集成测试异常", severity=SeverityLevel.EMERGENCY, group_id=ag.id)
 
         # 3. 建立多对多关联
         db.execute(exception_entities.insert().values(exception_id=exc.id, entity_id=entity.id))
@@ -134,7 +134,7 @@ class TestSituationEventIntegration:
         audio = AudioDeviceRepo(db).create(name="chain-mic", node_id=node.id)
         view = MonitorViewRepo(db).create(video_id=video.id, audio_id=audio.id)
         ag = AlertGroupRepo(db).create(name="链路分组")
-        exc = ExceptionDefRepo(db).create(severity=SeverityLevel.CRITICAL, group_id=ag.id)
+        exc = ExceptionDefRepo(db).create(name="事件测试异常", severity=SeverityLevel.CRITICAL, group_id=ag.id)
 
         event_repo = SituationEventRepo(db)
         event = event_repo.create(view_id=view.id, exception_id=exc.id)

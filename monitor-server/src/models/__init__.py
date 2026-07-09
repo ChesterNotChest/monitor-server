@@ -19,6 +19,8 @@ from .alert_group import AlertGroup
 from .exception import ExceptionDef, exception_entities, exception_actions, exception_sounds
 from .response_action import ResponseAction, alert_group_responses
 from .situation_event import SituationEvent
+from .user import User
+from .log_entry import LogEntry
 
 __all__ = [
     "Node",
@@ -39,4 +41,6 @@ __all__ = [
     "ResponseAction",
     "alert_group_responses",
     "SituationEvent",
+    "User",
+    "LogEntry",
 ]

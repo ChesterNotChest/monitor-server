@@ -29,7 +29,7 @@ class TestEventQuery:
         adev = AudioDeviceRepo(db).create(name="a1", node_id=node.id)
         view = MonitorViewRepo(db).create(video_id=vdev.id, audio_id=adev.id)
         group = AlertGroupRepo(db).create(name="test-group")
-        exc = ExceptionDefRepo(db).create(severity=SeverityLevel.CRITICAL, group_id=group.id)
+        exc = ExceptionDefRepo(db).create(name="事件日志测试", severity=SeverityLevel.CRITICAL, group_id=group.id)
 
         # Insert via repo
         repo = SituationEventRepo(db)

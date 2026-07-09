@@ -15,7 +15,7 @@ class TestExceptionAPI:
 
     def test_create(self, client):
         g = self._setup_group(client)
-        resp = client.post(EXCEPTION_URL, json={"severity": 3, "group_id": g["id"]})
+        resp = client.post(EXCEPTION_URL, json={"name": "API测试异常", "severity": 3, "group_id": g["id"]})
         assert resp.status_code == 201
         data = resp.json()
         assert data["severity"] == 3  # CRITICAL
@@ -32,13 +32,13 @@ class TestExceptionAPI:
 
     def test_get_one(self, client):
         g = self._setup_group(client)
-        r = client.post(EXCEPTION_URL, json={"severity": 2, "group_id": g["id"]})
+        r = client.post(EXCEPTION_URL, json={"name": "测试告警", "severity": 2, "group_id": g["id"]})
         resp = client.get(f"{EXCEPTION_URL}/{r.json()['id']}")
         assert resp.status_code == 200
 
     def test_update(self, client):
         g = self._setup_group(client)
-        r = client.post(EXCEPTION_URL, json={"severity": 1, "group_id": g["id"]})
+        r = client.post(EXCEPTION_URL, json={"name": "信息异常", "severity": 1, "group_id": g["id"]})
         resp = client.put(
             f"{EXCEPTION_URL}/{r.json()['id']}",
             json={"severity": 4, "group_id": g["id"]},
@@ -48,7 +48,7 @@ class TestExceptionAPI:
 
     def test_delete(self, client):
         g = self._setup_group(client)
-        r = client.post(EXCEPTION_URL, json={"severity": 2, "group_id": g["id"]})
+        r = client.post(EXCEPTION_URL, json={"name": "测试告警", "severity": 2, "group_id": g["id"]})
         resp = client.delete(f"{EXCEPTION_URL}/{r.json()['id']}")
         assert resp.status_code == 204
 
@@ -56,7 +56,7 @@ class TestExceptionAPI:
 class TestBinding:
     def _setup(self, client):
         g = client.post(GROUP_URL, json={"name": "M2M测试"}).json()
-        exc = client.post(EXCEPTION_URL, json={"severity": 3, "group_id": g["id"]}).json()
+        exc = client.post(EXCEPTION_URL, json={"name": "API测试异常", "severity": 3, "group_id": g["id"]}).json()
         return exc
 
     def test_bind_entity(self, client):

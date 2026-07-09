@@ -6,6 +6,8 @@ from .enum_types import entity_router, action_router, sound_router
 from .alert import response_router, group_router
 from .exception import router as exception_router
 from .event import router as event_router, stats_router
+from .user import router as user_router
+from .log import router as log_router
 
 routers = [
     node_router,
@@ -18,6 +20,8 @@ routers = [
     exception_router,
     event_router,
     stats_router,
+    user_router,
+    log_router,
 ]
 
 __all__ = [

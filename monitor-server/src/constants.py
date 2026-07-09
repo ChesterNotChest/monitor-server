@@ -105,3 +105,24 @@ class FaceRecognitionResult(enum.IntEnum):
     NO_RESULT = 1   # 画面中未检测到人脸
     STRANGER = 2    # 检测到人脸但不在录入人员库中
     NORMAL = 3      # 检测到人脸且匹配已录入人员
+
+
+# ══════════════════════════════════════════════
+# 用户与日志枚举
+# ══════════════════════════════════════════════
+
+class UserRole(enum.IntEnum):
+    """用户角色枚举。"""
+    SECURITY = 1   # 安全员
+    ADMIN = 2      # 管理员
+    MANAGER = 3    # 负责人
+    OPERATOR = 4   # 运维员
+
+
+class LogType(enum.IntEnum):
+    """日志类型枚举。"""
+    DEVICE = 1       # 设备状态变更
+    OPERATION = 2    # 用户操作
+    RECOGNITION = 3  # AI 识别结果
+    ALERT = 4        # 告警处置
+    SYSTEM = 5       # 系统事件
