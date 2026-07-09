@@ -3,6 +3,7 @@
 from . import device_repo, node_repo, view_repo
 from .base import BaseRepo
 from .action_type_repo import ActionTypeRepo
+from .alert_review_repo import AlertReviewRepo
 from .alert_group_repo import AlertGroupRepo
 from .audio_device_repo import AudioDeviceRepo
 from .electronic_fence_repo import ElectronicFenceRepo
@@ -14,11 +15,13 @@ from .node_repo import NodeRepo
 from .response_action_repo import ResponseActionRepo
 from .situation_event_repo import SituationEventRepo
 from .sound_type_repo import SoundTypeRepo
+from .user_repo import UserRepo
 from .video_device_repo import VideoDeviceRepo
 
 __all__ = [
     "BaseRepo",
     "ActionTypeRepo",
+    "AlertReviewRepo",
     "AlertGroupRepo",
     "AudioDeviceRepo",
     "ElectronicFenceRepo",
@@ -30,6 +33,7 @@ __all__ = [
     "ResponseActionRepo",
     "SituationEventRepo",
     "SoundTypeRepo",
+    "UserRepo",
     "VideoDeviceRepo",
     "device_repo",
     "node_repo",

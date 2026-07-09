@@ -29,7 +29,7 @@ def _to_response(person) -> PersonResponse:
 
 
 @router.post("", response_model=PersonResponse, status_code=201)
-def create(db: Session = Depends(get_db), body: PersonCreate):
+def create(body: PersonCreate, db: Session = Depends(get_db)):
     """创建命名人物。"""
     try:
         person = create_person(db, name=body.name)
