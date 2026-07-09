@@ -15,28 +15,28 @@ class TestExceptionDefRepo:
 
     def test_create_and_get(self, db, alert_group):
         repo = ExceptionDefRepo(db)
-        ed = repo.create(severity=SeverityLevel.CRITICAL, group_id=alert_group.id)
+        ed = repo.create(name="测试异常1", severity=SeverityLevel.CRITICAL, group_id=alert_group.id)
         assert ed.id is not None
         assert repo.get(ed.id).severity == SeverityLevel.CRITICAL
 
     def test_by_severity(self, db, alert_group):
         repo = ExceptionDefRepo(db)
-        repo.create(severity=SeverityLevel.CRITICAL, group_id=alert_group.id)
-        repo.create(severity=SeverityLevel.WARNING, group_id=alert_group.id)
+        repo.create(name="按严重度1", severity=SeverityLevel.CRITICAL, group_id=alert_group.id)
+        repo.create(name="按严重度2", severity=SeverityLevel.WARNING, group_id=alert_group.id)
         assert len(repo.by_severity(SeverityLevel.CRITICAL)) == 1
         assert len(repo.by_severity(SeverityLevel.INFO)) == 0
 
     def test_by_group(self, db, alert_group):
         repo = ExceptionDefRepo(db)
         ag2 = AlertGroupRepo(db).create(name="另一个分组")
-        repo.create(severity=SeverityLevel.INFO, group_id=alert_group.id)
-        repo.create(severity=SeverityLevel.WARNING, group_id=ag2.id)
+        repo.create(name="按分组1", severity=SeverityLevel.INFO, group_id=alert_group.id)
+        repo.create(name="按分组2", severity=SeverityLevel.WARNING, group_id=ag2.id)
         assert len(repo.by_group(alert_group.id)) == 1
         assert len(repo.by_group(ag2.id)) == 1
 
     def test_with_details(self, db, alert_group):
         repo = ExceptionDefRepo(db)
-        repo.create(severity=SeverityLevel.EMERGENCY, group_id=alert_group.id)
+        repo.create(name="详情测试", severity=SeverityLevel.EMERGENCY, group_id=alert_group.id)
         results = repo.with_details()
         assert len(results) == 1
         assert results[0].alert_group is not None
@@ -46,10 +46,10 @@ class TestExceptionDefRepo:
 
     def test_delete(self, db, alert_group):
         repo = ExceptionDefRepo(db)
-        ed = repo.create(severity=SeverityLevel.INFO, group_id=alert_group.id)
+        ed = repo.create(name="待删异常", severity=SeverityLevel.INFO, group_id=alert_group.id)
         assert repo.delete(ed.id) is True
 
     def test_fk_group_violation(self, db):
         repo = ExceptionDefRepo(db)
         with pytest.raises(IntegrityError):
-            repo.create(severity=SeverityLevel.WARNING, group_id=99999)
+            repo.create(name="FK测试", severity=SeverityLevel.WARNING, group_id=99999)

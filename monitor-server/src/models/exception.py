@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Integer, Enum, DateTime, Table, Column, func
+from sqlalchemy import ForeignKey, Integer, String, Enum, DateTime, Table, Column, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import Base
@@ -41,11 +41,17 @@ class ExceptionDef(Base):
     __tablename__ = "exceptions"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     severity: Mapped[SeverityLevel] = mapped_column(
         Enum(SeverityLevel), nullable=False,
     )
     group_id: Mapped[int] = mapped_column(
         ForeignKey("alert_groups.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    face_result_id: Mapped[int | None] = mapped_column(
+        ForeignKey("face_recognition_results.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
     )
     # TODO: 额外触发条件字段（如时间窗口、次数阈值等），后续 service 层实现
     created_at: Mapped[datetime] = mapped_column(
@@ -54,6 +60,7 @@ class ExceptionDef(Base):
 
     # 关联
     alert_group: Mapped["AlertGroup"] = relationship("AlertGroup")
+    face_recognition_result: Mapped["FaceRecognitionResult | None"] = relationship("FaceRecognitionResult")
     entities: Mapped[list["EntityType"]] = relationship(
         "EntityType", secondary=exception_entities, lazy="selectin"
     )
