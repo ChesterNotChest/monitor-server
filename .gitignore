@@ -41,6 +41,7 @@ coverage.xml
 *.log
 logs/
 
-# ===== 第三方 =====
+# ===== 第三方模型权重 =====
 monitor-server/src/third-party/*
 !monitor-server/src/third-party/.gitkeep
+!monitor-server/src/third-party/download_weights.py

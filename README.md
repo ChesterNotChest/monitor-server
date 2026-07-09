@@ -95,9 +95,22 @@ pytest src/tests/ --tb=short
 
 ## Docker 部署
 
+### 1. 准备模型权重
+
+```bash
+# 首次：下载模型权重到宿主机目录
+mkdir -p ./models
+cd monitor-server/src/third-party && python download_weights.py
+cp -r monitor-server/src/third-party/* ./models/
+```
+
+### 2. 启动服务
+
 ```bash
 docker-compose -f docker-compose.prod.yml up -d
 ```
+
+模型目录通过 `${MODEL_DIR:-./models}` 挂载到容器 `/app/src/third-party/`。权重文件只需下载一次，后续重启无需重新下载。
 
 服务暴露在 `:80`（nginx → app:8000）。
 
@@ -123,6 +136,47 @@ POST /api/v1/auth/login  →  {access_token, user}
 | 运维员 | `operator` | 仪表板、告警查看、设备管理、系统日志、用户管理、异常/告警分级 |
 
 所有受保护端点需在请求头携带 `Authorization: Bearer <access_token>`。
+
+---
+
+## AI 模型安装
+
+智能分析模块依赖以下模型，存放于 `src/third-party/`，通过 conda 环境统一管理：
+
+### 环境部署
+
+```bash
+conda env create -f monitor-server/environment.yml
+conda activate monitor-server
+cd monitor-server/src/third-party
+python verify_models.py
+```
+
+### 模型清单
+
+| 模型 | 版本 | 安装方式 | 用途 |
+|------|------|----------|------|
+| YOLO11 | ≥8.3.0 | `pip install ultralytics>=8.3.0` | 目标检测 / 跟踪 / 分割 |
+| Dlib | 19.24.2 | `conda install -c conda-forge dlib=19.24.2` | HOG + CNN 人脸检测，68 点 landmark |
+| face_recognition | ≥1.4.0 | `pip install face_recognition>=1.4.0` | dlib wrapper，128D 人脸特征向量 |
+| SlowFast (Kinetics) | R-50 | `pip install pytorchvideo>=0.1.5` | 场景级行为分类（打架/跌倒/奔跑等） |
+| SlowFast (AVA) | R-50 | pytorchvideo 内置 | 人物级动作检测：抽烟/打电话/喝水等 60 类 |
+| YAMNet | torchaudio 内置 | 随 `torchaudio>=2.1.0` 安装 | AudioSet 521 类音频分类 |
+| OpenCV | ≥4.10 | `pip install opencv-python-headless>=4.10` | 帧解码 / 预处理 / 标注叠加 |
+
+> **注意**：`dlib` 建议通过 conda 安装（避免 Windows C++ 编译问题）。`setuptools` 需 <70 版本（`face_recognition_models` 依赖 `pkg_resources`）。
+
+### 模型权重文件
+
+预训练权重文件存放于 `src/third-party/`。CD 部署时此目录挂载为宿主机路径（如 `/data/models/`），容器重启无需重新下载。
+
+首次使用或本地调试时，运行以下脚本自动下载：
+
+```bash
+python src/third-party/download_weights.py
+```
+
+模型在首次调用时缓存于 `~/.cache/torch/hub/`。手动下载后放入 `src/third-party/` 并修改模型加载路径即可离线运行。
 
 ---
 
