@@ -26,7 +26,7 @@ def _make_waveform(duration_s: float = 1.0, freq: float | None = None) -> np.nda
 @pytest.fixture(scope="module")
 def runner():
     """加载 YAMNet 模型（首次耗时，后续复用）。"""
-    r = YamnetRunner(view_id=1, audio_id=1)
+    r = YamnetRunner(view_id=1, audio_id=1, audio_name="test")
     import asyncio
     loop = asyncio.new_event_loop()
     loop.run_until_complete(r._load_model())
@@ -97,13 +97,13 @@ class TestYamnetState:
     """状态机测试。"""
 
     def test_initial_state_idle(self):
-        r = YamnetRunner(view_id=1, audio_id=1)
+        r = YamnetRunner(view_id=1, audio_id=1, audio_name="test")
         assert r.state == YamnetState.IDLE
         print("  [PASS] Initial state is IDLE")
 
     def test_retry_delay_init(self):
         """15.1.3 指数退避初始值。"""
-        r = YamnetRunner(view_id=1, audio_id=1)
+        r = YamnetRunner(view_id=1, audio_id=1, audio_name="test")
         assert r._retry_delay == 1.0
         assert r._max_retry_delay == 60.0
         print("  [PASS] Retry delay: 1.0s → max 60.0s")

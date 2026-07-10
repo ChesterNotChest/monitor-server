@@ -21,7 +21,8 @@ _yamnet_runners: dict[int, YamnetRunner] = {}
 
 
 async def start_pipeline(view_id: int, video_id: int, video_name: str,
-                         audio_id: int | None = None) -> bool:
+                         audio_id: int | None = None,
+                         audio_name: str = "") -> bool:
     """启动指定 View 的 AI 推理管线（视觉 + 告警引擎 + 可选音频分类）。
 
     Returns:
@@ -45,7 +46,7 @@ async def start_pipeline(view_id: int, video_id: int, video_name: str,
 
     # 3. 有音频设备时启动 YAMNet (Part C)
     if audio_id is not None:
-        yamnet = YamnetRunner(view_id, audio_id)
+        yamnet = YamnetRunner(view_id, audio_id, audio_name)
         asyncio.create_task(yamnet.run())
         _yamnet_runners[view_id] = yamnet
         logger.info("YamnetRunner started for view_id=%d audio_id=%d", view_id, audio_id)

@@ -11,7 +11,7 @@ from enum import Enum
 
 import numpy as np
 
-from src.config import settings
+from src.network.rtmp.puller import build_pull_url
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +51,11 @@ class YamnetRunner:
     输出 521 类 AudioSet scores → 映射为 SoundType → EventBus SOUND。
     """
 
-    def __init__(self, view_id: int, audio_id: int, threshold: float = YAMNET_THRESHOLD) -> None:
+    def __init__(self, view_id: int, audio_id: int, audio_name: str,
+                 threshold: float = YAMNET_THRESHOLD) -> None:
         self._view_id = view_id
         self._audio_id = audio_id
+        self._audio_name = audio_name
         self._threshold = threshold
         self._state = YamnetState.IDLE
         self._proc: asyncio.subprocess.Process | None = None
@@ -89,7 +91,7 @@ class YamnetRunner:
     async def _start_ffmpeg(self) -> asyncio.subprocess.Process:
         cmd = [
             "ffmpeg",
-            "-i", f"rtmp://{settings.RTMP_HOST}:{settings.RTMP_PORT}/live/audio_{self._audio_id}",
+            "-i", build_pull_url(self._audio_name, "audio", self._audio_id),
             "-f", "f32le", "-ac", "1", "-ar", str(YAMNET_SAMPLE_RATE),
             "-loglevel", "error",
             "pipe:1",
