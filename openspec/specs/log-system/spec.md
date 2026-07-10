@@ -1,6 +1,6 @@
 # Log System
 
-**Purpose:** 定义统一分类日志系统 — LogEntry 模型 + 写入 Service + 查询/统计 API。
+**Purpose:** 定义统一分类日志系统 — LogEntry 模型 + 写入 Service + 查询 API。
 
 ## Requirements
 
@@ -32,25 +32,7 @@
 ### Requirement: 日志只读查询
 系统 SHALL 提供日志的只读查询 API，不开放创建/修改/删除端点。
 
-#### Scenario: 按日志类型过滤查询
-- **WHEN** 客户端 `GET /api/v1/logs?log_type=DEVICE`
-- **THEN** 系统返回设备类日志分页列表
+- `GET /api/v1/logs` — 日志列表（分页：page, page_size）
+- `GET /api/v1/logs/{id}` — 单条日志详情
 
-#### Scenario: 按时间范围过滤查询
-- **WHEN** 客户端 `GET /api/v1/logs?start=...&end=...`
-- **THEN** 系统仅返回该时间区间内的日志
-
-#### Scenario: 多条件组合过滤
-- **WHEN** 客户端 `GET /api/v1/logs?view_id=3&log_type=RECOGNITION&start=...`
-- **THEN** 系统返回符合所有条件的日志
-
-### Requirement: 日志统计
-系统 SHALL 提供按 log_type 或 severity 分组的日志数量统计端点。
-
-#### Scenario: 按日志类型分组统计
-- **WHEN** 客户端 `GET /api/v1/logs/stats?group_by=log_type`
-- **THEN** 系统返回 `[{"log_type": "DEVICE", "count": 15}, ...]`
-
-#### Scenario: 按严重级别分组统计
-- **WHEN** 客户端 `GET /api/v1/logs/stats?group_by=severity`
-- **THEN** 系统返回 `[{"severity": "CRITICAL", "count": 8}, ...]`
+> **注意**：按 log_type/时间范围/severity 筛选与统计端点（`/logs/stats`）计划在后续迭代中实现。
