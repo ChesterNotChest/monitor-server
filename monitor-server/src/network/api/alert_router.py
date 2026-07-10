@@ -7,6 +7,7 @@ from src.constants import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from src.extensions import get_db
 from src.middleware.rbac import require_permission
 from src.schema.http.alert_schema import AlertListResponse, AlertResponse
+from src.schema.http.common import OkResponse
 from src.service import alert_task
 
 router = APIRouter(prefix="/alerts", tags=["告警"])
@@ -23,25 +24,39 @@ def list_alerts(
     return alert_task.list_alerts(db, page=page, page_size=page_size)
 
 
-@router.put("/{alert_id}/handle")
+@router.put(
+    "/{alert_id}/handle",
+    response_model=OkResponse,
+    responses={404: {"description": "告警不存在"}},
+)
 def mark_handled(
     alert_id: int,
     db: Session = Depends(get_db),
     user=Depends(require_permission("alert:handle")),
 ):
-    """标记告警为已处理。"""
+    """标记告警为已处理。
+
+    **权限**: alert:handle
+    """
     if not alert_task.mark_handled(db, alert_id, user.id):
         raise HTTPException(status_code=404, detail="告警不存在")
-    return {"ok": True}
+    return OkResponse()
 
 
-@router.put("/{alert_id}/false-alarm")
+@router.put(
+    "/{alert_id}/false-alarm",
+    response_model=OkResponse,
+    responses={404: {"description": "告警不存在"}},
+)
 def mark_false_alarm(
     alert_id: int,
     db: Session = Depends(get_db),
     user=Depends(require_permission("alert:handle")),
 ):
-    """标记告警为误报。"""
+    """标记告警为误报。
+
+    **权限**: alert:handle
+    """
     if not alert_task.mark_false_alarm(db, alert_id, user.id):
         raise HTTPException(status_code=404, detail="告警不存在")
-    return {"ok": True}
+    return OkResponse()

@@ -81,13 +81,14 @@ class AIPipeline:
 
     # ── Lifecycle ──────────────────────────────
 
-    async def start(self, view_id: int, video_id: int,
+    async def start(self, view_id: int, video_id: int, video_name: str,
                     audio_id: int | None = None) -> bool:
         """启动 AI 管线。
 
         Args:
             view_id: View 数据库 ID。
             video_id: VideoDevice 数据库 ID。
+            video_name: VideoDevice 名称（用于 RTMP 拉流命名）。
             audio_id: AudioDevice 数据库 ID（可选）。
 
         Returns:
@@ -102,7 +103,7 @@ class AIPipeline:
             return False
 
         # 2. 打开帧读取器
-        if not self._reader.open(video_id):
+        if not self._reader.open(video_id, video_name):
             return False
 
         # 3. 启动 FFmpeg 合流

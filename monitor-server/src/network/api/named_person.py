@@ -28,7 +28,12 @@ def _to_response(person) -> PersonResponse:
     return PersonResponse.model_validate(person)
 
 
-@router.post("", response_model=PersonResponse, status_code=201)
+@router.post(
+    "",
+    response_model=PersonResponse,
+    status_code=201,
+    responses={409: {"description": "名称已存在"}},
+)
 def create(body: PersonCreate, db: Session = Depends(get_db)):
     """创建命名人物。"""
     try:
@@ -56,7 +61,11 @@ def list_all(
     )
 
 
-@router.get("/{id}", response_model=PersonResponse)
+@router.get(
+    "/{id}",
+    response_model=PersonResponse,
+    responses={404: {"description": "命名人物不存在"}},
+)
 def get_one(id: int, db: Session = Depends(get_db)):
     """按 ID 查询命名人物详情。"""
     person = get_person(db, id)
@@ -65,7 +74,11 @@ def get_one(id: int, db: Session = Depends(get_db)):
     return _to_response(person)
 
 
-@router.put("/{id}", response_model=PersonResponse)
+@router.put(
+    "/{id}",
+    response_model=PersonResponse,
+    responses={404: {"description": "命名人物不存在"}, 409: {"description": "名称已存在"}},
+)
 def update(id: int, body: PersonUpdate, db: Session = Depends(get_db)):
     """更新命名人物信息。"""
     try:
@@ -80,7 +93,11 @@ def update(id: int, body: PersonUpdate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail=str(e))
 
 
-@router.delete("/{id}", status_code=204)
+@router.delete(
+    "/{id}",
+    status_code=204,
+    responses={404: {"description": "命名人物不存在"}},
+)
 def delete(id: int, db: Session = Depends(get_db)):
     """删除命名人物及其头像文件。"""
     if not delete_person(db, id):
@@ -88,7 +105,11 @@ def delete(id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
-@router.post("/{id}/avatar", response_model=PersonResponse)
+@router.post(
+    "/{id}/avatar",
+    response_model=PersonResponse,
+    responses={404: {"description": "命名人物不存在"}, 422: {"description": "文件格式不支持"}},
+)
 def upload(id: int, avatar: UploadFile = File(...), db: Session = Depends(get_db)):
     """上传/替换人物头像。"""
     try:

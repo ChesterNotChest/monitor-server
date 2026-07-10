@@ -80,3 +80,37 @@ them to stream lifecycle handlers.
 
 - **WHEN** Server receives `{"type":"heartbeat"}` from an authenticated Node
 - **THEN** Server updates liveness state without changing stream state
+
+## ADDED Requirements
+
+### Requirement: WebSocket endpoint addresses are documented
+
+The WebSocket endpoint SHALL be exposed at two paths:
+
+- `ws://<host>:<port>/ws` — primary endpoint
+- `ws://<host>:<port>/api/v1/ws` — API-prefixed alias
+
+Both paths SHALL use the same handler. The Node SHALL connect with its token as a query parameter: `ws://<host>:<port>/ws?token=<node_token>`.
+
+#### Scenario: Node connects with token query parameter
+
+- **WHEN** a Node opens a WebSocket connection to `/ws?token=<token>`
+- **THEN** Server extracts the token from the query string and authenticates the Node
+
+### Requirement: Heartbeat interval is specified
+
+The Node SHALL send heartbeat messages (`{"type":"heartbeat"}`) at a regular interval. Server SHALL expect heartbeats at a 30-second interval. Server SHALL mark a Node as disconnected if no heartbeat or other message is received within 90 seconds (3 missed intervals).
+
+#### Scenario: Heartbeat timeout
+
+- **WHEN** Server has not received any message from a Node for 90 seconds
+- **THEN** Server marks the Node as disconnected and removes the WebSocket from the registry
+
+### Requirement: Authentication error format
+
+When authentication fails, Server SHALL close the WebSocket connection with a close code and a JSON error message. The error message SHALL include the reason for failure.
+
+#### Scenario: Invalid token rejection
+
+- **WHEN** a Node connects with an invalid or expired token
+- **THEN** Server sends `{"error": "invalid_token", "detail": "Token is invalid or expired"}` and closes the connection with code 4001

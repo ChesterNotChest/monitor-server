@@ -1,4 +1,4 @@
-﻿"""检测枚举管理 API 路由 —— 负责人专有。
+"""检测枚举管理 API 路由 —— 负责人专有。
 
 为简化路由注册，entity/action/sound 三种类型共用此模块，在 ``__init__.py`` 中分别添加前缀注册。
 """
@@ -19,22 +19,55 @@ _perm = Depends(require_permission("detection:manage"))
 
 entity_router = APIRouter(prefix="/detection/entity-types", tags=["实体类型枚举"])
 
+
 @entity_router.get("", response_model=list[DetectionTypeResponse])
 def list_entities(db: Session = Depends(get_db), _user=_perm):
+    """列出所有实体类型。
+
+    **权限**: detection:manage
+    """
     return detection_task.list_entity_types(db)
 
-@entity_router.post("", response_model=DetectionTypeResponse, status_code=201)
+
+@entity_router.post(
+    "",
+    response_model=DetectionTypeResponse,
+    status_code=201,
+    responses={409: {"description": "实体类型已存在"}},
+)
 def create_entity(body: DetectionTypeCreate, db: Session = Depends(get_db), _user=_perm):
+    """创建实体类型。
+
+    **权限**: detection:manage
+    """
     return detection_task.create_entity_type(db, name=body.name)
 
-@entity_router.put("/{item_id}", response_model=DetectionTypeResponse)
+
+@entity_router.put(
+    "/{item_id}",
+    response_model=DetectionTypeResponse,
+    responses={404: {"description": "实体类型不存在"}},
+)
 def update_entity(item_id: int, body: DetectionTypeCreate, db: Session = Depends(get_db), _user=_perm):
+    """更新实体类型。
+
+    **权限**: detection:manage
+    """
     r = detection_task.update_entity_type(db, item_id, name=body.name)
     if r is None: raise HTTPException(404)
     return r
 
-@entity_router.delete("/{item_id}", status_code=204)
+
+@entity_router.delete(
+    "/{item_id}",
+    status_code=204,
+    responses={404: {"description": "实体类型不存在"}},
+)
 def delete_entity(item_id: int, db: Session = Depends(get_db), _user=_perm):
+    """删除实体类型。
+
+    **权限**: detection:manage
+    """
     if not detection_task.delete_entity_type(db, item_id):
         raise HTTPException(404)
 
@@ -43,22 +76,55 @@ def delete_entity(item_id: int, db: Session = Depends(get_db), _user=_perm):
 
 action_router = APIRouter(prefix="/detection/action-types", tags=["行为类型枚举"])
 
+
 @action_router.get("", response_model=list[DetectionTypeResponse])
 def list_actions(db: Session = Depends(get_db), _user=_perm):
+    """列出所有行为类型。
+
+    **权限**: detection:manage
+    """
     return detection_task.list_action_types(db)
 
-@action_router.post("", response_model=DetectionTypeResponse, status_code=201)
+
+@action_router.post(
+    "",
+    response_model=DetectionTypeResponse,
+    status_code=201,
+    responses={409: {"description": "行为类型已存在"}},
+)
 def create_action(body: DetectionTypeCreate, db: Session = Depends(get_db), _user=_perm):
+    """创建行为类型。
+
+    **权限**: detection:manage
+    """
     return detection_task.create_action_type(db, name=body.name)
 
-@action_router.put("/{item_id}", response_model=DetectionTypeResponse)
+
+@action_router.put(
+    "/{item_id}",
+    response_model=DetectionTypeResponse,
+    responses={404: {"description": "行为类型不存在"}},
+)
 def update_action(item_id: int, body: DetectionTypeCreate, db: Session = Depends(get_db), _user=_perm):
+    """更新行为类型。
+
+    **权限**: detection:manage
+    """
     r = detection_task.update_action_type(db, item_id, name=body.name)
     if r is None: raise HTTPException(404)
     return r
 
-@action_router.delete("/{item_id}", status_code=204)
+
+@action_router.delete(
+    "/{item_id}",
+    status_code=204,
+    responses={404: {"description": "行为类型不存在"}},
+)
 def delete_action(item_id: int, db: Session = Depends(get_db), _user=_perm):
+    """删除行为类型。
+
+    **权限**: detection:manage
+    """
     if not detection_task.delete_action_type(db, item_id):
         raise HTTPException(404)
 
@@ -67,22 +133,55 @@ def delete_action(item_id: int, db: Session = Depends(get_db), _user=_perm):
 
 sound_router = APIRouter(prefix="/detection/sound-types", tags=["声音类型枚举"])
 
+
 @sound_router.get("", response_model=list[DetectionTypeResponse])
 def list_sounds(db: Session = Depends(get_db), _user=_perm):
+    """列出所有声音类型。
+
+    **权限**: detection:manage
+    """
     return detection_task.list_sound_types(db)
 
-@sound_router.post("", response_model=DetectionTypeResponse, status_code=201)
+
+@sound_router.post(
+    "",
+    response_model=DetectionTypeResponse,
+    status_code=201,
+    responses={409: {"description": "声音类型已存在"}},
+)
 def create_sound(body: DetectionTypeCreate, db: Session = Depends(get_db), _user=_perm):
+    """创建声音类型。
+
+    **权限**: detection:manage
+    """
     return detection_task.create_sound_type(db, name=body.name)
 
-@sound_router.put("/{item_id}", response_model=DetectionTypeResponse)
+
+@sound_router.put(
+    "/{item_id}",
+    response_model=DetectionTypeResponse,
+    responses={404: {"description": "声音类型不存在"}},
+)
 def update_sound(item_id: int, body: DetectionTypeCreate, db: Session = Depends(get_db), _user=_perm):
+    """更新声音类型。
+
+    **权限**: detection:manage
+    """
     r = detection_task.update_sound_type(db, item_id, name=body.name)
     if r is None: raise HTTPException(404)
     return r
 
-@sound_router.delete("/{item_id}", status_code=204)
+
+@sound_router.delete(
+    "/{item_id}",
+    status_code=204,
+    responses={404: {"description": "声音类型不存在"}},
+)
 def delete_sound(item_id: int, db: Session = Depends(get_db), _user=_perm):
+    """删除声音类型。
+
+    **权限**: detection:manage
+    """
     if not detection_task.delete_sound_type(db, item_id):
         raise HTTPException(404)
 

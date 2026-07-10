@@ -7,13 +7,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from src.extensions import get_db
-from src.schema.http import ViewCreateRequest
+from src.schema.http import ViewCreateRequest, ViewResponse, ViewListResponse
+from src.schema.http.common import OkResponse
 from src.service import view_task
 
 router = APIRouter(prefix="/views", tags=["views"])
 
 
-@router.post("/")
+@router.post(
+    "/",
+    response_model=ViewResponse,
+    responses={404: {"description": "设备不存在"}},
+)
 def create_view(request: ViewCreateRequest, db: Session = Depends(get_db)):
     """POST /api/v1/views — 创建监控视图，启动 FFmpeg 合流。"""
     result = view_task.create_view(
@@ -26,14 +31,18 @@ def create_view(request: ViewCreateRequest, db: Session = Depends(get_db)):
     return result
 
 
-@router.get("/")
+@router.get("/", response_model=ViewListResponse)
 def list_views(db: Session = Depends(get_db)):
     """GET /api/v1/views — 列出所有监控视图。"""
     views = view_task.list_views(db)
-    return {"views": views}
+    return ViewListResponse(views=views)
 
 
-@router.get("/{view_id}")
+@router.get(
+    "/{view_id}",
+    response_model=ViewResponse,
+    responses={404: {"description": "View 不存在"}},
+)
 def get_view(view_id: int, db: Session = Depends(get_db)):
     """GET /api/v1/views/{view_id} — 获取单个视图详情。"""
     view = view_task.get_view(db, view_id)
@@ -42,10 +51,14 @@ def get_view(view_id: int, db: Session = Depends(get_db)):
     return view
 
 
-@router.delete("/{view_id}")
+@router.delete(
+    "/{view_id}",
+    response_model=OkResponse,
+    responses={404: {"description": "View 不存在"}},
+)
 def delete_view(view_id: int, db: Session = Depends(get_db)):
     """DELETE /api/v1/views/{view_id} — 删除视图，停止 FFmpeg 合流。"""
     ok = view_task.delete_view(db, view_id)
     if not ok:
         raise HTTPException(status_code=404, detail="View not found")
-    return {"ok": True}
+    return OkResponse()

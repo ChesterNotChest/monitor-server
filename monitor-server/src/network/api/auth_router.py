@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from src.extensions import get_db
 from src.schema.http.auth_schema import LoginRequest, LoginResponse, UserResponse
+from src.schema.http.common import OkResponse
 from src.service import auth_task
 from src.middleware.rbac import get_current_user
 
@@ -27,10 +28,10 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/logout")
+@router.post("/logout", response_model=OkResponse)
 def logout():
     """注销（客户端丢弃 token 即可）。"""
-    return {"ok": True}
+    return OkResponse()
 
 
 @router.get("/me", response_model=UserResponse)
