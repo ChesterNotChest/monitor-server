@@ -88,6 +88,16 @@ python src/third-party/download_weights.py
 
 首次下载约 460 MB，已存在的文件自动跳过。
 
+### 3b. SRS（Web 端联调用）
+
+Web 前端需要 WebRTC 拉流时运行：
+
+```bash
+bash srs/setup.sh
+```
+
+自动下载 Windows 二进制或使用 Docker 启动 SRS，监听 :1935（RTMP）、:8080（HTTP-FLV）、:8000（WebRTC）。配置见 `srs/srs.conf`。
+
 ### 4. 检查环境
 
 ```bash
@@ -145,30 +155,52 @@ pytest src/tests/ --tb=short
 
 ### 9. 端到端视觉验证
 
-本地无需 SRS 或 Docker——使用 Node 真实推流 + 两个 Node.js RTMP 靶子。
+本地无需 SRS 或 Docker——三终端架构，Node 按需推流。
 
-| 靶子 | 位置 | 端口 | 启动方式 | 用途 |
-|------|------|------|----------|------|
-| Node RTMP Server | `monitor-node/rtmp_server/index.js` | 1935 | Node `STREAM_DEBUG=true` 自动启动 | 接收 Node FFmpeg 推来的 raw 流 |
-| Server RTMP Target | `monitor-server/tools/rtmp_debug_server.js` | 1936 (+8001 HTTP) | `DEBUG_WEB_STREAM=true` 时 Server 自动启动 | 接收 Server 推来的标注 View 流，供 OBS/VLC 拉流 |
+详见 `openspec/specs/local-dev-e2e-paradigm/spec.md`。
+
+**模式一（快速验证）：Node 独奏推流**
 
 ```bash
-# ── Terminal 1: 启动 Node ──
 cd monitor-node
-set STREAM_DEBUG=true
-python -m src.run
-
-# ── Terminal 2: 启动 Server ──
-cd monitor-server
-set DEBUG_WEB_STREAM=true
-python -m src.run
-
-# ── Terminal 3: 播放标注流 ──
-# OBS: 添加媒体源 → rtmp://127.0.0.1:1936/view/{view_id}
-# VLC: 打开网络串流 → rtmp://127.0.0.1:1936/view/{view_id}
+set RTMP_DEBUG=true
+set DEBUG_WSS=true
+python run.py
+# → VLC 打开日志中打印的拉流地址（如 rtmp://127.0.0.1:1935/live/USB_webcam_video_0）
 ```
 
-> 两个靶子均自带 SIGINT/SIGTERM 信号处理（`CTRL+C` 自动停止），均由各自 `app.py` 在 Debug 模式下自动启动。
+**模式二（标准联调）：Node + Server + RTMP 服务器**
+
+```bash
+# Terminal 0 — RTMP 中转（二选一）
+cd monitor-node/rtmp_server && node index.js          # 纯 RTMP
+# 或 .\srs-bin\srs.exe -c srs\srs.conf                # 含 WebRTC
+
+# Terminal 1 — Node（等待 Server 命令）
+cd monitor-node
+set RTMP_DEBUG=false
+set DEBUG_WSS=false
+set SERVER_BASE_URL=127.0.0.1
+set WSS_PORT=8000
+python run.py
+
+# Terminal 2 — Server（拉流+AI）
+cd monitor-server
+set DEBUG_WEB_STREAM=true
+set RTMP_DEBUG=true
+python -m src.run
+
+# 创建 View 触发推流（Server 通过 WSS 命令 Node 启动设备流）
+curl -X POST http://127.0.0.1:8000/api/v1/views/ \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"video_id":1,"audio_id":1}'
+
+# Terminal 3 — 播放标注流
+# VLC 打开响应中的 rtmp_url（如 rtmp://127.0.0.1:1936/view/1）
+```
+
+> 三个进程均支持 `CTRL+C` 停止。Terminal 0 的 RTMP 服务器由 `node-media-server` 实现，Terminal 1 Node 不自动推流，由 Server 通过 WSS `UPDATE_STREAM` 命令按需启动。
 
 ---
 
