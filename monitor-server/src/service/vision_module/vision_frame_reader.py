@@ -67,7 +67,10 @@ class FrameReader:
         """
         url = build_pull_url(video_name, "video", video_id)
         logger.info("FrameReader connecting to %s", url)
-        self._cap = cv2.VideoCapture(url)
+        # 限制 OpenCV/FFmpeg 打开超时避免无限阻塞
+        import os
+        os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "timeout;5000000")
+        self._cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
         if not self._cap.isOpened():
             logger.error("FrameReader failed to open %s", url)
             self._state = FrameReaderState.ERROR
