@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 import numpy as np
@@ -20,18 +20,11 @@ from src.service.vision_module.vision_annotation import draw_detections
 from src.service.vision_module.vision_merger import (
     start_stream_merge, push_frame, stop_stream_merge,
 )
+from src.service.vision_module.vision_types import Track
 
 logger = logging.getLogger(__name__)
 
 # ── 数据契约 ──────────────────────────────────
-
-@dataclass
-class Track:
-    """ByteTrack 追踪结果（Part B 填充）。"""
-    bbox: list[float]       # [x1, y1, x2, y2]
-    track_id: int
-    score: float
-
 
 @dataclass
 class FrameContext:

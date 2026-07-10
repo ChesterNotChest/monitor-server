@@ -1,8 +1,11 @@
 """Node WebSocket 连接处理与命令发送。"""
 
 import asyncio
+import logging
 from collections import deque
 from secrets import token_urlsafe
+
+logger = logging.getLogger(__name__)
 from typing import Any
 
 from fastapi import Depends, WebSocket, WebSocketDisconnect
@@ -11,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from src.extensions import get_db
 from src.repository import device_repo, node_repo
+from src.repository.node_repo import NodeRepo
 from src.schema.wss import (
     ConnectRequest,
     ConnectResponse,
@@ -140,14 +144,20 @@ async def handle_node_websocket(websocket: WebSocket, db: Session) -> None:
     """处理 Node 连接、认证、握手响应与断连清理。"""
 
     await websocket.accept()
+    logger.info("[WSS] WebSocket accepted from %s", websocket.client.host if websocket.client else "unknown")
     node_id: int | None = None
     try:
         payload: dict[str, Any] = await websocket.receive_json()
+        logger.info("[WSS] Received auth payload keys=%s", list(payload.keys()))
         connect_request = ConnectRequest.model_validate(payload)
+        logger.info("[WSS] ConnectRequest valid, token prefix=%s...", connect_request.token[:8])
         node = node_repo.get_by_token(db, connect_request.token)
         if node is None:
-            await websocket.close(code=1008, reason="invalid token")
-            return
+            # 首次连接的 Node 自动注册
+            node = NodeRepo(db).create(token=connect_request.token)
+            logger.info("[WSS] Node auto-registered: id=%d token=%s...", node.id, connect_request.token[:8])
+        else:
+            logger.info("[WSS] Node found: id=%d", node.id)
 
         node_id = node.id
         node_repo.update_connection_status(db, node_id, True)
@@ -167,15 +177,24 @@ async def handle_node_websocket(websocket: WebSocket, db: Session) -> None:
             audios=audios,
         )
         await websocket.send_json(response.model_dump())
+        logger.info("[WSS] Auth complete: node=%d videos=%d audios=%d", node_id, len(videos), len(audios))
 
         while True:
             inbound_payload: dict[str, Any] = await websocket.receive_json()
             if inbound_payload.get("type") == "heartbeat":
                 node_repo.update_connection_status(db, node_id, True)
+                # 心跳中携带设备列表时，upsert 到 Server 设备表
+                for dev in inbound_payload.get("devices", []):
+                    from src.repository.device_repo import upsert_device
+                    upsert_device(db, dev["device_type"], node_id, dev["device_name"])
                 continue
             registry.dispatch_inbound_message(node_id, inbound_payload)
-    except (WebSocketDisconnect, ValidationError):
-        pass
+    except WebSocketDisconnect:
+        logger.info("[WSS] Node disconnected: node_id=%s", node_id)
+    except ValidationError as e:
+        logger.error("[WSS] ConnectRequest validation failed: %s", e.errors())
+    except Exception:
+        logger.exception("[WSS] Unexpected error for node_id=%s", node_id)
     finally:
         if node_id is not None:
             node_repo.update_connection_status(db, node_id, False)
