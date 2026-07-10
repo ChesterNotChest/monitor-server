@@ -3,3 +3,8 @@
 YOLO person bbox × fence polygon 交集检测 + 滑动窗口密度判定。
 产出 FenceEventType 枚举事件。
 """
+"""Electronic fence logic for the vision pipeline."""
+
+from .fence_engine import FenceEngine, FenceEvent, FenceState
+
+__all__ = ["FenceEngine", "FenceEvent", "FenceState"]

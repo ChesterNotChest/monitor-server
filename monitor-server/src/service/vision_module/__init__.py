@@ -9,14 +9,12 @@ Usage::
     from src.service.vision_module.vision_event_bus import event_bus
 """
 
-from src.service.vision_module.vision_pipeline import AIPipeline, FrameContext, Track, FrameHook
 from src.service.vision_module.vision_event_bus import event_bus, ENTITY, ACTION, SOUND, FACE, FENCE, RECORDING
+from src.service.vision_module.video_ai_processor import VideoAIProcessor, register_video_ai_hooks
 
 __all__ = [
-    "AIPipeline",
-    "FrameContext",
-    "Track",
-    "FrameHook",
+    "VideoAIProcessor",
+    "register_video_ai_hooks",
     "event_bus",
     "ENTITY",
     "ACTION",
