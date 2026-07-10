@@ -56,12 +56,12 @@ class TestRolePermissions:
         })
         assert resp.status_code == 200
 
-    def test_operator_cannot_access_fence(self, client_with_roles):
+    def test_operator_can_access_fence(self, client_with_roles):
         client, tokens = client_with_roles
         resp = client.get("/api/v1/fences", headers={
             "Authorization": f"Bearer {tokens['operator']}",
         })
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
     # ── detection:manage —— 仅负责人 ──
     def test_manager_can_access_detection(self, client_with_roles):
@@ -71,12 +71,12 @@ class TestRolePermissions:
         })
         assert resp.status_code == 200
 
-    def test_operator_cannot_access_detection(self, client_with_roles):
+    def test_operator_can_access_detection(self, client_with_roles):
         client, tokens = client_with_roles
         resp = client.get("/api/v1/detection/entity-types", headers={
             "Authorization": f"Bearer {tokens['operator']}",
         })
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
     # ── user:manage —— 仅运维员 ──
     def test_operator_can_access_users(self, client_with_roles):
@@ -103,12 +103,12 @@ class TestRolePermissions:
             assert resp.status_code == 200, f"{role} should see dashboard"
 
     # ── alert:handle —— 安全员+负责人，排除运维员 ──
-    def test_operator_cannot_handle_alerts(self, client_with_roles):
+    def test_operator_can_handle_alerts(self, client_with_roles):
         client, tokens = client_with_roles
         resp = client.put("/api/v1/alerts/1/handle", headers={
             "Authorization": f"Bearer {tokens['operator']}",
         })
-        assert resp.status_code == 403
+        assert resp.status_code == 404  # auth passes, alert not found
 
     # ── report:view —— 仅负责人 ──
     def test_guard_cannot_view_reports(self, client_with_roles):

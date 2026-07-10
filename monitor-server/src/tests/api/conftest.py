@@ -7,6 +7,9 @@ from sqlalchemy.orm import sessionmaker
 
 from src.app import app
 from src.extensions import Base, get_db
+from src.service.auth_task import hash_password
+from src.repository.user_repo import UserRepo
+from src.constants import Role
 
 
 @pytest.fixture(scope="session")
@@ -50,3 +53,25 @@ def client(db):
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def admin_token(db):
+    """获取 admin 用户的 JWT token，供 API 测试鉴权使用。"""
+    from src.service.auth_task import login
+    repo = UserRepo(db)
+    if not repo.by_username("admin"):
+        repo.create(
+            username="admin",
+            password_hash=hash_password("admin"),
+            role=Role.OPERATOR,
+            is_active=True,
+        )
+    token_data = login(db, "admin", "admin")
+    return token_data["access_token"]
+
+
+@pytest.fixture
+def admin_headers(admin_token):
+    """带 admin token 的 Authorization headers。"""
+    return {"Authorization": f"Bearer {admin_token}"}
