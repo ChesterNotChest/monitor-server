@@ -1,14 +1,4 @@
-# RBAC Middleware
-
-**Purpose:** FastAPI 依赖注入形式的认证与权限中间件。三角色（安全员/负责人/运维员）+ 权限矩阵。
-
-## Requirements
-
-### Requirement: JWT 认证依赖
-系统 SHALL 提供 FastAPI `Depends(get_current_user)` 依赖注入。从请求头 Authorization Bearer token 中解码 JWT，验证签名和过期时间，加载 User 实例。无效 token 返回 401。
-
-### Requirement: 角色检查依赖
-系统 SHALL 提供 `Depends(require_role(*roles))` 依赖注入。在 get_current_user 之后检查当前用户角色是否在允许的角色列表中。不匹配返回 403。
+## MODIFIED Requirements
 
 ### Requirement: 权限检查依赖
 系统 SHALL 提供 `Depends(require_permission(perm))` 依赖注入。通过权限矩阵 `PERMISSIONS` 检查当前用户角色是否拥有指定权限。不匹配返回 403。
