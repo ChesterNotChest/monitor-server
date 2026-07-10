@@ -1,4 +1,4 @@
-"""事件模型 —— 记录在特定监控视图中发生的异常事件。也有时成为exception。"""
+"""事件模型 —— 记录在特定监控视图中发生的异常事件。是exception的实例化。"""
 
 from datetime import datetime
 
