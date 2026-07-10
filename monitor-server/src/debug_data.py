@@ -129,6 +129,18 @@ def create_test_data() -> bool:
         db.add(view)
         db.flush()
 
+        # Alert group (required by exception, NOT NULL)
+        from src.models.alert_group import AlertGroup
+        TEST_GROUP_ID = 9999
+        group = db.get(AlertGroup, TEST_GROUP_ID)
+        if group is None:
+            group = AlertGroup(
+                id=TEST_GROUP_ID,
+                name="[DEBUG] 测试告警组",
+            )
+            db.add(group)
+            db.flush()
+
         # Exception
         from src.constants import SeverityLevel
         exc = db.get(ExceptionDef, TEST_EXCEPTION_ID)
@@ -137,7 +149,7 @@ def create_test_data() -> bool:
                 id=TEST_EXCEPTION_ID,
                 name="[DEBUG] 测试异常 — 非法入侵",
                 severity=SeverityLevel.WARNING,
-                group_id=None,
+                group_id=TEST_GROUP_ID,
             )
             db.add(exc)
             db.flush()
