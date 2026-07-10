@@ -95,6 +95,16 @@ def delete_view(db: Session, view_id: int) -> bool:
         check_and_stop_stream(db, "audio", audio_id)
 
         db.commit()
+
+        # 停止 AI 推理管线
+        import asyncio
+        from src.service.vision_task import stop_pipeline
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(stop_pipeline(view_id))
+        except RuntimeError:
+            asyncio.run(stop_pipeline(view_id))
+
         return True
     except Exception:
         db.rollback()
