@@ -95,6 +95,9 @@ python src/third-party/download_weights.py
 python -c "import fastapi, sqlalchemy, pytest; print('python deps ok')"
 ffmpeg -version
 
+# 计算机视觉
+python -c "import cv2; print('cv2 ok')"
+
 # 人脸识别
 python -c "import face_recognition; print('face_recognition ok')"
 
