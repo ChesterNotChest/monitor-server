@@ -38,6 +38,7 @@ class ExceptionCreate(BaseModel):
     severity: SeverityLevel = Field(..., description="严重级别")
     group_id: int = Field(..., description="告警分组 ID")
     face_result_id: int | None = Field(None, description="人脸识别结果条件 ID（可选）")
+    fence_event_id: int | None = Field(None, description="电子围栏事件条件 ID（可选）")
 
 
 class ExceptionUpdate(BaseModel):
@@ -47,6 +48,7 @@ class ExceptionUpdate(BaseModel):
     severity: SeverityLevel | None = Field(None, description="严重级别")
     group_id: int | None = Field(None, description="告警分组 ID")
     face_result_id: int | None = Field(None, description="人脸识别结果条件 ID（可选）")
+    fence_event_id: int | None = Field(None, description="电子围栏事件条件 ID（可选）")
 
 
 class ExceptionResponse(BaseModel):
@@ -57,6 +59,7 @@ class ExceptionResponse(BaseModel):
     severity: SeverityLevel
     group_id: int
     face_result_id: int | None = None
+    fence_event_id: int | None = None
     created_at: datetime
     alert_group: AlertGroupRef | None = None
     entities: list[EnumTypeRef] = []
