@@ -9,7 +9,7 @@ class UserCreate(BaseModel):
     """创建用户请求体。"""
 
     username: str = Field(..., min_length=1, max_length=64, description="用户名")
-    role: int = Field(..., ge=1, le=4, description="角色编号：1=安全员 2=管理员 3=负责人 4=运维员")
+    role: str = Field(default="security_guard", description="角色标识：security_guard（安全员）/ manager（管理员）/ operator（运维员）")
 
 
 class UserResponse(BaseModel):
@@ -17,7 +17,7 @@ class UserResponse(BaseModel):
 
     id: int = Field(..., description="用户 ID")
     username: str = Field(..., description="用户名")
-    role: int = Field(..., description="角色编号：1=安全员 2=管理员 3=负责人 4=运维员")
+    role: str = Field(..., description="角色标识：security_guard（安全员）/ manager（管理员）/ operator（运维员）")
     created_at: datetime = Field(..., description="用户创建时间")
 
     model_config = {"from_attributes": True}
