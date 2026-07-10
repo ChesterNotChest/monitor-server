@@ -4,7 +4,7 @@ from .alert_group_router import router as alert_group_router
 from .alert_router import router as alert_router
 from .auth_router import router as auth_router
 from .dashboard_router import router as dashboard_router
-from .detection_router import entity_router, action_router, sound_router
+from .detection_router import entity_router, action_router, sound_router, fence_event_router
 from .device_router import router as device_router
 from .exception_router import router as exception_router
 from .fence_router import router as fence_router
@@ -24,6 +24,7 @@ routers = [
     entity_router,
     action_router,
     sound_router,
+    fence_event_router,
     exception_router,
     fence_router,
     log_router,
