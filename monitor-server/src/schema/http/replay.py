@@ -12,6 +12,6 @@ class RecordingResponse(BaseModel):
     view_id: int
     file_path: str
     start_time: datetime
-    end_time: datetime
+    end_time: datetime | None
 
     model_config = {"from_attributes": True}

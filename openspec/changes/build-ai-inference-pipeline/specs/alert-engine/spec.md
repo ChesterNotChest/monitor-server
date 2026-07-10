@@ -57,6 +57,55 @@
 - **WHEN** EntityType.PERSON 事件写入时间 > ALERT_EVENT_TTL
 - **THEN** 从活跃集合中移除
 
+### Requirement: 录制生命周期——一份录制服务多个异常
+
+系统 SHALL 在首个异常触发时为 View 创建一条 `Recording` 记录。后续同一 View 的异异常触发 SHALL 复用同一 Recording（通过 `SituationEvent.recording_id` FK 关联）。一个 Recording SHALL 可被多个 SituationEvent 引用。
+
+#### Scenario: 首个异常创建 Recording
+
+- **WHEN** View=1 首次触发 ExceptionDef "FIGHTING"
+- **THEN** 创建 Recording(view_id=1, start_time=NOW()) + SituationEvent(recording_id=<new>)
+- **AND** Recording.end_time 为 NULL（录制中）
+
+#### Scenario: 同义异常复用 Recording
+
+- **WHEN** View=1 已有活跃 Recording，再次触发 ExceptionDef "INTRUDER"
+- **THEN** 不创建新 Recording，新 SituationEvent.recording_id = 已有 Recording.id
+
+#### Scenario: 录制结束
+
+- **WHEN** 连续 `RECORD_STOP_SILENCE_SECONDS` 秒无新异常触发
+- **THEN** Recording.end_time = NOW()，录制完成
+
+### Requirement: 异常处置不影响录制存活
+
+系统 SHALL 在用户标记异常为"已处理"或"误报"时，将该 SituationEvent 的 `recording_id` 设为 NULL（解除关联），但 SHALL NOT 删除 Recording 文件或 DB 记录。Recording SHALL 仅在没有任何 SituationEvent 引用时方可清理。
+
+#### Scenario: 标记已处理——不删录制
+
+- **WHEN** 用户 `PUT /alerts/{id}/handle` 处置 FIGHTING 告警
+- **THEN** 对应 SituationEvent.recording_id = NULL
+- **AND** Recording 文件保留（仍有其他 SituationEvent 引用）
+
+#### Scenario: 最后一个异常处置后清理
+
+- **WHEN** Recording 下所有 SituationEvent 均已处置（recording_id 全部为 NULL）
+- **THEN** 后台任务可清理该 Recording 文件 + DB 记录
+
+### Requirement: 录制期间可访问
+
+系统 SHALL 在 Recording.end_time 为 NULL（录制中）时，仍允许前端通过 `GET /recordings/{id}/stream` 拉取 FLV 流。前端 SHALL 能通过 `end_time` 字段判断录制状态（NULL = 进行中，有值 = 已结束）。
+
+#### Scenario: 录制中播放
+
+- **WHEN** 前端 `GET /recordings/{id}` → `end_time: null`
+- **THEN** 前端进入直播模式播放，进度条随文件增长自然伸长
+
+#### Scenario: 录制完成后播放
+
+- **WHEN** 前端 `GET /recordings/{id}` → `end_time: "2026-07-10T20:00:00"`
+- **THEN** 前端切换为回放模式，进度条固定总时长
+
 ### Requirement: 录制信号
 
 告警引擎 SHALL 在每次任一 ExceptionDef 触发时（无论是否被去重抑制），向 EventBus topic `RECORDING` publish `{"action": "keep_alive", "view_id": ...}`。录制系统据此重置空闲倒计时。
