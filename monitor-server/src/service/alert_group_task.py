@@ -6,7 +6,7 @@ from src.repository.alert_group_repo import AlertGroupRepo
 
 
 def list_alert_groups(db: Session):
-    return AlertGroupRepo(db).all()
+    return AlertGroupRepo(db).with_responses()
 
 
 def create_alert_group(db: Session, name: str):
