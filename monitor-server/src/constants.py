@@ -63,6 +63,7 @@ class SlowFastActionType(enum.IntEnum):
     PUSHING = 10
     SITTING = 11
     STANDING = 12
+    SMOKING = 13
 
 
 class YAMNetSoundType(enum.IntEnum):

@@ -1,5 +1,25 @@
 # SlowFast Inference
 
+### Requirement: Opt-in real Kinetics runtime
+
+The system SHALL keep real SlowFast Kinetics-400 inference disabled by default for CI and normal server startup. When explicitly enabled, the runner SHALL lazily load `pytorchvideo.models.hub.slowfast_r50(pretrained=True)`, preprocess 32 BGR person crops into SlowFast slow/fast pathway tensors, and map recognized Kinetics labels to the local `SlowFastActionType` enum. Unmapped Kinetics classes SHALL produce no ActionType event rather than fabricating an alert.
+
+#### Scenario: Missing model dependency
+
+- **WHEN** real Kinetics inference is enabled but `pytorchvideo` or weights are unavailable
+- **THEN** the runner SHALL log the failure, enter ERROR for that inference attempt, clear the affected queue, and allow later queues to retry without stopping the frame pipeline
+
+### Requirement: Opt-in real AVA detection runtime
+
+The system SHALL keep real SlowFast AVA detection disabled by default for CI and normal server startup. When explicitly enabled, the runner SHALL lazily load `pytorchvideo.models.hub.slowfast_r50_detection(pretrained=True)` or a configured local AVA detection checkpoint, preprocess each per-track 32-frame person crop into SlowFast slow/fast pathway tensors, and pass a full-crop RoI box to the detection head. AVA output SHALL be treated as multi-label sigmoid scores and only mapped labels above the configured threshold SHALL produce ActionType events.
+
+The runner SHALL post-process AVA output before publishing: duplicate mapped actions SHALL be collapsed to the highest-confidence instance, mutually exclusive posture/motion actions such as FALLING/RUNNING/SITTING/STANDING/WALKING/CLIMBING SHALL keep only the highest-confidence action, and the final AVA result list SHALL be capped to avoid contradictory overlays.
+
+#### Scenario: Smoking detection
+
+- **WHEN** AVA detection returns a confident `smoke` label for a tracked person clip
+- **THEN** the system SHALL publish `ActionType.SMOKING` for that track
+
 **Purpose:** 基于 ByteTrack per-person 帧队列 → SlowFast Kinetics + AVA 并行推理 → ActionType 枚举事件。
 
 ## ADDED Requirements

@@ -45,3 +45,34 @@
 - [x] 10.6 Trigger `FenceEventResult.ENTERED` when `count(True) / len(deque) >= fence.density`.
 - [x] 10.7 Maintain per-`(fence_id, track_id)` state: `NOT_ENTERED -> ENTERED -> NOT_ENTERED` after the configured `leave_frames` without overlap.
 - [x] 10.8 Publish fence events to EventBus topic `FENCE`.
+
+## 11. Live Part B Visualization
+
+- [x] 11.1 Add a reusable Part B overlay helper that draws `track_id`, face labels, action labels, and fence state beside person boxes.
+- [x] 11.2 Wire the live camera debug script through ByteTrack, FaceRecognizer, SlowFastRunner, and FenceEngine instead of only drawing YOLO `Person` labels.
+- [x] 11.3 Show a demo fence polygon in the live camera stream so fence ENTERED/OUT state can be visually verified without database setup.
+- [x] 11.4 Keep SlowFast labels honest: show queued/pending state unless a real or injected inference result exists.
+- [x] 11.5 Add focused tests for Part B overlay drawing and live pipeline label preparation.
+
+## 12. Real SlowFast Kinetics Inference
+
+- [x] 12.1 Add an opt-in real SlowFast Kinetics-400 inference path while preserving injectable/mock inference for CI.
+- [x] 12.2 Lazily load `pytorchvideo.models.hub.slowfast_r50(pretrained=True)` only when real inference is explicitly enabled.
+- [x] 12.3 Preprocess 32 BGR person crops into SlowFast fast/slow pathway tensors with resize, center crop, normalization, and alpha sampling.
+- [x] 12.4 Map Kinetics labels to the local `SlowFastActionType` enum by action keywords; ignore unmapped classes instead of fabricating alerts.
+- [x] 12.5 Keep AVA-style per-person action detection injectable/deferred until AVA weights and box transforms are provisioned.
+- [x] 12.6 Enable the live camera debug script to request the real Kinetics path, while falling back to `pending` when dependencies or weights are unavailable.
+- [x] 12.7 Add focused tests for preprocessing, label mapping, and disabled real-model fallback without downloading model weights.
+
+## 13. Real SlowFast AVA Detection
+
+- [x] 13.1 Add `SMOKING` to the local `SlowFastActionType`/ActionType seed set so AVA smoking output can be published as an enum event.
+- [x] 13.2 Add an opt-in real SlowFast AVA detection path while preserving injectable/mock AVA inference for CI.
+- [x] 13.3 Lazily load `pytorchvideo.models.hub.slowfast_r50_detection(pretrained=True)` only when AVA inference is explicitly enabled.
+- [x] 13.4 Support local AVA detection weights from `src/third-party/slowfast/SLOWFAST_8x8_R50_DETECTION.pyth`, falling back to pretrained auto-download when absent.
+- [x] 13.5 Parse AVA pbtxt labels and map AVA labels such as `smoke`, `fall down`, `fight/hit`, `push`, and `hand wave` to local `SlowFastActionType`.
+- [x] 13.6 Preprocess each per-track 32-frame person crop into SlowFast pathways and pass a full-crop RoI box to the AVA detection head.
+- [x] 13.7 Treat AVA as multi-label detection with sigmoid scores; publish every mapped label above the configured threshold.
+- [x] 13.8 Update the live camera debug script to request real AVA alongside Kinetics so smoking/fall/fight labels can appear when model output is confident.
+- [x] 13.9 Add focused tests for AVA label parsing, label mapping, box preparation, disabled fallback, and mocked AVA model output without downloading weights.
+- [x] 13.10 Post-process AVA labels by deduplicating actions, keeping only the highest-confidence mutually exclusive posture/motion action, and capping displayed/published AVA results.

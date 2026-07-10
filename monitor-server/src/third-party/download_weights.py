@@ -60,6 +60,28 @@ def download_slowfast() -> Path | None:
     return target
 
 
+def download_kinetics_labels() -> Path | None:
+    """Download Kinetics-400 labels used to map model logits to actions."""
+    import urllib.request
+
+    dest = THIRD_PARTY / "slowfast"
+    dest.mkdir(exist_ok=True)
+    target = dest / "kinetics_classnames.txt"
+    if target.exists():
+        print(f"  SKIP  {target}  (already present)")
+        return target
+
+    url = "https://raw.githubusercontent.com/deepmind/kinetics-i3d/master/data/label_map.txt"
+    try:
+        urllib.request.urlretrieve(url, str(target))
+        print(f"  OK    {target}")
+    except Exception as e:
+        print(f"  WARN  Kinetics labels download failed: {e}")
+        print(f"  HINT  Download manually from {url} and place in {dest}")
+        return None
+    return target
+
+
 def download_slowfast_ava() -> Path | None:
     """Download SlowFast R-50 AVA detection weights.  ~258 MB.
 
@@ -86,6 +108,31 @@ def download_slowfast_ava() -> Path | None:
         print(f"  OK    {target}  [{mb} MB]")
     except Exception as e:
         print(f"  WARN  SlowFast AVA download failed: {e}")
+        print(f"  HINT  Download manually from {url} and place in {dest}")
+        return None
+    return target
+
+
+def download_ava_labels() -> Path | None:
+    """Ensure AVA action labels are present for detection output mapping."""
+    import urllib.request
+
+    dest = THIRD_PARTY / "slowfast"
+    dest.mkdir(exist_ok=True)
+    target = dest / "ava_action_list_v2.1_for_activitynet_2018.pbtxt"
+    if target.exists():
+        print(f"  SKIP  {target}  (already present)")
+        return target
+
+    url = (
+        "https://raw.githubusercontent.com/facebookresearch/SlowFast/main/"
+        "ava_evaluation/ava_action_list_v2.1_for_activitynet_2018.pbtxt.txt"
+    )
+    try:
+        urllib.request.urlretrieve(url, str(target))
+        print(f"  OK    {target}")
+    except Exception as e:
+        print(f"  WARN  AVA labels download failed: {e}")
         print(f"  HINT  Download manually from {url} and place in {dest}")
         return None
     return target
@@ -123,7 +170,9 @@ def main() -> None:
     print("Monitor Server — AI model weight download\n")
     download_yolo("yolo11n.pt")
     download_slowfast()
+    download_kinetics_labels()
     download_slowfast_ava()
+    download_ava_labels()
     download_yamnet()
     verify_face_recognition()
     print(f"\nAll weights ready in {THIRD_PARTY}")
