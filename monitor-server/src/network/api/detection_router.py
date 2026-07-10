@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from src.extensions import get_db
 from src.middleware.rbac import require_permission
+from src.repository.fence_event_type_repo import FenceEventTypeRepo
 from src.schema.http.detection_schema import DetectionTypeCreate, DetectionTypeResponse
 from src.service import detection_task
 
@@ -89,9 +90,6 @@ def delete_sound(item_id: int, db: Session = Depends(get_db), _user=_perm):
 # ── Fence Event Types ──────────────────────────
 
 fence_event_router = APIRouter(prefix="/detection/fence-event-types", tags=["围栏事件类型"])
-
-from src.repository.fence_event_type_repo import FenceEventTypeRepo
-
 
 @fence_event_router.get("", response_model=list[DetectionTypeResponse])
 def list_fence_events(db: Session = Depends(get_db), _user=_perm):

@@ -16,14 +16,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from src.extensions import SessionLocal
-
-# ── 事件类型常量（本地定义，避免 vision_module 的 numpy 依赖链） ──
-ENTITY = "ENTITY"
-ACTION = "ACTION"
-SOUND = "SOUND"
-FACE = "FACE"
-FENCE = "FENCE"
-RECORDING = "RECORDING"
+from src.service.vision_module.vision_event_bus import ENTITY, ACTION, SOUND, FACE, FENCE, RECORDING
 
 # ── 可配置常量 ──
 ALERT_EVENT_TTL: float = 5.0

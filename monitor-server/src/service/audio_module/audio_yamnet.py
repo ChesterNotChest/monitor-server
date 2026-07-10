@@ -9,6 +9,10 @@ import asyncio
 import logging
 from enum import Enum
 
+import numpy as np
+
+from src.config import settings
+
 logger = logging.getLogger(__name__)
 
 # ── AudioSet class_id → SoundType 映射 ─────────────────
@@ -85,7 +89,7 @@ class YamnetRunner:
     async def _start_ffmpeg(self) -> asyncio.subprocess.Process:
         cmd = [
             "ffmpeg",
-            "-i", f"rtmp://127.0.0.1:1935/live/audio_{self._audio_id}",
+            "-i", f"rtmp://{settings.RTMP_HOST}:{settings.RTMP_PORT}/live/audio_{self._audio_id}",
             "-f", "f32le", "-ac", "1", "-ar", str(YAMNET_SAMPLE_RATE),
             "-loglevel", "error",
             "pipe:1",
@@ -127,12 +131,10 @@ class YamnetRunner:
             while len(buffer) >= samples_per_window * 4:
                 window = buffer[:samples_per_window * 4]
                 buffer = buffer[samples_per_window * 4:]
-                import numpy as np
                 waveform = np.frombuffer(window, dtype=np.float32)
                 await self._classify(waveform)
 
     async def _classify(self, waveform) -> None:
-        import numpy as np
         if self._model is None:
             return
         try:
