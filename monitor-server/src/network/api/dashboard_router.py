@@ -16,7 +16,10 @@ def stats(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("dashboard:view")),
 ):
-    """整体态势统计。"""
+    """整体态势统计。
+
+    **权限**: dashboard:view
+    """
     return dashboard_task.get_stats(db)
 
 
@@ -25,5 +28,8 @@ def trends(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("dashboard:view")),
 ):
-    """告警趋势数据。"""
+    """告警趋势数据。
+
+    **权限**: dashboard:view
+    """
     return dashboard_task.get_trends(db)

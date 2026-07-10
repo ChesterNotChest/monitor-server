@@ -23,9 +23,9 @@ class ResponseActionUpdate(BaseModel):
 class ResponseActionResponse(BaseModel):
     """响应动作响应体。"""
 
-    id: int
-    name: str
-    created_at: datetime
+    id: int = Field(..., description="响应动作 ID")
+    name: str = Field(..., description="响应动作名称")
+    created_at: datetime = Field(..., description="创建时间")
 
     model_config = {"from_attributes": True}
 
@@ -48,10 +48,10 @@ class AlertGroupUpdate(BaseModel):
 class AlertGroupResponse(BaseModel):
     """告警分组响应体（含已绑定的响应动作列表）。"""
 
-    id: int
-    name: str
-    created_at: datetime
-    responses: list[ResponseActionResponse] = []
+    id: int = Field(..., description="告警分组 ID")
+    name: str = Field(..., description="分组名称")
+    created_at: datetime = Field(..., description="创建时间")
+    responses: list[ResponseActionResponse] = Field(default_factory=list, description="已绑定的响应动作列表")
 
     model_config = {"from_attributes": True}
 
