@@ -29,7 +29,7 @@ def setup_alert_scenario(db):
     ad = AudioDeviceRepo(db).create(name="alert-mic", node_id=node.id)
     view = MonitorViewRepo(db).create(video_id=vd.id, audio_id=ad.id)
     group = AlertGroupRepo(db).create(name="test_group")
-    exc = ExceptionDefRepo(db).create(severity=SeverityLevel.WARNING, group_id=group.id)
+    exc = ExceptionDefRepo(db).create(name="test-exception", severity=SeverityLevel.WARNING, group_id=group.id)
     event = SituationEventRepo(db).create(view_id=view.id, exception_id=exc.id)
     return user, event
 

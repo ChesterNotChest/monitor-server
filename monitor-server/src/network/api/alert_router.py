@@ -20,7 +20,7 @@ def list_alerts(
     _user=Depends(require_permission("alert:list")),
 ):
     """告警列表（分页）。"""
-    return alert_service.list_alerts(db, page=page, page_size=page_size)
+    return alert_task.list_alerts(db, page=page, page_size=page_size)
 
 
 @router.put("/{alert_id}/handle")
@@ -30,7 +30,7 @@ def mark_handled(
     user=Depends(require_permission("alert:handle")),
 ):
     """标记告警为已处理。"""
-    if not alert_service.mark_handled(db, alert_id, user.id):
+    if not alert_task.mark_handled(db, alert_id, user.id):
         raise HTTPException(status_code=404, detail="告警不存在")
     return {"ok": True}
 
@@ -42,6 +42,6 @@ def mark_false_alarm(
     user=Depends(require_permission("alert:handle")),
 ):
     """标记告警为误报。"""
-    if not alert_service.mark_false_alarm(db, alert_id, user.id):
+    if not alert_task.mark_false_alarm(db, alert_id, user.id):
         raise HTTPException(status_code=404, detail="告警不存在")
     return {"ok": True}

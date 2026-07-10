@@ -6,16 +6,28 @@ USER_URL = f"{API_PREFIX}/users"
 
 
 class TestUserAPI:
-    def test_create(self, client):
-        resp = client.post(USER_URL, json={"username": "张安保", "role": 1})
+    def test_create(self, client, admin_headers):
+        resp = client.post(USER_URL, params={
+            "username": "张安保",
+            "password": "test123",
+            "role": "security_guard",
+        }, headers=admin_headers)
         assert resp.status_code == 201
         assert resp.json()["username"] == "张安保"
 
-    def test_list(self, client):
-        resp = client.get(USER_URL)
+    def test_list(self, client, admin_headers):
+        resp = client.get(USER_URL, headers=admin_headers)
         assert resp.status_code == 200
 
-    def test_duplicate(self, client):
-        client.post(USER_URL, json={"username": "李管理", "role": 2})
-        resp = client.post(USER_URL, json={"username": "李管理", "role": 2})
+    def test_duplicate(self, client, admin_headers):
+        client.post(USER_URL, params={
+            "username": "李管理",
+            "password": "test123",
+            "role": "manager",
+        }, headers=admin_headers)
+        resp = client.post(USER_URL, params={
+            "username": "李管理",
+            "password": "test123",
+            "role": "manager",
+        }, headers=admin_headers)
         assert resp.status_code == 409

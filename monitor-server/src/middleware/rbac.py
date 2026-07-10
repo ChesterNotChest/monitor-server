@@ -26,20 +26,20 @@ oauth2_scheme = HTTPBearer()
 
 PERMISSIONS: dict[str, set[Role]] = {
     "dashboard:view":    {Role.SECURITY_GUARD, Role.MANAGER, Role.OPERATOR},
-    "monitor:view":      {Role.SECURITY_GUARD, Role.MANAGER},
-    "monitor:replay":    {Role.SECURITY_GUARD, Role.MANAGER},
+    "monitor:view":      {Role.SECURITY_GUARD, Role.MANAGER, Role.OPERATOR},
+    "monitor:replay":    {Role.SECURITY_GUARD, Role.MANAGER, Role.OPERATOR},
     "alert:list":        {Role.SECURITY_GUARD, Role.MANAGER, Role.OPERATOR},
-    "alert:handle":      {Role.SECURITY_GUARD, Role.MANAGER},
-    "fence:manage":      {Role.SECURITY_GUARD},
-    "detection:manage":  {Role.MANAGER},
+    "alert:handle":      {Role.SECURITY_GUARD, Role.MANAGER, Role.OPERATOR},
+    "fence:manage":      {Role.SECURITY_GUARD, Role.OPERATOR},
+    "detection:manage":  {Role.MANAGER, Role.OPERATOR},
     "exception:manage":  {Role.MANAGER, Role.OPERATOR},
     "alert_group:manage": {Role.MANAGER, Role.OPERATOR},
-    "report:view":       {Role.MANAGER},
+    "report:view":       {Role.MANAGER, Role.OPERATOR},
     "device:onboard":    {Role.OPERATOR},
     "device:list":       {Role.OPERATOR},
     "device:health":     {Role.OPERATOR},
-    "log:view":          {Role.OPERATOR},
-    "user:manage":       {Role.OPERATOR},
+    "log:view":          {Role.OPERATOR, Role.MANAGER},
+    "user:manage":       {Role.OPERATOR, Role.MANAGER},
 }
 
 

@@ -1,16 +1,17 @@
-# Alert Group CRUD API
+## REMOVED Requirements
 
-**Purpose:** 定义 AlertGroup 告警分组的 CRUD API 与 Service。负责人和运维员可访问。
+### Requirement: ResponseAction CRUD
+**Reason**: ResponseAction API 路由（`/response-actions`）未实现。ResponseAction 模型和 Repository 层存在，但 CRUD 端点计划在 Part C 中实施。
+**Migration**: Part C 实施时从 git history 恢复此需求。
 
-## Requirements
+### Requirement: AlertGroup 绑定 ResponseAction
+**Reason**: 告警分组与响应动作的绑定/解绑路由（`/alert-groups/{id}/responses`）未实现。计划在 Part C 中与 ResponseAction CRUD 一起实施。
+**Migration**: Part C 实施时从 git history 恢复此需求。
+
+## MODIFIED Requirements
 
 ### Requirement: AlertGroup CRUD
 系统 SHALL 提供 AlertGroup（告警级别分组）的完整 CRUD API 与 Service。
-
-- `GET /api/v1/alert-groups` — 列表
-- `POST /api/v1/alert-groups` — 创建告警分组
-- `PUT /api/v1/alert-groups/{id}` — 更新告警分组
-- `DELETE /api/v1/alert-groups/{id}` — 删除告警分组
 
 #### Scenario: 创建告警分组
 - **WHEN** 客户端 `POST /api/v1/alert-groups` 请求体 `{"name": "高优先级"}`
