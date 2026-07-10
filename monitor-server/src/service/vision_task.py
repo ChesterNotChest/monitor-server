@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 _active_pipelines: dict[int, AIPipeline] = {}
 
 
-async def start_pipeline(view_id: int, video_id: int,
+async def start_pipeline(view_id: int, video_id: int, video_name: str,
                          audio_id: int | None = None) -> bool:
     """启动指定 View 的 AI 推理管线。
 
@@ -27,7 +27,7 @@ async def start_pipeline(view_id: int, video_id: int,
         return False
 
     pipeline = AIPipeline()
-    if not await pipeline.start(view_id, video_id, audio_id):
+    if not await pipeline.start(view_id, video_id, video_name, audio_id):
         return False
 
     _active_pipelines[view_id] = pipeline

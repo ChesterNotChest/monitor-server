@@ -46,11 +46,17 @@ async def print_urls():
     print(f"  Health Check: http://{host}:{port}/health")
     print(f"{'='*60}\n")
 
+    import logging
+    from src.extensions import engine, Base
     from src.seed import seed_admin
+
+    # 确保数据库表存在（非测试环境可能未建表）
+    Base.metadata.create_all(bind=engine)
+
     try:
         seed_admin()
-    except Exception:
-        pass  # 非致命：种子失败不阻止应用启动（如测试环境 DB 尚未建表）
+    except Exception as e:
+        logging.getLogger(__name__).warning("seed_admin failed: %s", e)
 
 
 @app.on_event("shutdown")
