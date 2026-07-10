@@ -4,6 +4,8 @@
 本文件为精简版本，供内部引用使用。
 """
 
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -21,7 +23,9 @@ class ExceptionResponse(BaseModel):
     id: int
     name: str
     severity: int
+    group_id: int | None = None
     face_result_id: int | None = None
     fence_event_id: int | None = None
+    created_at: datetime
 
     model_config = {"from_attributes": True}
