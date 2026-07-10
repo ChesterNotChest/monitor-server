@@ -10,7 +10,16 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 
+import os
 import numpy as np
+
+# ── 必须在 ultralytics import 之前禁用 CUDA ─────────────────
+# 否则 Windows 上缺少 cuDNN DLL 会导致进程崩溃。
+# YOLO_DEVICE 环境变量在 src.config 中读取，但 config 导入
+# 在 ultralytics 之后——这里直接用 os.environ 判断。
+if os.environ.get("YOLO_DEVICE", "cpu") in ("", "cpu"):
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
 from ultralytics import YOLO
 
 from src.config import settings
@@ -73,7 +82,11 @@ class YoloDetector:
             self._state = YoloState.ERROR
             return False
         try:
-            self._model = YOLO(str(model_path))
+            self._model = YOLO(str(model_path), task="detect")
+            _device = settings.YOLO_DEVICE
+            if _device.isdigit():
+                _device = int(_device)  # PyTorch 需要 int 而非 "0" 字符串
+            self._model.to(_device)
             # 预热推理
             dummy = np.zeros((640, 640, 3), dtype=np.uint8)
             _ = self._model(dummy, verbose=False)

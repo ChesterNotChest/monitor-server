@@ -53,8 +53,15 @@ conda activate monitor-server
 环境已存在时更新：
 
 ```bash
+cd monitor-server
 conda env update -f environment.yml --prune
 conda activate monitor-server
+```
+
+CUDA 版 PyTorch 需走 PyTorch 官方源安装（国内镜像不含 CUDA wheel）：
+
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
 ```
 
 `face_recognition` 依赖 conda 预装的 `dlib`，需手动补装（pip 不认 conda 包）：

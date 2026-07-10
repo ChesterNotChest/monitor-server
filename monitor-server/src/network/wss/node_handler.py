@@ -187,6 +187,17 @@ async def handle_node_websocket(websocket: WebSocket, db: Session) -> None:
                 for dev in inbound_payload.get("devices", []):
                     from src.repository.device_repo import upsert_device
                     upsert_device(db, dev["device_type"], node_id, dev["device_name"])
+                # 回传最新 device_id ↔ name 映射，供 Node 反查
+                try:
+                    videos = device_repo.get_videos_by_node(db, node_id)
+                    audios = device_repo.get_audios_by_node(db, node_id)
+                    await websocket.send_json({
+                        "type": "device_map",
+                        "videos": [{"id": v.id, "name": v.name} for v in videos],
+                        "audios": [{"id": a.id, "name": a.name} for a in audios],
+                    })
+                except Exception:
+                    logger.exception("[WSS] Failed to push device_map to node %d", node_id)
                 continue
             registry.dispatch_inbound_message(node_id, inbound_payload)
     except WebSocketDisconnect:
