@@ -15,8 +15,6 @@ env/
 # ===== 环境变量（敏感信息） =====
 .env
 *.local.env
-# .env.example is tracked as template
-!.env.example
 
 # ===== IDE =====
 .vscode/
