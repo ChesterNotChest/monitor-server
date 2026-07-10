@@ -10,6 +10,7 @@ from .exception_router import router as exception_router
 from .fence_router import router as fence_router
 from .log_router import router as log_router
 from .node_router import router as node_router
+from .replay import router as replay_router
 from .report_router import router as report_router
 from .user_router import router as user_router
 from .view_router import router as view_router
@@ -27,6 +28,7 @@ routers = [
     fence_router,
     log_router,
     node_router,
+    replay_router,
     report_router,
     user_router,
     view_router,

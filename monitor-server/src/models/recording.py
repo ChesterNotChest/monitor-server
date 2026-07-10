@@ -15,7 +15,7 @@ class Recording(Base):
     view_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

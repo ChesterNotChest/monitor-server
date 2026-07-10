@@ -40,7 +40,7 @@ Jenkinsfile                  # Jenkins CI/CD 流水线
 
 ## Miniconda 部署（无需 Docker）
 
-`environment.yml` 是唯一的环境描述文件，涵盖核心监控和 AI 识别全部依赖。
+`environment.yml` 是唯一的环境描述文件。
 
 ### 1. 创建 & 激活环境
 
@@ -50,81 +50,99 @@ conda env create -f environment.yml
 conda activate monitor-server
 ```
 
-该环境会安装：
-
-- `python=3.12`
-- `ffmpeg`：Server 侧拉取 audio/video 并合并推流
-- `nodejs`：`DEBUG_WEB_STREAM=true` 时启动本地 RTMP 靶子
-- `dlib`（conda-forge 预编译）：人脸检测，Windows 无编译问题
-- 其余 Python 依赖（fastapi、sqlalchemy、torch、ultralytics 等）通过 pip
-
-如果环境已存在，可更新：
+环境已存在时更新：
 
 ```bash
 conda env update -f environment.yml --prune
 conda activate monitor-server
 ```
 
-环境创建后，`face_recognition` 需额外手动安装（pip 不认 conda 已装的 dlib，会尝试拉取 dlib 源码并编译失败）。`--no-deps` 跳过 dlib 重装，`face_recognition_models` 也需一同安装：
+`face_recognition` 依赖 conda 预装的 `dlib`，需手动补装（pip 不认 conda 包）：
 
 ```bash
-conda activate monitor-server
 pip install --no-deps face_recognition_models face_recognition
 ```
 
-> **Windows 注意**：`dlib` 通过 conda-forge 预编译安装，无需 CMake 或 Visual Studio Build Tools。`face_recognition` 用 `--no-deps` 跳过 pip 对 dlib 的重复拉取。
+> **Windows 注意**：`dlib` 通过 conda-forge 预编译安装，无需 CMake 或 Visual Studio Build Tools。
 
-### 2. 仅安装核心依赖（如不需要 AI 模块）
-
-如果暂时不需要 AI 识别能力，可手动创建精简环境：
+### 2. 安装 Node.js RTMP 靶子依赖
 
 ```bash
-conda create -n monitor-server python=3.12 ffmpeg nodejs -c conda-forge
-conda activate monitor-server
-pip install fastapi uvicorn[standard] sqlalchemy pydantic-settings python-multipart pytest pytest-asyncio httpx python-jose[cryptography] bcrypt
-```
-
-后续需要 AI 时再补：
-
-```bash
-conda install -c conda-forge dlib
-pip install --no-deps face_recognition_models face_recognition
-pip install ultralytics opencv-python-headless torch torchaudio tensorflow-hub tensorflow torchvision pytorchvideo "setuptools<70"
-```
-
-### 3. 安装 DEBUG_WEB_STREAM 依赖（可选）
-
-仅当需要 `DEBUG_WEB_STREAM=true` 并启动本地 RTMP 靶子时需要：
-
-```bash
-# 在仓库根目录执行
-cd tools
+cd monitor-server/tools
 npm install
-cd ..
+cd ../..
 ```
 
-### 4. 下载 AI 模型权重（如不需要智能分析可跳过）
+```bash
+cd monitor-node/rtmp_server
+npm install
+cd ../..
+```
+
+### 3. 下载 AI 模型权重
 
 ```bash
 cd monitor-server
 python src/third-party/download_weights.py
 ```
 
-脚本会自动下载并跳过已存在的文件，可放心重复运行。首次下载约 460 MB。
+首次下载约 460 MB，已存在的文件自动跳过。
 
-### 4b. 准备测试数据
+### 4. 检查环境
 
-**单元测试**（CI 中运行）——小数据集直接提交在 `tests/fixtures/` 中，无需额外操作：
+```bash
+# 核心依赖
+python -c "import fastapi, sqlalchemy, pytest; print('python deps ok')"
+ffmpeg -version
 
-| 数据集 | 大小 | 用途 |
-|--------|------|------|
-| COCO8 | 1 MB | YOLO 单元测试（8 张图片 + 标签） |
-| LFW subset | 500 KB | 人脸识别单元测试（10 张人脸） |
-| UrbanSound8K subset | 5 MB | 音频分类单元测试（5 个 WAV） |
+# 人脸识别
+python -c "import face_recognition; print('face_recognition ok')"
 
-**端到端视觉验证**（本地运行）——使用 Node 真实推流 + 两个 Node.js RTMP 靶子，无需 SRS 或 Docker。
+# Node.js 靶子
+node -e "require('node-media-server'); print('node-media-server ok')"
+```
 
-两个靶子端口不冲突：
+### 5. 配置环境变量
+
+`.env` 已提供默认值，按需修改：
+
+```bash
+DATABASE_URL=sqlite:///./monitor.db
+HOST=0.0.0.0
+PORT=8000
+RTMP_HOST=127.0.0.1
+RTMP_PORT=1935
+RTMP_DEBUG=true
+SRS_HOST=127.0.0.1
+SRS_RTMP_PORT=1935
+SRS_HTTP_PORT=8082
+WSS_NODE_PORT=9000
+WSS_NODE_DEBUG=false
+DEBUG_WEB_STREAM=false
+```
+
+### 6. 启动服务
+
+```bash
+python -m src.run
+```
+
+### 7. 验证
+
+| 端点 | 地址 |
+|---|---|
+| Health Check | http://localhost:8000/health |
+| Swagger UI | http://localhost:8000/docs |
+
+### 8. 运行测试
+
+```bash
+pytest src/tests/ --tb=short
+```
+
+### 9. 端到端视觉验证
+
+本地无需 SRS 或 Docker——使用 Node 真实推流 + 两个 Node.js RTMP 靶子。
 
 | 靶子 | 位置 | 端口 | 启动方式 | 用途 |
 |------|------|------|----------|------|
@@ -132,21 +150,15 @@ python src/third-party/download_weights.py
 | Server RTMP Target | `monitor-server/tools/rtmp_debug_server.js` | 1936 (+8001 HTTP) | `DEBUG_WEB_STREAM=true` 时 Server 自动启动 | 接收 Server 推来的标注 View 流，供 OBS/VLC 拉流 |
 
 ```bash
-# ── Terminal 1: 启动 Node（自动启动 :1935 RTMP Server） ──
-cd monitor-node/rtmp_server
-npm install          # 首次
-cd ..
+# ── Terminal 1: 启动 Node ──
+cd monitor-node
 set STREAM_DEBUG=true
 python -m src.run
-# Node 枚举设备 → FFmpeg 推流 → rtmp://127.0.0.1:1935/live/{device_id}
 
-# ── Terminal 2: 启动 Server（自动启动 :1936 RTMP Target） ──
-cd monitor-server/tools
-npm install          # 首次：安装 node-media-server
-cd ..
+# ── Terminal 2: 启动 Server ──
+cd monitor-server
 set DEBUG_WEB_STREAM=true
 python -m src.run
-# Server 自动启动 rtmp_debug_server.js → WSS 连 Node → 创建 View → 从 :1935 拉 raw 流 → AI 推理标注 → 推标注流到 :1936
 
 # ── Terminal 3: 播放标注流 ──
 # OBS: 添加媒体源 → rtmp://127.0.0.1:1936/view/{view_id}
@@ -154,71 +166,6 @@ python -m src.run
 ```
 
 > 两个靶子均自带 SIGINT/SIGTERM 信号处理（`CTRL+C` 自动停止），均由各自 `app.py` 在 Debug 模式下自动启动。
-
-### 5. 检查环境
-
-```bash
-# 核心依赖
-python -c "import fastapi, sqlalchemy, pytest; print('python deps ok')"
-ffmpeg -version
-
-# Debug 靶子（可选）
-node -v && cd tools && node -e "require('node-media-server')" && cd ..
-```
-
-### 6. 配置环境变量
-
-`.env` 已提供默认值，按需修改：
-
-```bash
-# ── 数据库 ──
-DATABASE_URL=sqlite:///./monitor.db
-
-# ── 监听地址 ──
-HOST=0.0.0.0
-PORT=8000
-
-# ── RTMP (SRS) ──
-RTMP_HOST=127.0.0.1
-RTMP_PORT=1935
-RTMP_DEBUG=true
-
-# ── SRS ──
-SRS_HOST=127.0.0.1
-SRS_RTMP_PORT=1935
-SRS_HTTP_PORT=8082
-
-# ── WSS (Node) ──
-WSS_NODE_PORT=9000
-WSS_NODE_DEBUG=false
-
-# ── Debug ──
-DEBUG_WEB_STREAM=false
-```
-
-### 7. 启动服务
-
-```bash
-# 开发模式（自动 reload）
-python -m src.run
-
-# 或直接调用 uvicorn
-uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
-```
-
-### 8. 验证
-
-| 端点 | 地址 |
-|---|---|
-| Health Check | http://localhost:8000/health |
-| Swagger UI | http://localhost:8000/docs |
-| ReDoc | http://localhost:8000/redoc |
-
-### 9. 运行测试
-
-```bash
-pytest src/tests/ --tb=short
-```
 
 ---
 
@@ -268,29 +215,11 @@ POST /api/v1/auth/login  →  {access_token, user}
 
 ---
 
-## AI 模型安装
+## AI 模型参考
 
-智能分析模块依赖以下模型，存放于 `src/third-party/`。Python 依赖由 `environment.yml` 统一管理，模型权重文件需额外下载。
+所有 AI 模型权重存放于 `src/third-party/`，通过 `download_weights.py` 一键下载（见上方「Miniconda 部署 → 步骤 3」）。Python 依赖由 `environment.yml` 统一管理。
 
-### 下载模型权重
-
-```bash
-conda activate monitor-server
-cd monitor-server
-python src/third-party/download_weights.py
-```
-
-脚本会自动下载以下权重并跳过已存在的文件（可重复运行）：
-
-| 模型 | 文件 | 大小 | 说明 |
-|------|------|------|------|
-| YOLO11 | `yolo/yolo11n.pt` | ~5 MB | 目标检测 / 跟踪（nano 版） |
-| SlowFast (Kinetics) | `slowfast/SLOWFAST_8x8_R50.pkl` | ~140 MB | 场景级行为分类 |
-| SlowFast (AVA) | `slowfast/SLOWFAST_8x8_R50_DETECTION.pyth` | ~258 MB | 人物级动作检测 60 类 |
-| YAMNet | `yamnet/yamnet_tfhub/` | ~55 MB | AudioSet 521 类音频分类 |
-| face_recognition | 随包内置 | — | 无需单独下载 |
-
-### 模型清单
+### 模型清单与权重文件
 
 | 模型 | 版本 | 安装方式 | 用途 |
 |------|------|----------|------|
