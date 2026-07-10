@@ -1,11 +1,7 @@
-# Event Query API
-
-**Purpose:** 定义 SituationEvent 事件日志的只读查询 API 与 Service，支持按 view 过滤、按时间范围过滤、按 exception 分组 count 聚合、按时间段趋势统计。路由已在 `api/__init__.py` 中注册。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: SituationEvent 查询
-系统 SHALL 提供 SituationEvent（异常事件日志）的只读查询 API 与 Service，不提供创建/更新/删除（事件由 AI 检测引擎自动写入）。
+系统 SHALL 提供 SituationEvent（异常事件日志）的只读查询 API 与 Service，不提供创建/更新/删除（事件由 AI 检测引擎自动写入）。路由已在 `api/__init__.py` 中注册。
 
 #### Scenario: 分页查询事件列表
 - **WHEN** 客户端 `GET /api/v1/events`
@@ -14,10 +10,6 @@
 #### Scenario: 按监控视图过滤
 - **WHEN** 客户端 `GET /api/v1/events?view_id=1`
 - **THEN** 系统仅返回该监控视图下的异常事件
-
-#### Scenario: 按时间范围过滤
-- **WHEN** 客户端 `GET /api/v1/events?start=2026-01-01T00:00:00&end=2026-01-02T00:00:00`
-- **THEN** 系统仅返回该时间区间内的事件
 
 #### Scenario: 查询单个事件详情
 - **WHEN** 客户端 `GET /api/v1/events/1`

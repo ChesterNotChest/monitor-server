@@ -1,8 +1,4 @@
-# Enum Type CRUD API
-
-**Purpose:** 定义 EntityType / ActionType / SoundType 三个 AI 检测枚举表的 CRUD API 与 Service。路由前缀为 `/api/v1/detection/`。负责人和运维员可访问。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: EntityType CRUD
 系统 SHALL 提供 EntityType（YOLO 目标检测实体类型）的 CRUD API 与 Service。路由前缀为 `/api/v1/detection/entity-types`。
@@ -22,10 +18,6 @@
 #### Scenario: 删除实体类型
 - **WHEN** 客户端 `DELETE /api/v1/detection/entity-types/1`
 - **THEN** 系统删除记录，返回 204
-
-#### Scenario: 运维员管理检测枚举
-- **WHEN** 运维员调用 `POST /api/v1/detection/entity-types` 创建新实体类型
-- **THEN** 权限检查通过，创建成功返回 201
 
 ### Requirement: ActionType CRUD
 系统 SHALL 提供 ActionType（SlowFast 行为识别类型）的 CRUD API。路由前缀为 `/api/v1/detection/action-types`。

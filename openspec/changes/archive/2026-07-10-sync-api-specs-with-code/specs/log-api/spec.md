@@ -1,8 +1,4 @@
-# Log API
-
-**Purpose:** 系统日志查看——仅运维员可访问。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: 系统日志查看
 系统 SHALL 提供日志查询端点，支持分页。仅运维员可访问。

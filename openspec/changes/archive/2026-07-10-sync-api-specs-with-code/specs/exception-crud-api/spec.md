@@ -1,16 +1,21 @@
-# Exception CRUD API
+## REMOVED Requirements
 
-**Purpose:** 定义 ExceptionDef 异常规则的 CRUD API 与 Service。负责人和运维员可访问。
+### Requirement: ExceptionDef 绑定 EntityType
+**Reason**: 绑定/解绑路由（`/exceptions/{id}/entities`）未实现。计划在 Part C 中与告警引擎一起实施。
+**Migration**: Part C 实施时从 git history 恢复此需求。
 
-## Requirements
+### Requirement: ExceptionDef 绑定 ActionType
+**Reason**: 绑定/解绑路由（`/exceptions/{id}/actions`）未实现。计划在 Part C 中实施。
+**Migration**: Part C 实施时从 git history 恢复此需求。
+
+### Requirement: ExceptionDef 绑定 SoundType
+**Reason**: 绑定/解绑路由（`/exceptions/{id}/sounds`）未实现。计划在 Part C 中实施。
+**Migration**: Part C 实施时从 git history 恢复此需求。
+
+## MODIFIED Requirements
 
 ### Requirement: ExceptionDef CRUD
 系统 SHALL 提供 ExceptionDef（异常规则）的完整 CRUD API 与 Service。
-
-- `GET /api/v1/exceptions` — 列表
-- `POST /api/v1/exceptions` — 创建异常定义
-- `PUT /api/v1/exceptions/{id}` — 更新异常定义
-- `DELETE /api/v1/exceptions/{id}` — 删除异常定义
 
 #### Scenario: 创建异常规则
 - **WHEN** 客户端 `POST /api/v1/exceptions` 请求体 `{"name": "测试", "severity": 3, "group_id": 1}`
