@@ -6,7 +6,7 @@
 
 ## 11. YAMNet 音频分类
 
-- [ ] 11.1 创建 `src/service/ai_module/yamnet_runner.py`：`YamnetRunner` 类
+- [ ] 11.1 创建 `src/service/audio_module/audio_yamnet.py`：`YamnetRunner` 类
 - [ ] 11.2 FFmpeg 子进程拉流：`ffmpeg -i rtmp://srs/live/audio_{id} -f f32le -ac 1 -ar 16000 pipe:1`
 - [ ] 11.3 加载 YAMNet 模型（tensorflow-hub，首次自动缓存）
 - [ ] 11.4 `run()` → 每 0.96s 累积样本量 → YAMNet 推理 → 输出 `(521,)` scores
@@ -17,7 +17,7 @@
 
 ## 12. 告警引擎
 
-- [ ] 12.1 创建 `src/service/ai_module/alert_engine.py`：`AlertEngine` 类
+- [ ] 12.1 创建 `src/service/service/alert_module/engine.py`：`AlertEngine` 类
 - [ ] 12.2 订阅 EventBus 全部 5 个 event type
 - [ ] 12.3 内存活跃事件池：`{event_type: [{payload, expires_at}, ...]}`，事件 TTL = `ALERT_EVENT_TTL`（默认 5s）
 - [ ] 12.4 每 `ALERT_CHECK_INTERVAL`（默认 5s）触发一次检查：
@@ -49,7 +49,7 @@
 
 ## 14. App 集成
 
-- [ ] 14.1 创建 `src/service/ai_module/__init__.py`：导出 `AIPipeline` 门面类
+- [ ] 14.1 创建 `src/service/vision_module/__init__.py`：导出 `AIPipeline` 门面类
 - [ ] 14.2 `AIPipeline` 门面：`start(view_id, video_id, audio_id)` → 启动全部模块 → 主循环；`stop()` → 逐一停止
 - [ ] 14.3 注册到 Server lifespan：View 创建回调 → `AIPipeline.start()`；View 删除回调 → `AIPipeline.stop()`
 - [ ] 14.4 崩溃隔离：单个模块异常不中断主循环，异常模块标记 ERROR 后跳过
@@ -82,8 +82,8 @@
 - [ ] 15.4.2 **告警处置**：`PUT /api/v1/alerts/{id}/handle` → 断言状态变更 → `GET /api/v1/alerts` 过滤已处理
 - [ ] 15.4.3 **平静状态**：无事件活跃 → `GET /api/v1/alerts` 断言空列表
 
-### 15.3 FenceEventType CRUD
-- [ ] 15.3.1 POST fence-event-types → 201
-- [ ] 15.3.2 GET fence-event-types → 列表含 ENTERED
-- [ ] 15.3.3 PUT fence-event-types/{id} → 200
-- [ ] 15.3.4 DELETE fence-event-types/{id} → 204
+### 15.5 FenceEventType CRUD
+- [ ] 15.5.1 POST fence-event-types → 201
+- [ ] 15.5.2 GET fence-event-types → 列表含 ENTERED
+- [ ] 15.5.3 PUT fence-event-types/{id} → 200
+- [ ] 15.5.4 DELETE fence-event-types/{id} → 204
