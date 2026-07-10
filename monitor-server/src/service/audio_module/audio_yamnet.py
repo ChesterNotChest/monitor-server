@@ -70,15 +70,17 @@ class YamnetRunner:
             import tensorflow_hub as hub
             self._model = hub.load("https://tfhub.dev/google/yamnet/1")
             logger.info("YAMNet TF model loaded for view %d", self._view_id)
-        except ImportError:
-            logger.info("tensorflow_hub not available, trying torchaudio fallback")
+        except Exception:
+            logger.info("tensorflow_hub load failed, trying torchaudio fallback")
             try:
                 from torchaudio.prototype.models import YAMNET
                 self._model = YAMNET.get_model()
                 self._model.eval()
                 logger.info("YAMNet torch model loaded for view %d", self._view_id)
             except ImportError:
-                raise RuntimeError("YAMNet: neither tensorflow_hub nor torchaudio available")
+                raise RuntimeError(
+                    "YAMNet: neither tensorflow_hub nor torchaudio available"
+                )
 
     async def _start_ffmpeg(self) -> asyncio.subprocess.Process:
         cmd = [
@@ -143,7 +145,10 @@ class YamnetRunner:
                 result = self._model(batch)
                 scores_np = result[0].numpy() if isinstance(result, tuple) else result.numpy()
 
-        from src.service.vision_module.vision_event_bus import event_bus, SOUND
+        try:
+            from src.service.vision_module.vision_event_bus import event_bus, SOUND
+        except ImportError:
+            return  # EventBus unavailable (e.g. cv2 not installed)
         for sound_type_val, class_id in SOUND_TYPE_MAP.items():
             if class_id < len(scores_np) and scores_np[class_id] > self._threshold:
                 await event_bus.publish(SOUND, {
