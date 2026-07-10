@@ -31,7 +31,11 @@ def _to_response(obj) -> EventResponse:
 # ── 查询 ────────────────────────────────────────
 
 
-@router.get("", response_model=EventListResponse)
+@router.get(
+    "",
+    response_model=EventListResponse,
+    responses={404: {"description": "无匹配事件"}},
+)
 def list_all(
     db: Session = Depends(get_db),
     view_id: int | None = Query(None),
@@ -40,6 +44,7 @@ def list_all(
     page: int = Query(DEFAULT_PAGE, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
 ):
+    """查询事件日志列表，支持按视图和时间范围筛选。"""
     items, total = list_events(
         db, view_id=view_id, start=start, end=end, page=page, page_size=page_size
     )
@@ -51,8 +56,13 @@ def list_all(
     )
 
 
-@router.get("/{id}", response_model=EventResponse)
+@router.get(
+    "/{id}",
+    response_model=EventResponse,
+    responses={404: {"description": "事件不存在"}},
+)
 def get_one(id: int, db: Session = Depends(get_db)):
+    """按 ID 查询事件详情。"""
     obj = get_event(db, id)
     if obj is None:
         raise HTTPException(status_code=404, detail="事件不存在")
@@ -61,7 +71,7 @@ def get_one(id: int, db: Session = Depends(get_db)):
 
 # ── 统计 ────────────────────────────────────────
 
-stats_router = APIRouter(prefix="/events/stats", tags=["事件统计"])
+stats_router = APIRouter(prefix="/events/stats", tags=["事件日志"])
 
 
 @stats_router.get("/by-exception", response_model=list[ExceptionStatsItem])
@@ -70,16 +80,22 @@ def by_exception(
     start: datetime | None = Query(None),
     end: datetime | None = Query(None),
 ):
+    """按异常类型分组统计事件数量。"""
     rows = stats_by_exception(db, start=start, end=end)
     return [ExceptionStatsItem(**r) for r in rows]
 
 
-@stats_router.get("/trend", response_model=list[TrendItem])
+@stats_router.get(
+    "/trend",
+    response_model=list[TrendItem],
+    responses={422: {"description": "无效的 granularity 参数（应为 hour/day/month）"}},
+)
 def trend(
     db: Session = Depends(get_db),
     granularity: str = Query("day", pattern="^(hour|day|month)$"),
     start: datetime | None = Query(None),
     end: datetime | None = Query(None),
 ):
+    """按时间段粒度统计事件趋势。"""
     rows = stats_trend(db, granularity=granularity, start=start, end=end)
     return [TrendItem(**r) for r in rows]

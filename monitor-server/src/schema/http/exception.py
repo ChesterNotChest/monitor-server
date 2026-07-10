@@ -13,8 +13,8 @@ from src.constants import SeverityLevel
 class EnumTypeRef(BaseModel):
     """枚举类型简要引用。"""
 
-    id: int
-    name: str
+    id: int = Field(..., description="枚举类型 ID")
+    name: str = Field(..., description="枚举类型名称")
 
     model_config = {"from_attributes": True}
 
@@ -22,8 +22,8 @@ class EnumTypeRef(BaseModel):
 class AlertGroupRef(BaseModel):
     """告警分组简要引用。"""
 
-    id: int
-    name: str
+    id: int = Field(..., description="告警分组 ID")
+    name: str = Field(..., description="告警分组名称")
 
     model_config = {"from_attributes": True}
 
@@ -54,17 +54,17 @@ class ExceptionUpdate(BaseModel):
 class ExceptionResponse(BaseModel):
     """异常规则响应体（含所有关联）。"""
 
-    id: int
-    name: str
-    severity: SeverityLevel
-    group_id: int
-    face_result_id: int | None = None
-    fence_event_id: int | None = None
-    created_at: datetime
-    alert_group: AlertGroupRef | None = None
-    entities: list[EnumTypeRef] = []
-    actions: list[EnumTypeRef] = []
-    sounds: list[EnumTypeRef] = []
+    id: int = Field(..., description="异常规则 ID")
+    name: str = Field(..., description="异常规则名称")
+    severity: SeverityLevel = Field(..., description="严重级别（1=INFO 2=WARNING 3=CRITICAL 4=EMERGENCY）")
+    group_id: int = Field(..., description="告警分组 ID")
+    face_result_id: int | None = Field(None, description="人脸识别结果条件 ID（可选）")
+    fence_event_id: int | None = Field(None, description="电子围栏事件条件 ID（可选）")
+    created_at: datetime = Field(..., description="创建时间")
+    alert_group: AlertGroupRef | None = Field(None, description="关联的告警分组信息")
+    entities: list[EnumTypeRef] = Field(default_factory=list, description="关联的实体类型列表")
+    actions: list[EnumTypeRef] = Field(default_factory=list, description="关联的行为类型列表")
+    sounds: list[EnumTypeRef] = Field(default_factory=list, description="关联的声音类型列表")
 
     model_config = {"from_attributes": True}
 

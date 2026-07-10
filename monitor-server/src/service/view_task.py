@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from src.schema.http.view_schema import ViewResponse
+
 
 def create_view(
     db: Session,
     audio_id: int,
     video_id: int,
-) -> dict | None:
+) -> ViewResponse | None:
     """Create a monitor View and persist its lifecycle changes."""
 
     from src.network.rtmp.pusher import build_play_urls
@@ -54,11 +56,17 @@ def create_view(
         db.commit()
         db.refresh(view)
 
-        return {
-            "view": view,
-            "srs_urls": urls,
-            "warnings": warnings,
-        }
+        return ViewResponse(
+            id=view.id,
+            audio_id=view.audio_id,
+            video_id=view.video_id,
+            cache_path=view.cache_path,
+            created_at=view.created_at,
+            flv_url=urls.get("flv_url"),
+            webrtc_url=urls.get("webrtc_url"),
+            rtmp_url=urls.get("rtmp_url"),
+            warnings=warnings,
+        )
     except Exception:
         db.rollback()
         raise
@@ -87,6 +95,16 @@ def delete_view(db: Session, view_id: int) -> bool:
         check_and_stop_stream(db, "audio", audio_id)
 
         db.commit()
+
+        # 停止 AI 推理管线
+        import asyncio
+        from src.service.vision_task import stop_pipeline
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(stop_pipeline(view_id))
+        except RuntimeError:
+            asyncio.run(stop_pipeline(view_id))
+
         return True
     except Exception:
         db.rollback()

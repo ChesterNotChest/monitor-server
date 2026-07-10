@@ -1,45 +1,75 @@
 # Clip Replay
 
-**Purpose:** 环形缓冲区 + 录制会话的帧格式参数化，确保不同编码格式的帧都能正确录制。
+**Purpose:** 定义持续录制引擎 — 环形缓冲区 + RecordingSession + 回放查询 + flv 文件流式读取。
 
-## ADDED Requirements
+## Requirements
 
-### Requirement: FrameRingBuffer 格式感知
+### Requirement: 环形缓冲区
+系统 SHALL 提供帧级环形缓冲区，每个 MonitorView 一个实例，存储加框前原始帧，缓存时长可配置。
 
-系统 SHALL 在 `FrameRingBuffer` 上新增 `format` 参数（`"raw_bgr24"` 或 `"jpeg"`），用于告知 `RecordingSession` 上游帧的编码格式。
+#### Scenario: 创建缓冲区并写入帧
+- **WHEN** 调用 `start_buffer(view_id)` 后持续调用 `push_frame(view_id, frame_bytes)`
+- **THEN** 缓冲区保留最近 `CACHE_DURATION_SECONDS` 秒的帧，超出部分自动丢弃
 
-#### Scenario: 默认 raw BGR24
+#### Scenario: 停止缓冲区
+- **WHEN** 调用 `stop_buffer(view_id)`
+- **THEN** 缓冲区清空并释放内存
 
-- **WHEN** `FrameRingBuffer()` 不传 format
-- **THEN** `self.format = "raw_bgr24"`
+#### Scenario: 缓冲区溢出
+- **WHEN** 帧写入速率超过缓冲区容量
+- **THEN** 旧帧被丢弃（FIFO），缓冲区始终保留最新帧
 
-#### Scenario: JPEG 格式
+### Requirement: 持续录制引擎
+系统 SHALL 提供持续录制能力：告警触发时开始录制，从缓冲区获取此前 `CACHE_DURATION_SECONDS` 秒的历史帧，持续写入新帧，连续 `RECORD_STOP_SILENCE_SECONDS` 秒无新告警则停止并生成 flv 文件。
 
-- **WHEN** `FrameRingBuffer(format="jpeg")` 
-- **THEN** `self.format = "jpeg"`
+#### Scenario: 首次告警触发开始录制
+- **WHEN** AI 告警引擎调用 `alert_triggered(view_id)` 且该 View 当前无活跃录制
+- **THEN** 系统创建 RecordingSession，从缓冲区 dump 此前历史帧，开始持续写入新帧
 
-### Requirement: RecordingSession 按格式切换 FFmpeg
+#### Scenario: 密集告警重置静默计时
+- **WHEN** 录制进行中再次调用 `alert_triggered(view_id)`（新告警触发）
+- **THEN** 系统重置静默计时器为 `RECORD_STOP_SILENCE_SECONDS`，录制继续
 
-系统 SHALL 在 `RecordingSession` 创建 FFmpeg 子进程时根据 buffer 的 `format` 切换命令参数。
+#### Scenario: 静默超时停止录制
+- **WHEN** 录制进行中且连续 `RECORD_STOP_SILENCE_SECONDS` 秒无新的 `alert_triggered` 调用
+- **THEN** 系统写 flv 文件到 `{cache_path}/view_{id}_{timestamp}.flv`，创建 Recording 记录，释放缓冲区引用
 
-- `raw_bgr24` SHALL 使用 `-f rawvideo -pix_fmt bgr24 -s WxH -r FPS -i pipe:0 -c:v libx264 -f flv`
-- `jpeg` SHALL 使用 `-f image2pipe -c:v mjpeg -i pipe:0 -c:v copy -f flv`
+#### Scenario: 录制中缓冲区无历史帧
+- **WHEN** 缓存区刚创建不久（不足 `CACHE_DURATION_SECONDS` 秒）即触发录制
+- **THEN** 系统取所有可用历史帧，从当前帧开始录制
 
-#### Scenario: JPEG 格式录制
+### Requirement: Recording 记录
+系统 SHALL 定义 `Recording` 模型记录每次录制会话，与事件表解耦。
 
-- **WHEN** `RecordingSession` 收到 `format="jpeg"` 的 buffer
-- **THEN** FFmpeg 以 `-f image2pipe -c:v mjpeg` 接收帧，`-c:v copy` 不重编码
+- `id`: 自增主键
+- `view_id`: FK→monitor_views
+- `file_path`: flv 文件相对路径
+- `start_time`: 录制开始时间
+- `end_time`: 录制结束时间
+- `created_at`: 记录创建时间
 
-#### Scenario: raw BGR24 格式录制
+#### Scenario: 录制完成写入记录
+- **WHEN** 一段录制停止并生成 flv 文件
+- **THEN** 系统写入 Recording 记录（view_id, file_path, start_time, end_time）
 
-- **WHEN** `RecordingSession` 收到 `format="raw_bgr24"` 的 buffer
-- **THEN** FFmpeg 以 `-f rawvideo -pix_fmt bgr24` 接收帧，`-c:v libx264` 编码
+### Requirement: 录制文件查询
+系统 SHALL 提供按 View 和时间范围查询录制文件的 API。
 
-### Requirement: RecordingRepo 原生 INSERT
+#### Scenario: 查询某画面某时段的录制
+- **WHEN** 客户端 `GET /api/v1/views/3/recordings?start=2026-01-01T00:00&end=2026-01-01T23:59`
+- **THEN** 系统返回该时段内所有 Recording 列表
 
-系统 SHALL 在 `RecordingRepo.create()` 中使用 `db.execute(insert(Recording).values(...))` 代替 `self.model(**kwargs)` → `self.db.add()` → `self.db.commit()`，避免 ORM mapper 在 partial import 场景触发 `FaceRecognitionResult` 解析失败。
+#### Scenario: 无录制文件
+- **WHEN** 查询的时段内没有录制记录
+- **THEN** 系统返回空列表
 
-#### Scenario: 独立测试中写入 Recording
+### Requirement: 录制文件流式读取
+系统 SHALL 提供 flv 录制文件的流式读取 API。
 
-- **WHEN** 只导入了 `Recording` 模型而未导入全模型树
-- **THEN** `RecordingRepo.create()` 正常写入 DB 记录，不触发 `ExceptionDef` mapper 配置
+#### Scenario: 获取存在的录制文件
+- **WHEN** 客户端 `GET /api/v1/recordings/1/stream`
+- **THEN** 系统返回 flv 文件流（Content-Type: video/x-flv）
+
+#### Scenario: 录制文件不存在
+- **WHEN** 文件路径存在但磁盘文件已被删除
+- **THEN** 系统返回 404

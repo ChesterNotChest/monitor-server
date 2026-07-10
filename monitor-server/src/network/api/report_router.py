@@ -1,4 +1,4 @@
-﻿"""报表 API 路由 —— 负责人专有。"""
+"""报表 API 路由 —— 负责人专有。"""
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -14,9 +14,17 @@ _perm = Depends(require_permission("report:view"))
 
 @router.get("/weekly", response_model=ReportResponse)
 def weekly_report(db: Session = Depends(get_db), _user=_perm):
+    """获取周报表数据。
+
+    **权限**: report:view
+    """
     return report_task.get_weekly_report(db)
 
 
 @router.get("/monthly", response_model=ReportResponse)
 def monthly_report(db: Session = Depends(get_db), _user=_perm):
+    """获取月报表数据。
+
+    **权限**: report:view
+    """
     return report_task.get_monthly_report(db)

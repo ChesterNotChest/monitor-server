@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from src.extensions import get_db
 from src.middleware.rbac import require_permission
 from src.schema.http.auth_schema import UserResponse
+from src.schema.http.common import OkResponse
 from src.service import user_task
 from src.constants import Role
 
@@ -15,10 +16,19 @@ _perm = Depends(require_permission("user:manage"))
 
 @router.get("", response_model=list[UserResponse])
 def list_users(db: Session = Depends(get_db), _user=_perm):
+    """列出所有用户。
+
+    **权限**: user:manage
+    """
     return user_task.list_users(db)
 
 
-@router.post("", response_model=UserResponse, status_code=201)
+@router.post(
+    "",
+    response_model=UserResponse,
+    status_code=201,
+    responses={400: {"description": "无效角色"}, 409: {"description": "用户名已存在"}},
+)
 def create_user(
     username: str,
     password: str,
@@ -26,7 +36,10 @@ def create_user(
     db: Session = Depends(get_db),
     _user=_perm,
 ):
-    """创建用户。role 取 security_guard / manager / operator。"""
+    """创建用户。role 取 security_guard / manager / operator。
+
+    **权限**: user:manage
+    """
     if role not in [r.value for r in Role]:
         raise HTTPException(400, f"无效角色: {role}")
     try:
@@ -35,8 +48,16 @@ def create_user(
         raise HTTPException(409, str(e))
 
 
-@router.put("/{user_id}/role", response_model=UserResponse)
+@router.put(
+    "/{user_id}/role",
+    response_model=UserResponse,
+    responses={400: {"description": "无效角色"}, 404: {"description": "用户不存在"}},
+)
 def update_role(user_id: int, role: str, db: Session = Depends(get_db), _user=_perm):
+    """修改用户角色。
+
+    **权限**: user:manage
+    """
     if role not in [r.value for r in Role]:
         raise HTTPException(400, f"无效角色: {role}")
     result = user_task.update_role(db, user_id, role)
@@ -45,8 +66,16 @@ def update_role(user_id: int, role: str, db: Session = Depends(get_db), _user=_p
     return result
 
 
-@router.put("/{user_id}/deactivate")
+@router.put(
+    "/{user_id}/deactivate",
+    response_model=OkResponse,
+    responses={404: {"description": "用户不存在"}},
+)
 def deactivate_user(user_id: int, db: Session = Depends(get_db), _user=_perm):
+    """停用用户（软删除：is_active=false）。
+
+    **权限**: user:manage
+    """
     if not user_task.deactivate_user(db, user_id):
         raise HTTPException(404, "用户不存在")
-    return {"ok": True}
+    return OkResponse()

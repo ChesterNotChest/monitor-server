@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 
 from src.config import settings
+from src.network.rtmp.puller import build_pull_url
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +32,6 @@ class FrameReaderState(Enum):
     ERROR = auto()
 
 
-def _build_rtmp_url(device_id: int) -> str:
-    """构建 raw video RTMP 拉流地址。"""
-    host = "127.0.0.1" if settings.RTMP_DEBUG else settings.RTMP_HOST
-    port = settings.RTMP_PORT
-    return f"rtmp://{host}:{port}/live/video_{device_id}"
 
 
 class FrameReader:
@@ -63,13 +59,13 @@ class FrameReader:
 
     # ── Lifecycle ───────────────────────────────
 
-    def open(self, video_id: int) -> bool:
+    def open(self, video_id: int, video_name: str) -> bool:
         """建立 RTMP 连接并初始化帧率控制。
 
         Returns:
             True if connected successfully.
         """
-        url = _build_rtmp_url(video_id)
+        url = build_pull_url(video_name, "video", video_id)
         logger.info("FrameReader connecting to %s", url)
         self._cap = cv2.VideoCapture(url)
         if not self._cap.isOpened():
