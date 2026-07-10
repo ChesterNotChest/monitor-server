@@ -6,14 +6,14 @@
 
 ## 7. ByteTrack 人物追踪
 
-- [ ] 7.1 创建 `src/service/ai_module/byte_tracker.py`：`ByteTracker` 类，封装 bytetrack 库
+- [ ] 7.1 创建 `src/service/vision_module/vision_byte_tracker.py`：`ByteTracker` 类，封装 bytetrack 库
 - [ ] 7.2 `update(detections) -> list[Track]`：`Track = {bbox, track_id, score}`，输入 YOLO person detections（仅 class_id=person）
 - [ ] 7.3 配置参数：`BYTETRACK_TRACK_THRESH`（0.5）、`BYTETRACK_MATCH_THRESH`（0.8）
 - [ ] 7.4 状态机：IDLE（无 person 框）→ ACTIVE（追踪中），无 person 超过 30 帧 → IDLE
 
 ## 8. 人脸识别
 
-- [ ] 8.1 创建 `src/service/ai_module/face_recognizer.py`：`FaceRecognizer` 类
+- [ ] 8.1 创建 `src/service/vision_module/vision_face/recognizer.py`：`FaceRecognizer` 类
 - [ ] 8.2 启动时加载所有 NamedPerson：`{128d_encoding: person_name}` 到内存
 - [ ] 8.3 `recognize(frame, tracks) -> list[FaceResult]`：对每个 track 的 bbox 区域裁剪 → **BGR→RGB 转换**（OpenCV 默认 BGR，face_recognition 期望 RGB）→ dlib 人脸检测 → 128D 提取 → 比对
 - [ ] 8.4 比对逻辑：`face_recognition.compare_faces(known_encodings, face_encoding, tolerance=FACE_MATCH_TOLERANCE)`
@@ -25,7 +25,7 @@
 
 ## 9. SlowFast 行为识别
 
-- [ ] 9.1 创建 `src/service/ai_module/slowfast_runner.py`：`SlowFastRunner` 类
+- [ ] 9.1 创建 `src/service/vision_module/vision_slowfast/runner.py`：`SlowFastRunner` 类
 - [ ] 9.2 Per-track_id 帧队列：`defaultdict[str, deque(maxlen=32)]`
 - [ ] 9.3 `enqueue(track_id, frame_crop)` → 队列满 32 帧 → 触发推理
 - [ ] 9.4 加载 Kinetics R-50 模型 + AVA R-50 模型（启动时一次性）
@@ -37,7 +37,7 @@
 
 ## 10. 电子围栏
 
-- [ ] 10.1 创建 `src/service/ai_module/fence_engine.py`：`FenceEngine` 类
+- [ ] 10.1 创建 `src/service/vision_module/vision_fence/engine.py`：`FenceEngine` 类
 - [ ] 10.2 启动时加载 View 下所有 `ElectronicFence` 记录到内存
 - [ ] 10.3 `check(tracks, frame_timestamp)` → 对每个 track 的 bbox × 每个 fence 的 polygon 做 IoU 检测
 - [ ] 10.4 IoU 算法：`person_bbox ∩ fence_polygon` 面积 > 0 → 记录 True
