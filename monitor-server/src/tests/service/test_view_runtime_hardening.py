@@ -55,7 +55,7 @@ def test_create_view_commits_view_and_streaming_state(monkeypatch):
             json={"audio_id": ids["audio_id"], "video_id": ids["video_id"]},
         )
         assert response.status_code == 200
-        view_id = response.json()["view"]["id"]
+        view_id = response.json()["id"]
 
         listed = client.get("/api/v1/views/").json()["views"]
         assert [view["id"] for view in listed] == [view_id]
@@ -91,7 +91,7 @@ def test_create_view_warns_when_raw_streams_are_unavailable(db, monkeypatch):
     result = view_task.create_view(db, audio_id=audio.id, video_id=video.id)
 
     assert result is not None
-    assert "Raw stream(s) not ready for merge" in result["warnings"][-1]
+    assert "Raw stream(s) not ready for merge" in result.warnings[-1]
 
 
 def test_wait_for_streams_uses_configured_probe_timeout(monkeypatch):
