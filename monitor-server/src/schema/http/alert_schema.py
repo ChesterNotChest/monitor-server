@@ -1,22 +1,21 @@
 """告警处理 Schema。"""
 
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AlertResponse(BaseModel):
-    id: int
-    view_id: int
-    exception_id: int
-    recording_id: int | None = None
-    timestamp: datetime
-    # 处理状态通过 JOIN alert_reviews 获得（后续扩展）
+    id: int = Field(..., description="告警 ID")
+    view_id: int = Field(..., description="关联监控视图 ID")
+    exception_id: int = Field(..., description="关联异常规则 ID")
+    recording_id: int | None = Field(None, description="关联录像 ID（如有）")
+    timestamp: datetime = Field(..., description="告警触发时间")
 
     model_config = {"from_attributes": True}
 
 
 class AlertListResponse(BaseModel):
-    items: list[AlertResponse]
-    total: int
-    page: int
-    page_size: int
+    items: list[AlertResponse] = Field(..., description="告警列表")
+    total: int = Field(..., description="告警总数")
+    page: int = Field(..., description="当前页码")
+    page_size: int = Field(..., description="每页条数")

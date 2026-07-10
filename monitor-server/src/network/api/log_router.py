@@ -1,4 +1,4 @@
-﻿"""系统日志 API 路由 —— 运维员专有。"""
+"""系统日志 API 路由 —— 运维员专有。"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -20,11 +20,23 @@ def list_logs(
     db: Session = Depends(get_db),
     _user=_perm,
 ):
+    """系统日志分页列表。
+
+    **权限**: log:view
+    """
     return log_task.list_logs(db, page=page, page_size=page_size)
 
 
-@router.get("/{log_id}", response_model=LogEntry)
+@router.get(
+    "/{log_id}",
+    response_model=LogEntry,
+    responses={404: {"description": "日志不存在"}},
+)
 def get_log(log_id: int, db: Session = Depends(get_db), _user=_perm):
+    """按 ID 查询日志详情。
+
+    **权限**: log:view
+    """
     entry = log_task.get_log(db, log_id)
     if entry is None:
         raise HTTPException(404)
