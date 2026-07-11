@@ -69,14 +69,12 @@ def _bbox_color(entity_type_id: int | None) -> tuple[int, int, int]:
     return _COLOR_OBJECT
 
 
-def draw_detections(frame: np.ndarray, detections: list[Detection],
-                   capture_ts: float | None = None) -> np.ndarray:
+def draw_detections(frame: np.ndarray, detections: list[Detection]) -> np.ndarray:
     """在帧上绘制 YOLO 实体框和标签。返回新帧（不修改原帧）。
 
-    capture_ts: 原始采集时刻（Unix 秒），用于标注采集时间而非处理时间。
+    时间戳由 Node 端 drawtext 滤镜烧录，Server 侧不再重复叠加。
     """
     annotated = frame.copy()
-    h, w = annotated.shape[:2]
 
     for det in detections:
         if det.entity_type_id is None:
@@ -89,15 +87,6 @@ def draw_detections(frame: np.ndarray, detections: list[Detection],
 
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
         _draw_label(annotated, label, x1, y1 - 10, color)
-
-    # 时间戳 — 用采集时刻而非处理时刻
-    from datetime import datetime as _datetime, timezone as _timezone
-    if capture_ts is not None:
-        ts_str = _datetime.fromtimestamp(capture_ts).strftime("%Y-%m-%d %H:%M:%S")
-    else:
-        ts_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cv2.putText(annotated, ts_str, (w - 220, h - 15),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, _COLOR_TEXT, 1)
 
     return annotated
 

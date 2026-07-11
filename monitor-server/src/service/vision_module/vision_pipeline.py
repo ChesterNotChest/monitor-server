@@ -189,6 +189,18 @@ class AIPipeline:
         _loop_last_log = time.monotonic()
 
         while self._running:
+            # ── 时钟门控：等够整拍再开始处理，消除 asyncio 拥堵偏差 ──
+            _now = time.monotonic()
+            if self._next_frame_due == 0.0:
+                self._next_frame_due = _now
+            _wait = self._next_frame_due - _now
+            if _wait > 0:
+                await asyncio.sleep(_wait)
+            elif _wait < -self._push_interval:
+                # 落后超过 1 帧：跳帧追赶
+                self._next_frame_due = time.monotonic()
+            self._next_frame_due += self._push_interval
+
             _loop_frame_count += 1
             _t0 = time.monotonic()
             success, frame, ts, fid = self._reader.read()
@@ -238,18 +250,9 @@ class AIPipeline:
             annotated = draw_detections(frame, detections)
             _t4 = time.monotonic()
 
-            # 推流 — 绝对时钟调度：按固定 15fps 节拍推，不等相对间隔
+            # 推流（循环入口已有时钟门控，这里直接推即可）
             if self._merge_proc:
-                _now = time.monotonic()
-                if self._next_frame_due == 0.0:
-                    self._next_frame_due = _now
-                if _now >= self._next_frame_due:
-                    await push_frame(self._merge_proc, annotated)
-                    self._next_frame_due += self._push_interval
-                # 睡到下一帧的绝对时刻（避免累积漂移）
-                _wait = self._next_frame_due - time.monotonic()
-                if _wait > 0:
-                    await asyncio.sleep(_wait)
+                await push_frame(self._merge_proc, annotated)
 
             # 可观测性：每 5 秒打印一次帧率 + 分段耗时 + 端到端延迟
             _tn = time.monotonic()
@@ -259,10 +262,11 @@ class AIPipeline:
                 _yolo_ms = (_t2 - _t1) * 1000
                 _hooks_ms = (_t3 - _t2) * 1000
                 _draw_ms = (_t4 - _t3) * 1000
-                # 管线内延迟 = 从读帧开始到推送完成的耗时
-                _latency_ms = (_tn - _t0) * 1000
-                logger.info("[obs] FPS=%.1f | r=%.0f y=%.0f hk=%.0f dr=%.0f ms | latency=%.0f ms",
-                            _fps, _read_ms, _yolo_ms, _hooks_ms, _draw_ms, _latency_ms)
+                # 管线内延迟 + 帧在 OpenCV 缓冲中的滞留时间
+                _pipe_ms = (_tn - _t0) * 1000
+                _frame_age = (time.time() - (self._reader.open_time + ts)) if self._reader.open_time > 0 else 0
+                logger.info("[obs] FPS=%.1f | r=%.0f y=%.0f hk=%.0f dr=%.0f ms | pipe=%.0f frame_age=%.0f ms",
+                            _fps, _read_ms, _yolo_ms, _hooks_ms, _draw_ms, _pipe_ms, _frame_age * 1000)
                 _loop_frame_count = 0
                 _loop_last_log = _tn
 
