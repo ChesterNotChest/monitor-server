@@ -42,13 +42,24 @@ _ACTION_KEYWORDS: tuple[tuple[SlowFastActionType, tuple[str, ...]], ...] = (
     (SlowFastActionType.PUSHING, ("pushing", "shoving", "push")),
     (SlowFastActionType.SITTING, ("sitting", "sit")),
     (SlowFastActionType.STANDING, ("standing", "stand")),
+    (SlowFastActionType.LYING_DOWN, ("lying", "lie", "sleeping", "sleep", "lay")),
+    (SlowFastActionType.LOITERING, ("loitering", "loiter", "linger", "idle")),
+    (SlowFastActionType.CROWDING, ("crowding", "crowd", "gather", "group")),
 )
 
 _AVA_ACTION_KEYWORDS: tuple[tuple[SlowFastActionType, tuple[str, ...]], ...] = (
     (SlowFastActionType.SMOKING, ("smoke", "smoking")),
-    (SlowFastActionType.FALLING, ("fall down", "lie/sleep")),
-    (SlowFastActionType.FIGHTING, ("fight/hit", "martial art", "grab")),
+    (SlowFastActionType.FALLING, ("fall down", "lie/sleep", "trip")),
+    (SlowFastActionType.FIGHTING, ("fight/hit", "martial art", "grab", "kick")),
     (SlowFastActionType.RUNNING, ("run/jog",)),
+    (SlowFastActionType.WALKING, ("walk",)),
+    (SlowFastActionType.STANDING, ("stand",)),
+    (SlowFastActionType.SITTING, ("sit",)),
+    (SlowFastActionType.WAVING, ("wave",)),
+    (SlowFastActionType.THROWING, ("throw",)),
+    (SlowFastActionType.CLIMBING, ("climb", "crawl", "crouch")),
+    (SlowFastActionType.LYING_DOWN, ("lie/sleep", "fall down")),
+    (SlowFastActionType.LOITERING, ("linger", "idle")),
     (SlowFastActionType.CLIMBING, ("climb",)),
     (SlowFastActionType.THROWING, ("throw",)),
     (SlowFastActionType.POINTING, ("point to",)),
@@ -347,17 +358,14 @@ class SlowFastRunner:
                     continue
                 label = self._ava_label_for_index(index)
                 action = map_ava_label_to_action(label)
-                if action is None:
-                    continue
-                candidates.append(
-                    ActionResult(
+                if action is not None:
+                    candidates.append(ActionResult(
                         track_id=track_id,
                         action_type_id=int(action),
                         label=action.name,
                         confidence=float(confidence),
                         source=f"slowfast_ava:{label}",
-                    ),
-                )
+                    ))
             if not candidates:
                 # 低于阈值但最高分也打印出来，便于调阈值
                 max_conf = max(scores.tolist()) if scores.numel() > 0 else 0.0

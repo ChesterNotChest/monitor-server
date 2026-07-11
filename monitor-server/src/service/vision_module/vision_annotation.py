@@ -191,5 +191,23 @@ def _draw_label(
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
 
+_COLOR_ACTION_REGION = (0, 255, 128)  # 浅绿半透明 — SlowFast padded crop 范围
+
+
+def draw_action_regions(
+    frame: np.ndarray,
+    regions: dict[int, tuple[int, int, int, int]],
+) -> np.ndarray:
+    """在帧上绘制 SlowFast padded crop 区域（淡色虚线框）。"""
+    import cv2
+    annotated = frame.copy()
+    overlay = annotated.copy()
+    for x1, y1, x2, y2 in regions.values():
+        cv2.rectangle(overlay, (x1, y1), (x2, y2), _COLOR_ACTION_REGION, 1)
+    # 半透明叠加
+    cv2.addWeighted(overlay, 0.35, annotated, 0.65, 0, dst=annotated)
+    return annotated
+
+
 # late import after defining _bbox_color
 import cv2

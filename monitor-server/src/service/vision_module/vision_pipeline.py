@@ -18,7 +18,9 @@ from src.config import settings
 from src.constants import YOLOEntityType
 from src.service.vision_module.vision_frame_reader import FrameReader, FrameReaderState
 from src.service.vision_module.vision_yolo.detector import YoloDetector, Detection, YoloState
-from src.service.vision_module.vision_annotation import draw_detections, _face_labels, _fence_labels, _action_labels
+from src.service.vision_module.vision_annotation import (
+    draw_detections, draw_action_regions, _face_labels, _fence_labels, _action_labels,
+)
 from src.service.vision_module.vision_merger import (
     start_stream_merge, push_frame, stop_stream_merge,
 )
@@ -39,6 +41,7 @@ class FrameContext:
     timestamp: float                 # Unix 相对时间（秒）
     detections: list[Detection]      # YOLO 原始输出
     tracks: list[Track] | None = None  # ByteTrack 产出（B 模块填充）
+    action_regions: dict[int, tuple[int, int, int, int]] | None = None  # SlowFast padded crop
     view_id: int = 0
 
 
@@ -207,6 +210,7 @@ class AIPipeline:
         """主循环：逐帧读取 → YOLO → hooks → 标注 → 推流。"""
         merge_started = False
         _loop_frame_count = 0
+        _hold_count = 0
         _loop_last_log = time.monotonic()
 
         while self._running:
@@ -237,6 +241,7 @@ class AIPipeline:
                     # 断流重连中——复制上一帧填空，防止灰屏
                     if self._merge_proc:
                         await push_frame(self._merge_proc, self._latest_frame)
+                    _hold_count += 1
                 continue
 
             # 首帧启动 FFmpeg merge
@@ -277,6 +282,8 @@ class AIPipeline:
             _enrich_detection_labels(detections, ctx.tracks, _face_labels,
                                          _fence_labels, _action_labels)
             annotated = draw_detections(frame, detections)
+            if ctx.action_regions:
+                annotated = draw_action_regions(annotated, ctx.action_regions)
             _t4 = time.monotonic()
 
             # 推流 + 缓存用于断流时 frame hold
@@ -295,9 +302,11 @@ class AIPipeline:
                 # 管线内延迟 + 帧在 OpenCV 缓冲中的滞留时间
                 _pipe_ms = (_tn - _t0) * 1000
                 _frame_age = (time.time() - (self._reader.open_time + ts)) if self._reader.open_time > 0 else 0
-                logger.info("[obs] FPS=%.1f | r=%.0f y=%.0f hk=%.0f dr=%.0f ms | pipe=%.0f frame_age=%.0f ms",
-                            _fps, _read_ms, _yolo_ms, _hooks_ms, _draw_ms, _pipe_ms, _frame_age * 1000)
+                logger.info("[obs] FPS=%.1f | r=%.0f y=%.0f hk=%.0f dr=%.0f ms | pipe=%.0f age=%.0fms hold=%d",
+                            _fps, _read_ms, _yolo_ms, _hooks_ms, _draw_ms, _pipe_ms,
+                            _frame_age * 1000, _hold_count)
                 _loop_frame_count = 0
+                _hold_count = 0
                 _loop_last_log = _tn
 
         logger.info("Pipeline main loop exited for view_id=%d", view_id)

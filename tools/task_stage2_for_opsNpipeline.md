@@ -16,19 +16,16 @@ merge 后全链路确认可用。
 - [x] 1.5 确认：r_frame_rate=10/1、Person ID N 标注正常、右下角有 Node 时间戳
 - [x] 1.6 确认 obs 日志输出正常：`[obs] FPS=10.0 | r=0 y=16 pipe=16 frame_age=2ms`
 
-### 基线 v2 (2026-07-11 最终)
+### 基线 v3 (2026-07-11 最终)
 
 ```
-FPS_TARGET=30  (对齐摄像头 30fps 采集率)
+FPS_TARGET=17  (Node 采集上限 17fps，Server 17fps 处理，全链路对齐)
 h264_nvenc -preset p1 -zerolatency 1
-obs:  r=0ms  y=16ms  pipe=16ms  push=29.2fps  稳定无振荡  画面实时
+Node: -framerate 17 -fflags nobuffer -rtbufsize 4M -b:v 1M
+obs:  r=0ms  y=16ms  hk=0ms  pipe=16ms  push=17fps  帧率对齐
+标注: Person ID N + Face: Stranger + Sitting (枚举 16 类)
+可视化: 浅绿虚线框 = SlowFast padded crop (+30%)
 ```
-
-> **教训**：:1935 的 `gop_cache:true` 掩盖了真实帧率。GOP 批发出 burst 模式，
-> 表观只有 ~10fps，误导判断为"Node 性能不足"。修成 `false` 后源帧即时到达，
-> 30fps 真实速率暴露。FPS_TARGET 必须对齐采集帧率，否则就是慢动作。
->
-> v1 基线 (FPS_TARGET=10) 因基于 gop_cache artifact 的误判，已废弃。
 
 ## 二、FrameReader 鲁棒性修复 ✅ (2026-07-11)
 
@@ -42,30 +39,31 @@ obs:  r=0ms  y=16ms  pipe=16ms  push=29.2fps  稳定无振荡  画面实时
 - [x] 附带修复：`FrameReader._handle_read_failure()` 删除 `_last_url` 死代码；新增 `reset_error()`
 - [x] 245 passed
 
-## 三、标注信息补全
+## 三、标注信息补全 ✅ (2026-07-11)
 
-当前只显示 `Person ID N`。`_enrich_detection_labels` 已预留 face/action/fence 拼接逻辑，
-恢复对应模块后自然补齐。
+- [x] Face: Stranger 显示正常（dlib + C2 持久缓存 + 增量更新）
+- [x] Action: Sitting/Standing/Waving 等显示正常（SlowFast AVA+Kinetics 双模型 + 线程池）
+- [x] 枚举同步：`constants.py` 16 类对齐 `seed_data.py` ACTION_NAMES
+- [x] 可视化：浅绿虚线框标注 SlowFast padded crop 区域
+- [ ] Fence：逻辑就绪，待配置围栏区域即可激活
+- [x] 事件总线 Bug：workaround 绕过，`video_ai_processor.py` 直接更新全局 dict
+- [x] 250 passed
 
-- [ ] 3.0 恢复 face recognizer 后：`Person ID N Face: 张三`
-- [ ] 3.0 恢复 SlowFast 后：`Person ID N Action: running`
-- [ ] 3.0 恢复 Fence 后：`Person ID N Fence: zone-A`
-- [ ] 3.0 全部恢复后：`Person ID 3 Face: 张三 Action: running Fence: zone-A`
+## 四、人脸识别恢复 ⏳ (代码已恢复，待引导测试)
 
-## 四、人脸识别恢复
+### 4.1 代码恢复 ✅
 
-### 4.1 代码恢复
+- [x] 4.1.1 `video_ai_processor.py`：已恢复 `face_recognizer.recognize_and_publish()` 
+- [x] 4.1.2 `video_ai_processor.py`：已恢复 `slowfast_runner.enqueue_and_publish()`
+- [x] C2 人脸缓存：同 track_id 只识别一次，后续帧零开销
+- [x] Face 标签增量更新（不清空已有标签）
+- [x] SlowFast 线程池：推理不阻塞主循环
 
-- [ ] 4.1.1 `video_ai_processor.py`：恢复 `face_recognizer.recognize_and_publish()` 调用
-- [ ] 4.1.2 `video_ai_processor.py`：恢复 `slowfast_runner.enqueue_and_publish()` 调用
+### 4.2 引导测试（待执行）
 
-### 4.2 引导测试（Swagger 上传头像）
-
-前提：dlib API 兼容性已在 ls2 中修复，但需确认本机 dlib 版本。
-
-- [ ] 4.2.1 `POST /api/v1/named-persons/` 创建人物 → 记下返回的 `id`
-- [ ] 4.2.2 `POST /api/v1/named-persons/{id}/avatar` 上传头像（multipart form-data，字段名 `file`）
-- [ ] 4.2.3 创建 View → VLC 观察标注框是否显示 `Person ID N Face: {name}`
+- [ ] 4.2.1 `POST /api/v1/persons/` 创建人物
+- [ ] 4.2.2 `POST /api/v1/persons/{id}/avatar` 上传头像
+- [ ] 4.2.3 重启管线 → VLC 观察 `Person ID N Face: {name}`
 
 ## 五、音频合流缺口
 
@@ -81,8 +79,8 @@ obs:  r=0ms  y=16ms  pipe=16ms  push=29.2fps  稳定无振荡  画面实时
 
 | 项目 | 状态 | 原因 |
 |------|------|------|
-| Node ~20s 延迟 | 搁置 | Node 采集管道固有延迟（dshow+h264_mf），理论可消但非紧急 |
-| 时间戳由 Server 推算 | 搁置 | Server 无法获知采集时刻，当前用 Node drawtext 烧录 |
-| GOP cache 快进 | 已修复 | :1935 + :1936 均 `gop_cache: false` |
-| async push（队列+drain task） | 搁置 | 当前同步 push 足够稳，async 化留到后面优化 |
-| EventBus 订阅静默失败 | Workaround | 模块级 `create_task(subscribe)` 有时不执行；`video_ai_processor.py` 直接更新全局 dict 绕过。详见 `vision_annotation.py:84-94` 注释 |
+| Node 累积延迟 | 修复中 | 采集 30fps→17fps + nobuffer + 4M；待验证 |
+| Fence 围栏标注 | 未测 | 代码就绪，需配置围栏区域后验证 |
+| 时间戳嵌入 | 搁置 | §五音频合流前置，PTS/SEI 方案已讨论 |
+| EventBus 订阅静默失败 | Workaround | `video_ai_processor.py` 直接更新全局 dict |
+| PyAV 替代 subprocess | 搁置 | 按需，当前 ffmpeg pipe 足够稳 |

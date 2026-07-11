@@ -49,17 +49,21 @@ class VideoAIProcessor:
         _fl.update(face_labels)  # 增量更新，不清空已有标签
 
         # SlowFast: enqueue crops (non-blocking) + collect completed inferences
+        ctx.action_regions = {}
         for track in tracks:
-            crop = _crop_padded(ctx.frame, track, pad=0.3)
-            if crop is None:
+            bbox = _padded_bbox(track.bbox, ctx.frame.shape[1], ctx.frame.shape[0], pad=0.3)
+            if bbox is None:
                 continue
-            self.slowfast_runner.enqueue(track.track_id, crop)
+            ctx.action_regions[track.track_id] = bbox
+            crop = _crop_padded(ctx.frame, track, pad=0.3)
+            if crop is not None:
+                self.slowfast_runner.enqueue(track.track_id, crop)
         action_results = self.slowfast_runner.collect_results()
         if action_results:
             # 同 track 多模型竞争 → 取最高置信度；不清空已有标签（增量更新）
             best: dict[int, tuple[float, str]] = {}
             for r in action_results:
-                name = _action_type_name(r.action_type_id)
+                name = _action_type_name(r)
                 if r.track_id not in best or r.confidence > best[r.track_id][0]:
                     best[r.track_id] = (r.confidence, name)
             _al.update({tid: name for tid, (_, name) in best.items()})
@@ -92,23 +96,33 @@ def _crop(frame: np.ndarray, track: Track) -> np.ndarray | None:
     return frame[y1:y2, x1:x2]
 
 
-def _crop_padded(frame: np.ndarray, track: Track, pad: float = 0.3) -> np.ndarray | None:
-    """Crop person region with padding for action recognition context."""
-    height, width = frame.shape[:2]
-    x1, y1, x2, y2 = [float(v) for v in track.bbox]
+def _padded_bbox(bbox: list[float], frame_w: int, frame_h: int,
+                  pad: float = 0.3) -> tuple[int, int, int, int] | None:
+    """Compute padded bbox coords (no cropping)."""
+    x1, y1, x2, y2 = [float(v) for v in bbox]
     bw, bh = x2 - x1, y2 - y1
     x1 -= bw * pad; x2 += bw * pad
     y1 -= bh * pad; y2 += bh * pad
-    x1 = max(0, int(round(x1))); x2 = min(width, int(round(x2)))
-    y1 = max(0, int(round(y1))); y2 = min(height, int(round(y2)))
+    x1 = max(0, int(round(x1))); x2 = min(frame_w, int(round(x2)))
+    y1 = max(0, int(round(y1))); y2 = min(frame_h, int(round(y2)))
     if x2 <= x1 or y2 <= y1:
         return None
+    return (x1, y1, x2, y2)
+
+
+def _crop_padded(frame: np.ndarray, track: Track, pad: float = 0.3) -> np.ndarray | None:
+    """Crop person region with padding for action recognition context."""
+    height, width = frame.shape[:2]
+    bbox = _padded_bbox(track.bbox, width, height, pad)
+    if bbox is None:
+        return None
+    x1, y1, x2, y2 = bbox
     return frame[y1:y2, x1:x2]
 
 
-def _action_type_name(action_type_id: int) -> str:
-    """Map action_type_id to human-readable label."""
+def _action_type_name(r) -> str:
+    """Map action result to human-readable label."""
     try:
-        return SlowFastActionType(action_type_id).name.capitalize()
+        return SlowFastActionType(r.action_type_id).name.capitalize()
     except ValueError:
-        return f"Action-{action_type_id}"
+        return r.label.capitalize() if r.label else f"Action-{r.action_type_id}"
