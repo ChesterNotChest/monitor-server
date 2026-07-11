@@ -83,5 +83,6 @@ obs:  r=0ms  y=16ms  pipe=16ms  push=29.2fps  稳定无振荡  画面实时
 |------|------|------|
 | Node ~20s 延迟 | 搁置 | Node 采集管道固有延迟（dshow+h264_mf），理论可消但非紧急 |
 | 时间戳由 Server 推算 | 搁置 | Server 无法获知采集时刻，当前用 Node drawtext 烧录 |
-| GOP cache 快进 | 已缓解 | `gop_cache: false` + 全清重启基本消除 |
+| GOP cache 快进 | 已修复 | :1935 + :1936 均 `gop_cache: false` |
 | async push（队列+drain task） | 搁置 | 当前同步 push 足够稳，async 化留到后面优化 |
+| EventBus 订阅静默失败 | Workaround | 模块级 `create_task(subscribe)` 有时不执行；`video_ai_processor.py` 直接更新全局 dict 绕过。详见 `vision_annotation.py:84-94` 注释 |

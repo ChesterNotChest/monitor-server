@@ -178,8 +178,16 @@ class SlowFastRunner:
         self._state = SlowFastState.ACTIVE
 
         if len(queue) < self.clip_length:
+            if len(queue) == 1:
+                logger.info("[SlowFast] track %d: started collecting (need %d frames)",
+                             track_id, self.clip_length)
+            elif len(queue) % 8 == 0:
+                logger.info("[SlowFast] track %d: %d/%d frames collected",
+                             track_id, len(queue), self.clip_length)
             return []
 
+        logger.info("[SlowFast] track %d: clip ready (%d frames), running inference",
+                     track_id, len(queue))
         clip = list(queue)
         try:
             results = self._infer(track_id, clip)
@@ -189,6 +197,11 @@ class SlowFastRunner:
             self._state = SlowFastState.ERROR
             return []
         queue.clear()
+        if results:
+            logger.info("[SlowFast] track %d: result=%s", track_id,
+                         [(r.action_type_id, r.confidence) for r in results])
+        else:
+            logger.info("[SlowFast] track %d: no action detected in clip", track_id)
         return results
 
     async def enqueue_and_publish(
@@ -305,6 +318,13 @@ class SlowFastRunner:
                 logits = self._ava_model(inputs, boxes)
                 scores = torch.sigmoid(logits)[0]
 
+            # 诊断：打印 top-5 预测（不管阈值）
+            top_indices = torch.topk(scores, k=min(5, scores.numel())).indices.tolist()
+            top_scores = [float(scores[i]) for i in top_indices]
+            top_labels = [(self._ava_label_for_index(i), top_scores[j])
+                           for j, i in enumerate(top_indices)]
+            logger.info("[SlowFast AVA] track %d: top5=%s", track_id, top_labels)
+
             candidates: list[ActionResult] = []
             for index, confidence in enumerate(scores.tolist()):
                 if confidence < self._ava_confidence_threshold:
@@ -322,6 +342,11 @@ class SlowFastRunner:
                         source=f"slowfast_ava:{label}",
                     ),
                 )
+            if not candidates:
+                # 低于阈值但最高分也打印出来，便于调阈值
+                max_conf = max(scores.tolist()) if scores.numel() > 0 else 0.0
+                logger.info("[SlowFast AVA] track %d: all below threshold (max=%.3f, thresh=%.2f)",
+                             track_id, max_conf, self._ava_confidence_threshold)
             return _select_ava_results(candidates, max_results=self._ava_max_results)
         except Exception:
             logger.exception("SlowFast AVA inference failed")

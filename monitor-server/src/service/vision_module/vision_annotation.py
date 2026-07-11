@@ -82,6 +82,10 @@ async def _on_action_event(payload: dict) -> None:
 
 
 # 启动时注册订阅
+# ⚠️ 已知问题 (2026-07-11): create_task(fire-and-forget) 创建的订阅任务
+# 有时静默失败，导致 _on_*_event 从未被调用，标签 dict 始终为空。
+# 当前绕过方案：video_ai_processor.py 的 process_frame() 中直接调用
+# get_face_labels() 更新 _face_labels。事件总线方案留作后续修复。
 import asyncio as _asyncio
 try:
     loop = _asyncio.get_running_loop()
