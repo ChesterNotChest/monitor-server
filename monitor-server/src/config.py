@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     YOLO_DEVICE: str = "cpu"
     YOLO_CONFIDENCE: float = 0.5
     YOLO_MODEL_PATH: str = "src/third-party/yolo/yolo11n.pt"
+    YOLO_DEVICE: str = "cpu"
     STREAM_RECONNECT_MAX_RETRIES: int = 10
     FACE_MATCH_TOLERANCE: float = 0.6
     FACE_SKIP_FRAMES: int = 5

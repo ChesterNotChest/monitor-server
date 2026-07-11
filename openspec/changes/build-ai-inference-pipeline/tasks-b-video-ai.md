@@ -76,3 +76,11 @@
 - [x] 13.8 Update the live camera debug script to request real AVA alongside Kinetics so smoking/fall/fight labels can appear when model output is confident.
 - [x] 13.9 Add focused tests for AVA label parsing, label mapping, box preparation, disabled fallback, and mocked AVA model output without downloading weights.
 - [x] 13.10 Post-process AVA labels by deduplicating actions, keeping only the highest-confidence mutually exclusive posture/motion action, and capping displayed/published AVA results.
+
+## 14. Video AI Environment Compatibility
+
+- [x] 14.1 Pin `environment.yml` to the CPU `dlib` build for Python 3.12 so importing `face_recognition` does not initialize CUDA/cuDNN.
+- [x] 14.2 Add `face_recognition` to the conda environment pip dependencies so the server environment matches `requirements.txt`.
+- [x] 14.3 Verify `face_recognition.face_encodings()` returns a 128D vector on a real face image after the environment fix.
+- [x] 14.4 Add a compatibility fallback for dlib/face_recognition builds where `face_encodings(image, locations)` raises `compute_face_descriptor()` argument errors.
+- [x] 14.5 Convert BGR->RGB crops to contiguous arrays before calling dlib/face_recognition descriptor APIs.

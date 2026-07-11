@@ -82,10 +82,19 @@ class _FakeFaceLib:
         return [(0, 10, 10, 0)]
 
     def face_encodings(self, _rgb_crop, _locations):
+        assert _rgb_crop.flags["C_CONTIGUOUS"]
         return [self.encoding]
 
     def compare_faces(self, known_encodings, face_encoding, tolerance=0.6):
         return [np.linalg.norm(known - face_encoding) <= tolerance for known in known_encodings]
+
+
+class _FallbackFaceLib(_FakeFaceLib):
+    def face_encodings(self, _rgb_crop, _locations=None):
+        assert _rgb_crop.flags["C_CONTIGUOUS"]
+        if _locations is not None:
+            raise TypeError("compute_face_descriptor(): incompatible function arguments")
+        return [self.encoding]
 
 
 @pytest.mark.asyncio
@@ -116,6 +125,19 @@ async def test_face_recognizer_matches_known_person_and_publishes() -> None:
         assert received[-1]["labels"] == {7: "Alice"}
     finally:
         await event_bus.unsubscribe(FACE, _collect)
+
+
+def test_face_recognizer_retries_encoding_without_locations_on_dlib_compat_error() -> None:
+    encoding = np.zeros(128)
+    recognizer = FaceRecognizer(known_people=[(encoding, "Alice")])
+    recognizer._face_lib = _FallbackFaceLib(encoding)
+    frame = np.zeros((120, 120, 3), dtype=np.uint8)
+    tracks = [Track([10, 10, 100, 100], track_id=7, score=0.9)]
+
+    results = recognizer.recognize(frame, tracks)
+
+    assert results[0].result == FaceResultStatus.NORMAL
+    assert results[0].person_name == "Alice"
 
 
 @pytest.mark.asyncio
