@@ -39,5 +39,5 @@ def build_play_urls(view_id: int) -> dict[str, str | None]:
     return {
         "rtmp_url": f"rtmp://{public_host}:{public_rtmp_port}/view/{view_id}",
         "flv_url": f"http://{public_host}:{public_http_port}/view/{view_id}.flv",
-        "webrtc_url": f"http://{public_host}:{public_http_port}/rtc/v1/whep/?app=view&stream={view_id}",
+        "webrtc_url": f"http://{public_host}:1985/rtc/v1/whep/?app=view&stream={view_id}",
     }

@@ -48,48 +48,49 @@ def create_view(
         import time
         time.sleep(5)
 
-        # 原始合流已禁用——AI 管线启动后会推送带标注的合流到 :1936。
-        # 两个 ffmpeg 同时推同一直播流会互相覆盖。
-        # merge_started, unavailable = start_merge(
-        #     view.id,
-        #     video_id,
-        #     audio_id,
-        #     video.name,
-        #     audio.name,
-        #     wait_for_inputs=False,
-        # )
-        # if not merge_started:
-        #     warnings.append(
-        #         "Raw stream(s) not ready for merge: " + ", ".join(unavailable)
-        #     )
+        # 1) 始终启动纯 ffmpeg 合流（保底，不依赖 AI）
+        import subprocess
+        from src.network.rtmp.puller import build_pull_url
+        from src.network.rtmp.pusher import build_push_url
 
-        # 启动 AI 推理管线（Part A YOLO + Part B ByteTrack/Face/Fence/SlowFast + Part C Alert/YAMNet）
-        # 注意：必须在后台线程中启动，因为 start_pipeline 包含 YAMNet TensorFlow 模型
-        # 加载（首次约 20s），若同步等待会阻塞 View 创建响应。
-        # 使用专用线程 + 持久化事件循环，因为 asyncio.run() 在
-        # start_pipeline 返回后会取消所有后台 Task。
-        import asyncio
-        import threading
-        from src.service.vision_task import start_pipeline
+        video_url = build_pull_url(video.name, "video", video_id)
+        audio_url = build_pull_url(audio.name, "audio", audio_id)
+        push_url = build_push_url(view.id)
 
-        async def _pipeline_forever(view_id: int, video_id: int, video_name: str,
-                                    audio_id: int, audio_name: str) -> None:
-            await start_pipeline(view_id, video_id, video_name, audio_id, audio_name)
-            # 持久化循环：保持 start_pipeline 创建的 Task（_run_loop、
-            # YAMNet 等）不被取消。
-            while True:
-                await asyncio.sleep(3600)
-
-        def _launch() -> None:
-            asyncio.run(_pipeline_forever(view.id, video_id, video.name,
-                                          audio_id, audio.name))
-
+        cmd = [
+            "ffmpeg", "-i", video_url, "-i", audio_url,
+            "-c:v", "copy", "-c:a", "aac", "-f", "flv", push_url,
+            "-y",
+        ]
         try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(start_pipeline(view.id, video_id, video.name,
-                                            audio_id, audio.name))
-        except RuntimeError:
-            threading.Thread(target=_launch, daemon=True).start()
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except FileNotFoundError:
+            warnings.append("ffmpeg not found — cannot start view merge")
+
+        # 2) 如果 AI 依赖可用，额外启动 AI 推理管线（可选增强）
+        try:
+            import asyncio
+            import threading
+            from src.service.vision_task import start_pipeline
+
+            async def _pipeline_forever(view_id: int, video_id: int, video_name: str,
+                                        audio_id: int, audio_name: str) -> None:
+                await start_pipeline(view_id, video_id, video_name, audio_id, audio_name)
+                while True:
+                    await asyncio.sleep(3600)
+
+            def _launch() -> None:
+                asyncio.run(_pipeline_forever(view.id, video_id, video.name,
+                                              audio_id, audio.name))
+
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(start_pipeline(view.id, video_id, video.name,
+                                                audio_id, audio.name))
+            except RuntimeError:
+                threading.Thread(target=_launch, daemon=True).start()
+        except ImportError:
+            pass  # AI 不可用，纯合流已足够
 
         return ViewResponse(
             id=view.id,

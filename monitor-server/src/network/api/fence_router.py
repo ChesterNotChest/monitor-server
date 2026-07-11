@@ -11,7 +11,7 @@ from src.service import fence_task
 router = APIRouter(prefix="/fences", tags=["电子围栏"])
 
 
-@router.get("", response_model=list[FenceResponse])
+@router.get("/", response_model=list[FenceResponse])
 def list_fences(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("fence:manage")),
@@ -24,7 +24,7 @@ def list_fences(
 
 
 @router.post(
-    "",
+    "/",
     response_model=FenceResponse,
     status_code=201,
     responses={404: {"description": "关联监控视图不存在"}, 422: {"description": "请求体校验失败"}},
@@ -38,11 +38,19 @@ def create_fence(
 
     **权限**: fence:manage
     """
-    return fence_task.create_fence(db, coords=body.coords)
+    return fence_task.create_fence(
+        db,
+        name=body.name,
+        view_id=body.view_id,
+        coords=body.coords,
+        dwell_time=body.dwell_time,
+        density=body.density,
+        leave_frames=body.leave_frames,
+    )
 
 
 @router.put(
-    "/{fence_id}",
+    "/{fence_id}/",
     response_model=FenceResponse,
     responses={404: {"description": "围栏不存在"}},
 )
@@ -56,14 +64,22 @@ def update_fence(
 
     **权限**: fence:manage
     """
-    result = fence_task.update_fence(db, fence_id, coords=body.coords)
+    result = fence_task.update_fence(
+        db, fence_id,
+        name=body.name,
+        view_id=body.view_id,
+        coords=body.coords,
+        dwell_time=body.dwell_time,
+        density=body.density,
+        leave_frames=body.leave_frames,
+    )
     if result is None:
         raise HTTPException(status_code=404, detail="围栏不存在")
     return result
 
 
 @router.delete(
-    "/{fence_id}",
+    "/{fence_id}/",
     status_code=204,
     responses={404: {"description": "围栏不存在"}},
 )
