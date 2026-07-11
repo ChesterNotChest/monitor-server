@@ -112,6 +112,8 @@ class AIPipeline:
         self._push_interval: float = 1.0 / max(settings.FPS_TARGET, 1)
         self._running = False
         self._task: asyncio.Task | None = None
+        self._video_id: int = 0
+        self._video_name: str = ""
 
     # ── Hook registration ─────────────────────
 
@@ -143,13 +145,16 @@ class AIPipeline:
             logger.warning("Pipeline already running")
             return False
 
+        # 保存拉流参数——断流重连时需要
+        self._video_id = video_id
+        self._video_name = video_name
+
         # 1. 加载 YOLO
         if not self._yolo.load():
             return False
 
-        # 2. 打开帧读取器
-        if not self._reader.open(video_id, video_name):
-            return False
+        # 2. 打开帧读取器（失败不阻止——_run_loop 会重试）
+        self._reader.open(video_id, video_name)
 
         # 3. 启动 FFmpeg 合流
         #    用 YOLO 输入尺寸作为视频尺寸（大多数视频是 640x480 或类似）
@@ -207,9 +212,13 @@ class AIPipeline:
             _t1 = time.monotonic()
             if not success:
                 if self._reader.state == FrameReaderState.ERROR:
-                    logger.error("FrameReader in ERROR state — stopping pipeline")
-                    break
-                continue  # 断流重连中
+                    logger.error("FrameReader in ERROR state — attempting reopen")
+                    if not await self._reopen_reader():
+                        logger.error("FrameReader reopen failed — stopping pipeline")
+                        break
+                    # 重连成功——重置时钟门控，避免积压帧冲刺
+                    self._next_frame_due = time.monotonic()
+                continue  # 断流重连中（或刚完成重连，下一圈正常读）
 
             # 首帧启动 FFmpeg merge
             if not merge_started:
@@ -271,3 +280,35 @@ class AIPipeline:
                 _loop_last_log = _tn
 
         logger.info("Pipeline main loop exited for view_id=%d", view_id)
+
+    # ── Reopen helpers ──────────────────────────
+
+    _REOPEN_INITIAL_BACKOFF = 2.0
+    _REOPEN_MAX_BACKOFF = 60.0
+    _REOPEN_BACKOFF_MULT = 2.0
+    _REOPEN_MAX_ATTEMPTS = 10
+
+    async def _reopen_reader(self) -> bool:
+        """Attempt to reopen FrameReader with exponential backoff.
+
+        Returns True if reopen succeeds, False after all retries exhausted.
+        """
+        self._reader.reset_error()
+        for attempt in range(1, self._REOPEN_MAX_ATTEMPTS + 1):
+            backoff = min(
+                self._REOPEN_INITIAL_BACKOFF * (self._REOPEN_BACKOFF_MULT ** (attempt - 1)),
+                self._REOPEN_MAX_BACKOFF,
+            )
+            logger.warning(
+                "FrameReader reopen attempt %d/%d in %.1fs ...",
+                attempt, self._REOPEN_MAX_ATTEMPTS, backoff,
+            )
+            await asyncio.sleep(backoff)
+            if self._reader.open(self._video_id, self._video_name):
+                logger.info("FrameReader reopened successfully (attempt %d)", attempt)
+                return True
+        logger.error(
+            "FrameReader reopen failed after %d attempts",
+            self._REOPEN_MAX_ATTEMPTS,
+        )
+        return False

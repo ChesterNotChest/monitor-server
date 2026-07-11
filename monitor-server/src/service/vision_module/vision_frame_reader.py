@@ -149,15 +149,11 @@ class FrameReader:
             self._consecutive_failures, _MAX_CONSECUTIVE_FAILURES, backoff,
         )
         time.sleep(backoff)
-
-        # 尝试重连
-        if self._cap is not None:
-            self._cap.release()
-            self._cap = None
-        if self._cap is None and hasattr(self, '_last_url'):
-            self._cap = cv2.VideoCapture(self._last_url)
-        if self._cap is not None and self._cap.isOpened():
-            self._state = FrameReaderState.ACTIVE
-            return True, None, 0.0, -1  # 重连成功，下一帧正常读
-
         return False, None, 0.0, -1
+
+    def reset_error(self) -> None:
+        """Reset ERROR state back to IDLE so re-open can be attempted."""
+        if self._state == FrameReaderState.ERROR:
+            self.close()
+            self._consecutive_failures = 0
+            logger.info("FrameReader error state reset")

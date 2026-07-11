@@ -5,24 +5,42 @@
 
 ---
 
-## 一、Playbook 验证（优先）
+## 一、Playbook 验证 ✅ (2026-07-11)
 
 merge 后全链路确认可用。
 
-- [ ] 1.1 双靶子启动（:1935 rtmp_server + :1936 rtmp_debug_server）
-- [ ] 1.2 Node 启动（libx264 drawtext 烧时间戳）
-- [ ] 1.3 Server 启动（`DEBUG_WEB_STREAM=true YOLO_DEVICE=0 APP_DEBUG=false PORT=8002`）
-- [ ] 1.4 创建 View 1 → VLC 播放 `rtmp://127.0.0.1:1936/view/1`
-- [ ] 1.5 确认：15fps 稳推、Person ID N 标注正常、诶对了，playbook右下角有 Node 时间戳、延迟稳定不增长
-- [ ] 1.6 确认 obs 日志输出正常：`[obs] loop FPS / push FPS / frame_age`
+- [x] 1.1 双靶子启动（:1935 rtmp_server + :1936 rtmp_debug_server）
+- [x] 1.2 Node 启动（h264_mf + drawtext 烧时间戳）
+- [x] 1.3 Server 启动（`DEBUG_WEB_STREAM=true YOLO_DEVICE=0 APP_DEBUG=false PORT=8002`）
+- [x] 1.4 创建 View 1 → VLC 播放 `rtmp://127.0.0.1:1936/view/1`
+- [x] 1.5 确认：r_frame_rate=10/1、Person ID N 标注正常、右下角有 Node 时间戳
+- [x] 1.6 确认 obs 日志输出正常：`[obs] FPS=10.0 | r=0 y=16 pipe=16 frame_age=2ms`
 
-## 二、FrameReader 鲁棒性修复
+### 基线 v2 (2026-07-11 最终)
+
+```
+FPS_TARGET=30  (对齐摄像头 30fps 采集率)
+h264_nvenc -preset p1 -zerolatency 1
+obs:  r=0ms  y=16ms  pipe=16ms  push=29.2fps  稳定无振荡  画面实时
+```
+
+> **教训**：:1935 的 `gop_cache:true` 掩盖了真实帧率。GOP 批发出 burst 模式，
+> 表观只有 ~10fps，误导判断为"Node 性能不足"。修成 `false` 后源帧即时到达，
+> 30fps 真实速率暴露。FPS_TARGET 必须对齐采集帧率，否则就是慢动作。
+>
+> v1 基线 (FPS_TARGET=10) 因基于 gop_cache artifact 的误判，已废弃。
+
+## 二、FrameReader 鲁棒性修复 ✅ (2026-07-11)
 
 当前 `_run_loop` 遇到 `FrameReaderState.ERROR` 直接 `break` 管线永久死亡。改为重试循环。
 
-- [ ] 2.1 `_run_loop` 中 `FrameReader.ERROR` 时不再 break，改为尝试重新 `open()` 拉流（指数退避，最多 N 次）
-- [ ] 2.2 重试日志：`FrameReader ERROR, retrying in Xs (attempt N/M)`
-- [ ] 2.3 验证：Node 晚启动、Node 短暂断联后管线自动恢复
+- [x] 2.1 `_run_loop` 中 `FrameReader.ERROR` 时不再 break，调用 `_reopen_reader()`（指数退避 2s→60s，最多 10 次）
+- [x] 2.2 重试日志：`FrameReader reopen attempt N/10 in X.Xs ...` → `FrameReader reopened successfully (attempt N)`
+- [x] 2.3 验证：:1935 kill→restart 后管线 attempt 4 自动恢复，obs 显示 `FPS=10.0 | r=0` 稳态
+- [x] 附带修复：`:1935 rtmp_server/index.js` 的 `gop_cache: true→false`（长 GOP 导致新客户端 30s 超时）
+- [x] 附带修复：`start()` 中首次 `_reader.open()` 失败不再阻止管线启动，交由 `_run_loop` 重试
+- [x] 附带修复：`FrameReader._handle_read_failure()` 删除 `_last_url` 死代码；新增 `reset_error()`
+- [x] 245 passed
 
 ## 三、标注信息补全
 

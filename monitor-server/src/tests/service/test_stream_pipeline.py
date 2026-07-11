@@ -112,8 +112,8 @@ class TestAnnotationOverlay:
         frame = _make_test_frame()
         annotated = draw_detections(frame, [])
         assert annotated.shape == frame.shape
-        # 加了时间戳，像素值不等于原帧
-        assert not np.array_equal(annotated, frame)
+        # 返回的是副本（不同对象）：时间戳由 Node 侧烧录，Server 不重复叠加
+        assert annotated is not frame
 
     def test_draw_with_detection(self):
         frame = _make_test_frame()

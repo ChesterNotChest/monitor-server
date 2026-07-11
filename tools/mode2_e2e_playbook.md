@@ -158,9 +158,29 @@ vlc rtmp://127.0.0.1:1936/view/1
 **现象**: 加上 drawtext 后 Node 推流延迟从 20s 增长到 50s  
 **当前**: 已移除 Node drawtext，Server 侧用 cv2.putText（零开销）
 
-### 坑 7: GOP 缓存导致重连快进
-**现象**: VLC 重连后从旧 GOP 开始回放  
-**修复**: `rtmp_debug_server.js` 设 `gop_cache: false`
+### 坑 7: GOP 缓存导致重连快进 + 帧率误判
+
+**现象 A** (已修复): VLC 重连 :1936 后从旧 GOP 开始回放  
+**现象 B** (2026-07-11 发现): 即便 VLC 正常，obs 显示 0ms/288ms 交替振荡，表观帧率 ~10fps  
+
+**根因**: `node-media-server` 的 `gop_cache: true` 在 GOP 完成前不为新客户端提供数据。这对两个靶子有不同影响：
+
+- **:1936** — VLC 重连时收到缓冲的旧 GOP → 快进回放
+- **:1935** — Server FrameReader 首次连接时 30s 超时；连通后帧以 GOP 为单位批量到达 → 读取时间 0ms/288ms 交替 → 表观帧率被压缩到 ~10fps → **误导判断为"Node 性能不足"**（实际摄像头稳出 30fps）
+
+**修复**: 两个靶子都设 `gop_cache: false`  
+- `tools/rtmp_debug_server.js` — 已修（:1936）  
+- `monitor-node/rtmp_server/index.js` — 2026-07-11 修（:1935）
+
+> **关键教训**: GOP 缓存不仅影响重连体验，还会扭曲帧到达时间分布，导致 obs 数据产生系统性偏差。
+> 帧率对齐问题（采集 30fps → 推流 30fps）只有在 `gop_cache: false` 后才会暴露。
+
+### 坑 8: FPS_TARGET 与采集帧率不匹配 → 慢动作
+
+**现象**: obs 显示稳定 FPS、r=0、无振荡，但 VLC 画面是慢动作  
+**根因**: 摄像头采集 30fps，管线只取 15fps（`FPS_TARGET=15`），每两帧跳一帧 → 时间拉伸 2×  
+**修复**: `FPS_TARGET` 对齐摄像头实际采集率（当前 30）  
+**诊断**: `ffprobe rtmp://127.0.0.1:1935/live/...` 看源流 `r_frame_rate`，对比 Server 的 `r_frame_rate`
 
 ---
 
