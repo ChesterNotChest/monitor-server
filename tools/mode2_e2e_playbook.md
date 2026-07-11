@@ -184,6 +184,26 @@ vlc rtmp://127.0.0.1:1936/view/1
 
 ---
 
+### 坑 9: conda+pip 混装 → PyTorch CUDA 失效
+
+**现象**: `torch.cuda.is_available()` 返回 `False`，Server 启动时报 `torch_cuda.dll` 加载失败  
+**根因**: `conda env update --prune` 装 TF 时覆盖了 PyTorch 需要的 CUDA/cuDNN DLL。  
+         pip 装的 PyTorch cu124 wheel 自带 CUDA 库但不含 cuDNN；conda 的 cuDNN 被 `--prune` 删除。  
+**修复**:
+```bash
+# 重装 CUDA 版 PyTorch
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
+# 补回 cuDNN（如缺失）
+conda install -n monitor-server -c conda-forge cudnn --yes
+```
+**诊断**: `ls E:/Miniconda3/envs/monitor-server/Library/bin/cudnn*` 应有输出。
+**预防**: `environment.yml` 已加 `conda-forge::cudnn`，`--prune` 不会再删。
+
+> **教训**: TF+PyTorch 双框架是结构性冲突，conda 无法同时满足两者的 CUDA 版本需求。
+> 策略是让 PyTorch 赢（项目主力是 YOLO），TF 顺从现有 CUDA 版本。
+
+---
+
 ## 六、观测日志
 
 每 5 秒打印一行，格式：

@@ -102,6 +102,11 @@ def _enrich_detection_labels(
             if action:
                 parts.append(action)
             det.label_suffix = " ".join(parts)
+        if any(d.label_suffix for d in detections if d.entity_type_id == YOLOEntityType.PERSON):
+            logger.info("[Enrich] face=%s fence=%s action=%s",
+                         {k: v for k, v in face_labels.items()},
+                         {k: v for k, v in fence_labels.items()},
+                         {k: v for k, v in action_labels.items()})
 
 
 # ── Pipeline 调度器 ───────────────────────────

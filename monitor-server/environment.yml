@@ -8,6 +8,7 @@ dependencies:
   - nodejs>=20           # Local RTMP target for DEBUG_WEB_STREAM
   - pip
   - conda-forge::dlib=19.24.8=*cpu*
+  - conda-forge::cudnn            # PyTorch CUDA 需要，--prune 不会删除
   - pip:
     - fastapi>=0.110.0
     - uvicorn[standard]>=0.29.0

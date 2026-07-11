@@ -89,16 +89,26 @@ class FaceRecognizer:
 
     def recognize(self, frame: np.ndarray, tracks: list[Track]) -> list[FaceResult]:
         self._frame_counter += 1
-        if self._frame_counter % self.skip_frames != 1:
-            return [self._last_results[t.track_id] for t in tracks if t.track_id in self._last_results]
 
-        results: list[FaceResult] = []
-        for track in tracks:
+        # 1. 已缓存的 track 直接返回（同一个人不重复识别）
+        uncached = [t for t in tracks if t.track_id not in self._last_results]
+
+        if not uncached:
+            return [self._last_results[t.track_id] for t in tracks]
+
+        # 2. 跳帧：非识别帧只返回已有缓存
+        if self._frame_counter % self.skip_frames != 1:
+            return [self._last_results[t.track_id] for t in tracks
+                    if t.track_id in self._last_results]
+
+        # 3. 识别帧 — 只处理未缓存的人
+        for track in uncached:
             result = self._recognize_track(frame, track)
-            if result is not None:
+            if result is not None and result.result != FaceResultStatus.NO_RESULT:
                 self._last_results[track.track_id] = result
-                results.append(result)
-        return results
+
+        return [self._last_results[t.track_id] for t in tracks
+                if t.track_id in self._last_results]
 
     async def recognize_and_publish(
         self,
@@ -133,32 +143,42 @@ class FaceRecognizer:
                 labels[track_id] = result.person_name
             elif result.result == FaceResultStatus.STRANGER:
                 labels[track_id] = "Stranger"
+        if labels:
+            logger.info("[Face] labels: %s", labels)
         return labels
 
     def _recognize_track(self, frame: np.ndarray, track: Track) -> FaceResult | None:
         crop = _crop(frame, track.bbox)
         if crop is None:
+            logger.info("[Face] track %d: crop failed", track.track_id)
             return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
         height, width = crop.shape[:2]
         if width < _MIN_FACE_CROP_SIZE or height < _MIN_FACE_CROP_SIZE:
+            logger.info("[Face] track %d: crop too small %dx%d (min %d)",
+                         track.track_id, width, height, _MIN_FACE_CROP_SIZE)
             return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
 
         if self._face_lib is None:
+            logger.warning("[Face] track %d: face_lib not loaded", track.track_id)
             return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
 
         rgb_crop = np.ascontiguousarray(crop[:, :, ::-1])
         try:
             locations = self._face_lib.face_locations(rgb_crop)
             if not locations:
+                logger.info("[Face] track %d: no face_locations found in %dx%d crop",
+                             track.track_id, width, height)
                 return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
             encodings = self._face_encodings(rgb_crop, locations)
             if not encodings:
+                logger.info("[Face] track %d: face found but encoding failed", track.track_id)
                 return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
         except Exception:
             logger.exception("Face recognition failed for track %s", track.track_id)
             return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
 
         if not self._known_encodings:
+            logger.info("[Face] track %d: STRANGER (no known people in DB)", track.track_id)
             return FaceResult(track.track_id, None, FaceResultStatus.STRANGER)
 
         encoding = encodings[0]

@@ -34,6 +34,15 @@ class VideoAIProcessor:
             return
 
         await self.face_recognizer.recognize_and_publish(ctx.frame, tracks, ctx.view_id)
+        # 绕过事件总线直接更新全局标签（事件总线订阅在模块导入时序中有竞态）
+        import logging as _logging
+        from src.service.vision_module.vision_annotation import (
+            _face_labels as _fl, _fence_labels as _fel, _action_labels as _al,
+        )
+        face_labels = self.face_recognizer.get_face_labels()
+        if face_labels:
+            _logging.getLogger(__name__).info("[Direct] updating _face_labels: %s", face_labels)
+        _fl.clear(); _fl.update(face_labels)
         await self.fence_engine.check_and_publish(tracks, ctx.timestamp)
 
         for track in tracks:

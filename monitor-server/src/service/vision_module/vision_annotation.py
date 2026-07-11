@@ -50,14 +50,18 @@ async def _on_face_event(payload: dict) -> None:
     """订阅 FACE topic，更新人脸标签映射。"""
     global _face_labels
     labels = payload.get("labels", {})
+    logger.info("[FaceSub] called, labels=%s has_faces=%s", labels, payload.get("faces", "?")[:1])
     if labels:
         _face_labels = {int(k): v for k, v in labels.items()}
+    else:
+        logger.warning("[FaceSub] payload has no 'labels' key: %s", list(payload.keys()))
 
 
 async def _on_fence_event(payload: dict) -> None:
     """订阅 FENCE topic，更新围栏标签映射。"""
     global _fence_labels
     fences: list[dict] = payload.get("fences", [])
+    logger.info("[FenceSub] called, fences=%s", len(fences))
     if fences:
         _fence_labels = {
             f["track_id"]: f"Fence-{f.get('fence_id', '?')}"
@@ -69,6 +73,7 @@ async def _on_action_event(payload: dict) -> None:
     """订阅 ACTION topic，更新动作标签映射。"""
     global _action_labels
     actions: list[dict] = payload.get("actions", [])
+    logger.info("[ActionSub] called, actions=%s", len(actions))
     if actions:
         _action_labels = {
             a["track_id"]: f"Action-{a.get('action_type_id', '?')}"
