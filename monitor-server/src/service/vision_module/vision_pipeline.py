@@ -232,9 +232,12 @@ class AIPipeline:
                     if not await self._reopen_reader():
                         logger.error("FrameReader reopen failed — stopping pipeline")
                         break
-                    # 重连成功——重置时钟门控，避免积压帧冲刺
                     self._next_frame_due = time.monotonic()
-                continue  # 断流重连中（或刚完成重连，下一圈正常读）
+                elif self._latest_frame is not None:
+                    # 断流重连中——复制上一帧填空，防止灰屏
+                    if self._merge_proc:
+                        await push_frame(self._merge_proc, self._latest_frame)
+                continue
 
             # 首帧启动 FFmpeg merge
             if not merge_started:
@@ -276,7 +279,8 @@ class AIPipeline:
             annotated = draw_detections(frame, detections)
             _t4 = time.monotonic()
 
-            # 推流（循环入口已有时钟门控，这里直接推即可）
+            # 推流 + 缓存用于断流时 frame hold
+            self._latest_frame = annotated
             if self._merge_proc:
                 await push_frame(self._merge_proc, annotated)
 
