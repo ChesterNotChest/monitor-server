@@ -1,15 +1,14 @@
-"""标注叠加——OpenCV 在检测结果上画框、标签、时间戳。
+"""标注叠加——OpenCV 在检测结果上画框、标签。
 
 标注内容：
   - YOLO 实体框（绿色 person / 红色 knife 等）
   - 人脸标签（订阅 EventBus FACE topic 获取 {track_id: label} 映射）
-  - 右下角时间戳
+  - 时间戳由 Node 侧 drawtext 烧录
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 
 import numpy as np
 
@@ -70,10 +69,7 @@ def _bbox_color(entity_type_id: int | None) -> tuple[int, int, int]:
 
 
 def draw_detections(frame: np.ndarray, detections: list[Detection]) -> np.ndarray:
-    """在帧上绘制 YOLO 实体框和标签。返回新帧（不修改原帧）。
-
-    时间戳由 Node 端 drawtext 滤镜烧录，Server 侧不再重复叠加。
-    """
+    """在帧上绘制 YOLO 实体框和标签。返回新帧（不修改原帧）。"""
     annotated = frame.copy()
 
     for det in detections:
