@@ -1,7 +1,9 @@
 """FaceImage 存储服务测试。"""
 
+import json
 import shutil
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from starlette.datastructures import Headers
@@ -12,6 +14,7 @@ from src.service.named_person_module.face_image import (
     delete_avatar,
     _validate_avatar,
     _person_dir,
+    extract_face_encoding,
 )
 
 
@@ -84,3 +87,45 @@ class TestSaveAndDeleteAvatar:
         person_id = 99904
         assert not _person_dir(person_id).exists()
         delete_avatar(person_id)  # should not raise
+
+
+class TestExtractFaceEncoding:
+    def test_no_directory_returns_none(self):
+        person_id = 99905
+        assert not _person_dir(person_id).exists()
+        result = extract_face_encoding(person_id)
+        assert result is None
+
+    def test_no_avatar_file_returns_none(self):
+        person_id = 99906
+        _person_dir(person_id).mkdir(parents=True)
+        try:
+            # directory exists but no avatar file inside
+            result = extract_face_encoding(person_id)
+            assert result is None
+        finally:
+            shutil.rmtree(_person_dir(person_id), ignore_errors=True)
+
+    def test_extract_from_real_image(self):
+        """使用 lfw_subset 中的真实人脸图片验证特征提取。"""
+        person_id = 99907
+        # 从测试 fixture 复制一张真实人脸作为 avatar
+        lfw_dir = Path(__file__).resolve().parents[1] / "fixtures" / "lfw_subset"
+        face_images = list(lfw_dir.glob("*.jpg"))
+        if not face_images:
+            pytest.skip("lfw_subset fixture not available")
+        src = face_images[0]
+        person_dir = _person_dir(person_id)
+        person_dir.mkdir(parents=True)
+        avatar_path = person_dir / "avatar.jpg"
+        shutil.copy2(str(src), str(avatar_path))
+        try:
+            encoding_json = extract_face_encoding(person_id)
+            if encoding_json is None:
+                pytest.skip("face_recognition could not find a face (dlib issue on this env)")
+            vector = json.loads(encoding_json)
+            assert isinstance(vector, list)
+            assert len(vector) == 128
+            assert all(isinstance(v, float) for v in vector)
+        finally:
+            shutil.rmtree(person_dir, ignore_errors=True)

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from src.repository.named_person_repo import NamedPersonRepo
 from src.models.named_person import NamedPerson
-from src.service.named_person_module.face_image import save_avatar, delete_avatar
+from src.service.named_person_module.face_image import save_avatar, delete_avatar, extract_face_encoding
 
 
 def _repo(db: Session) -> NamedPersonRepo:
@@ -71,9 +71,22 @@ def delete_person(db: Session, id: int) -> bool:
 
 
 def upload_avatar(db: Session, id: int, file: UploadFile) -> NamedPerson | None:
-    """上传/替换人物头像。"""
+    """上传/替换人物头像并提取 128D 人脸特征编码。
+
+    1. 校验并保存头像图片到磁盘
+    2. 从头像提取人脸特征向量（face_recognition）
+    3. 将相对路径和特征向量 JSON 写入数据库
+
+    若未检测到人脸，仍保存头像但 feat_json_id 保持为 None，
+    FaceRecognizer 将跳过该人员。
+    """
     person = _repo(db).get(id)
     if person is None:
         return None
     relative_path = save_avatar(id, file)
-    return _repo(db).update(id, avatar_path=relative_path)
+    encoding_json = extract_face_encoding(id)
+    return _repo(db).update(
+        id,
+        avatar_path=relative_path,
+        feat_json_id=encoding_json,
+    )
