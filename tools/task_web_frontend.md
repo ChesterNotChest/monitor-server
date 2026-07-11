@@ -1,159 +1,98 @@
-# 分工文档 — Web 前端（SRS + WebRTC 联调）
+# 任务三 — Web 前端（SRS 拉流联调）
 
-**接手范围**: SRS 启动与配置、WebRTC 拉流验证、前端播放器接入
-**依赖**: Server 提供 `webrtc_url`（通过 `GET /api/v1/views/{id}` 获取）；不需要碰 AI 管线代码
-
----
-
-## 一、上下文
-
-当前调试阶段用 `rtmp_debug_server.js`（node-media-server）在 :1936 提供 RTMP 流，VLC 播放延迟约 2 秒。架构已为 WebRTC 低延迟播放预留了 SRS（`srs-bin/srs-setup.exe`、`srs/srs.conf`）。
-
-目标：启动 SRS 替代 node-media-server，让前端能通过 WebRTC 拉流，延迟从 ~2s 降到 ~200ms。
-
-整体拓扑：
-
-```
-Camera → Node(ffmpeg推RTMP) → :1935 → Server(拉流+AI推理) → RTMP推 → SRS :1936 → WebRTC → 浏览器
-```
-
-前端只需要跟 Server 的 REST API 和 SRS 的 WebRTC 端点打交道。
+**接手范围**: `E:/AI/monitor-web` 前端代码 + SRS 本地启动  
+**依赖**: Server 提供带标注的流 URL（`GET /api/v1/views/{id}`→ `flv_url` / `rtmp_url`）；不需要碰 AI 管线代码  
+**测试用流**: 使用原始合流（`ffmpeg_manager.start_merge` 直接推送 RTMP），不依赖 AI 标注就绪
 
 ---
 
-## 二、SRS 本地启动
+## 一、当前状态（已就绪，不需要重做）
 
-### 安装
+前端已大规模接入，以下均为**已完成**工作：
 
-SRS Windows 安装包已提交到仓库：`srs-bin/srs-setup.exe`。双击安装，默认路径 `C:\Program Files\SRS\`。
+- **CRUD 全部封装** — `src/api/client.ts` 覆盖全部 Server REST 端点：auth、alerts、alert-groups、dashboard、nodes、devices、detection types、exceptions、fences、logs、persons（含头像上传 `uploadPersonAvatar`）、users、events、replay、views
+- **LiveMonitor 页面已用 flv.js 播放** — `src/pages/LiveMonitor.tsx:50-54` 读取 `view.flv_url`，通过 `flv.js.createPlayer({ type: 'flv', url: view.flv_url, isLive: true })` 创建播放器并 attach 到 `<video>` 元素。支持 loading / error / retry 三态
+- **路由已注册** — `/view/:cameraId` → LiveMonitor，`/view/:viewId/edit` → FenceEditor
+- **`ViewResponse` 类型**已定义 `flv_url`, `rtmp_url`, `webrtc_url` 字段
 
-### 启动（替代 rtmp_debug_server.js）
+**当前缺失的只有一步**：`flv_url` 的值。在当前的 `DEBUG_WEB_STREAM=true` 模式下，Server `build_play_urls()` 返回 `flv_url: null`，前端拿到 null 后显示空状态。**需要切换到 SRS 模式让 `flv_url` 有值。**
+
+---
+
+## 二、SRS 启动（替代 rtmp_debug_server.js）
+
+SRS 安装包已提交：`srs-bin/srs-setup.exe`。安装后默认路径 `C:\Program Files\SRS\`。
 
 ```powershell
-# Terminal 1 — 用 SRS 替代 node-media-server
+# Terminal 1 — 用 SRS 替代 rtmp_debug_server.js
 C:\Program Files\SRS\srs.exe -c E:\AI\monitor-server\srs\srs.conf
 ```
 
-SRS 监听端口：
-- `:1935` — RTMP（ffmpeg 推流入口，Server 和 Node 无需任何改动）
+SRS 监听：
+- `:1935` — RTMP 推流入口（Server ffmpeg 推流目标）
 - `:8080` — HTTP-FLV / HTTP API / SRS 控制台
-- `:8000` — WebRTC（WHEP 拉流）
-
-验证 SRS 正常：浏览器打开 `http://127.0.0.1:8080/`，应看到 SRS 控制台。
+- `:8000` — WebRTC WHEP 拉流
 
 ### Server 切换
 
-Server 启动时将 `DEBUG_WEB_STREAM` 从 `true` 改为 `false`：
-
 ```powershell
-$env:DEBUG_WEB_STREAM = "false"  # 之前是 "true"
+$env:DEBUG_WEB_STREAM = "false"  # 必须是 "false"
 ```
 
-切换后 `build_play_urls` 走 SRS 分支，`GET /api/v1/views/{id}` 的响应中 `webrtc_url` 字段会有值。
+切换后 `build_play_urls()` 返回完整 URL：
 
----
-
-## 三、联调验证
-
-### 1. 确认 RTMP 推流正常
-
-```bash
-ffprobe rtmp://127.0.0.1:1936/view/1
-# 应输出 STREAM codec_type=video + STREAM codec_type=audio
-```
-
-### 2. 确认 HTTP-FLV 可播放
-
-浏览器或 VLC 打开：
-```
-http://127.0.0.1:8080/live?app=view&stream=1&port=1936
-```
-
-### 3. 确认 WebRTC 可拉流
-
-浏览器打开 SRS 内置播放器：
-```
-http://127.0.0.1:8080/players/whep?app=view&stream=1
-```
-
-应看到低延迟视频画面。
-
-### 4. 确认 API 返回正确 URL
-
-```bash
-curl http://127.0.0.1:8000/api/v1/views/1 -H "Authorization: Bearer $TOKEN"
-```
-
-响应中 `webrtc_url` 应为：
-```
-http://127.0.0.1:8080/rtc/v1/whep/?app=view&stream=1
-```
-
----
-
-## 四、前端接入
-
-### 最小接入路径
-
-1. `POST /api/v1/auth/login` → 获取 `access_token`
-2. `POST /api/v1/views/` `{"video_id":1,"audio_id":1}` → 创建 View，得到 `rtmp_url`
-3. `GET /api/v1/views/{id}` → 拿到 `webrtc_url`
-4. 将 `webrtc_url` 传给 WebRTC 播放器（WHEP 协议）
-
-### WHEP 播放器参考
-
-SRS 的 WHEP 实现兼容标准 WebRTC。前端可用任意支持 WHEP 的播放器库。SRS 自带一个简单的 demo player：
-
-```
-http://127.0.0.1:8080/players/whep?app=view&stream={view_id}
-```
-
-正式接入时把这个页面的逻辑集成到 Web 前端即可。
-
-### CORS 配置
-
-如果前端从不同域名/端口访问 SRS，需要在 `srs/srs.conf` 的 `http_api` 段配置：
-
-```nginx
-http_api {
-    enabled on;
-    listen 8080;
-    crossdomain on;  # ← 开启 CORS
+```json
+{
+  "rtmp_url":   "rtmp://127.0.0.1:1935/view/1",
+  "flv_url":    "http://127.0.0.1:8080/view/1.flv",
+  "webrtc_url": "http://127.0.0.1:8080/rtc/v1/whep/?app=view&stream=1"
 }
 ```
 
 ---
 
-## 五、延迟对比
+## 三、联调步骤
 
-| 方案 | 延迟 | 说明 |
-|------|------|------|
-| RTMP + VLC | ~2s | GOP cache + 播放器缓冲 |
-| RTMP + SRS HTTP-FLV | ~1s | 无 GOP cache，仍有 TCP 缓冲 |
-| WebRTC (WHEP) | ~200ms | UDP 直推，最低延迟 |
+### Step 1 — 启动全链路
 
-Web 前端正式环境应该直接走 WebRTC。RTMP/HTTP-FLV 仅用于调试。
+```bash
+T0: node monitor-node/rtmp_server/index.js                    # RTMP :1935
+T1: C:\Program Files\SRS\srs.exe -c srs\srs.conf             # SRS :1935/:8080
+T2: $env:DEBUG_WEB_STREAM="false"; python -m src.run          # Server :8000
+T3: python monitor-node/run.py                                 # Node  :5000
+
+# 创建 View
+curl -X POST http://127.0.0.1:8000/api/v1/views/ \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"video_id":1,"audio_id":1}'
+```
+
+### Step 2 — 验证 flv_url
+
+```bash
+curl http://127.0.0.1:8000/api/v1/views/1 -H "Authorization: Bearer $TOKEN"
+# 检查 flv_url: "http://127.0.0.1:8080/view/1.flv"
+
+# 用 ffprobe 验证可访问
+ffprobe http://127.0.0.1:8080/view/1.flv
+```
+
+### Step 3 — 前端 flv.js 播放
+
+前端启动后访问 `http://localhost:5173/view/1`，LiveMonitor 自动用 `flv_url` 创建 flv.js 播放器。预期：视频正常渲染，左上角 LIVE 标签显示。若加载失败显示错误 + 重试按钮。
+
+### Step 4 — WebRTC（后续）
+
+浏览器打开 `http://127.0.0.1:8080/players/whep?app=view&stream=1` 验证低延迟。正式接入则用 `view.webrtc_url` 传给 WebRTC 播放器。
 
 ---
 
-## 六、启动顺序（SRS 模式）
+## 四、需检查的问题
 
-```bash
-# Terminal 0 — RTMP :1935
-cd monitor-node/rtmp_server && node index.js
+1. **删除 View 后 flv_url 残留** — `debug_data.py` 有 60 秒自动恢复录制文件的循环逻辑，**这个没修好**。若影响调试，设 `DEBUG_FLV_TRANSMIT=false` 关闭。
 
-# Terminal 1 — SRS（替代 rtmp_debug_server.js）
-C:\Program Files\SRS\srs.exe -c E:\AI\monitor-server\srs\srs.conf
+2. **删除 View 后前端状态** — LiveMonitor 删除 View 后是否跳转回 `/main`？当前可能停留在空状态页。
 
-# Terminal 2 — Server
-cd monitor-server
-$env:APP_DEBUG="false"; $env:DEBUG_WEB_STREAM="false"; $env:RTMP_DEBUG="true"; $env:YOLO_DEVICE="0"
-python -m src.run
+3. **CORS** — SRS HTTP :8080 需 `crossdomain on;`，否则前端 localhost:5173 访问被拦截。
 
-# Terminal 3 — Node
-cd monitor-node
-$env:RTMP_DEBUG="false"; $env:DEBUG_WSS="false"; $env:SERVER_BASE_URL="127.0.0.1"; $env:WSS_PORT="8000"; $env:RTMP_PORT="1935"
-python run.py
-```
-
-注意：Terminal 2 的 `DEBUG_WEB_STREAM` 从 `true` 变为 `false`。
+4. **Node RTMP :1935 的 node-media-server 和 SRS 都监听 :1935** — 冲突。SRS 启动后 RTMP :1935 由 SRS 提供，不再需要 `rtmp_server/index.js` 的 Terminal 0。
