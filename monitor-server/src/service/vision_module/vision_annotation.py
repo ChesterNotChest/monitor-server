@@ -16,6 +16,7 @@ import numpy as np
 from src.constants import YOLOEntityType
 from src.service.vision_module.vision_event_bus import FACE, event_bus
 from src.service.vision_module.vision_yolo.detector import Detection
+from src.service.vision_module.vision_types import Track
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,51 @@ def draw_face_labels(frame: np.ndarray, face_results: dict[int, str]) -> np.ndar
     # Face 模块产出 track_id → label 后通过 EventBus FACE topic 通知
     annotated = frame.copy()
     # 实际绘制由 Pipeline 主循环在拿到 YOLO person 框 + face_labels 后完成
+    return annotated
+
+
+def draw_part_b_overlay(
+    frame: np.ndarray,
+    tracks: list[Track],
+    *,
+    face_labels: dict[int, str] | None = None,
+    action_labels: dict[int, str] | None = None,
+    fence_labels: dict[int, str] | None = None,
+    fence_polygons: list[list[tuple[float, float]]] | None = None,
+) -> np.ndarray:
+    """Draw Part B tracking, face, action, and fence state on a frame."""
+
+    annotated = frame.copy()
+    face_labels = face_labels or {}
+    action_labels = action_labels or {}
+    fence_labels = fence_labels or {}
+
+    if fence_polygons:
+        for polygon in fence_polygons:
+            points = np.array(polygon, dtype=np.int32)
+            if len(points) >= 3:
+                cv2.polylines(annotated, [points], isClosed=True, color=(255, 255, 0), thickness=2)
+
+    for track in tracks:
+        x1, y1, x2, y2 = [int(round(value)) for value in track.bbox]
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), _COLOR_PERSON, 2)
+        labels = [f"ID {track.track_id}"]
+
+        face = face_labels.get(track.track_id)
+        if face:
+            labels.append(f"Face: {face}")
+
+        action = action_labels.get(track.track_id)
+        if action:
+            labels.append(f"Action: {action}")
+
+        fence = fence_labels.get(track.track_id)
+        if fence:
+            labels.append(f"Fence: {fence}")
+
+        for index, label in enumerate(labels):
+            _draw_label(annotated, label, x1, y1 - 10 - index * 20, _COLOR_PERSON)
+
     return annotated
 
 

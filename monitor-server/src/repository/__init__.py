@@ -9,6 +9,7 @@ from .audio_device_repo import AudioDeviceRepo
 from .electronic_fence_repo import ElectronicFenceRepo
 from .entity_type_repo import EntityTypeRepo
 from .exception_def_repo import ExceptionDefRepo
+from .fence_event_type_repo import FenceEventTypeRepo
 from .monitor_view_repo import MonitorViewRepo
 from .named_person_repo import NamedPersonRepo
 from .node_repo import NodeRepo
@@ -27,6 +28,7 @@ __all__ = [
     "ElectronicFenceRepo",
     "EntityTypeRepo",
     "ExceptionDefRepo",
+    "FenceEventTypeRepo",
     "MonitorViewRepo",
     "NamedPersonRepo",
     "NodeRepo",

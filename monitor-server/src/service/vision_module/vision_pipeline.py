@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 import numpy as np
@@ -16,22 +16,15 @@ import numpy as np
 from src.config import settings
 from src.service.vision_module.vision_frame_reader import FrameReader, FrameReaderState
 from src.service.vision_module.vision_yolo.detector import YoloDetector, Detection, YoloState
-from src.service.vision_module.vision_annotation import draw_detections
+from src.service.vision_module.vision_annotation import draw_detections, draw_part_b_overlay
 from src.service.vision_module.vision_merger import (
     start_stream_merge, push_frame, stop_stream_merge,
 )
+from src.service.vision_module.vision_types import Track
 
 logger = logging.getLogger(__name__)
 
 # ── 数据契约 ──────────────────────────────────
-
-@dataclass
-class Track:
-    """ByteTrack 追踪结果（Part B 填充）。"""
-    bbox: list[float]       # [x1, y1, x2, y2]
-    track_id: int
-    score: float
-
 
 @dataclass
 class FrameContext:
@@ -82,7 +75,8 @@ class AIPipeline:
     # ── Lifecycle ──────────────────────────────
 
     async def start(self, view_id: int, video_id: int, video_name: str,
-                    audio_id: int | None = None) -> bool:
+                    audio_id: int | None = None,
+                    audio_name: str = "") -> bool:
         """启动 AI 管线。
 
         Args:
@@ -111,7 +105,7 @@ class AIPipeline:
         #    实际尺寸从第一帧获取
         self._running = True
         self._task = asyncio.create_task(
-            self._run_loop(view_id, audio_id),
+            self._run_loop(view_id, audio_id, audio_name),
             name=f"ai-pipeline-view-{view_id}",
         )
         logger.info("AIPipeline started for view_id=%d", view_id)
@@ -136,7 +130,8 @@ class AIPipeline:
 
     # ── Main loop ─────────────────────────────
 
-    async def _run_loop(self, view_id: int, audio_id: int | None) -> None:
+    async def _run_loop(self, view_id: int, audio_id: int | None,
+                         audio_name: str = "") -> None:
         """主循环：逐帧读取 → YOLO → hooks → 标注 → 推流。"""
         merge_started = False
 
@@ -153,7 +148,7 @@ class AIPipeline:
                 h, w = frame.shape[:2] if frame is not None else (480, 640)
                 fps = int(self._reader.fps or settings.FPS_TARGET)
                 self._merge_proc = await start_stream_merge(
-                    view_id, w, h, fps, audio_id,
+                    view_id, w, h, fps, audio_id, audio_name,
                 )
                 if self._merge_proc is None:
                     logger.error("Failed to start stream merge — stopping pipeline")
@@ -181,6 +176,7 @@ class AIPipeline:
 
             # 标注叠加
             annotated = draw_detections(frame, detections)
+            draw_part_b_overlay(frame, ctx.tracks if ctx.tracks else [])
 
             # 推流
             if self._merge_proc:

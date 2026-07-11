@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from src.extensions import get_db
 from src.middleware.rbac import require_permission
+from src.repository.fence_event_type_repo import FenceEventTypeRepo
 from src.schema.http.detection_schema import DetectionTypeCreate, DetectionTypeResponse
 from src.service import detection_task
 
@@ -182,4 +183,32 @@ def delete_sound(item_id: int, db: Session = Depends(get_db), _user=_perm):
     **权限**: detection:manage
     """
     if not detection_task.delete_sound_type(db, item_id):
+        raise HTTPException(404)
+
+
+# ── Fence Event Types ──────────────────────────
+
+fence_event_router = APIRouter(prefix="/detection/fence-event-types", tags=["围栏事件类型"])
+
+@fence_event_router.get("", response_model=list[DetectionTypeResponse])
+def list_fence_events(db: Session = Depends(get_db), _user=_perm):
+    return FenceEventTypeRepo(db).all()
+
+
+@fence_event_router.post("", response_model=DetectionTypeResponse, status_code=201)
+def create_fence_event(body: DetectionTypeCreate, db: Session = Depends(get_db), _user=_perm):
+    return FenceEventTypeRepo(db).create(name=body.name)
+
+
+@fence_event_router.put("/{item_id}", response_model=DetectionTypeResponse)
+def update_fence_event(item_id: int, body: DetectionTypeCreate, db: Session = Depends(get_db), _user=_perm):
+    r = FenceEventTypeRepo(db).update(item_id, name=body.name)
+    if r is None:
+        raise HTTPException(404)
+    return r
+
+
+@fence_event_router.delete("/{item_id}", status_code=204)
+def delete_fence_event(item_id: int, db: Session = Depends(get_db), _user=_perm):
+    if not FenceEventTypeRepo(db).delete(item_id):
         raise HTTPException(404)

@@ -37,11 +37,10 @@ def _build_push_url(view_id: int) -> str:
     return f"rtmp://{host}:{port}/view/{view_id}"
 
 
-def _build_audio_pull_url(audio_id: int) -> str:
-    """构建 raw audio RTMP 拉流地址。"""
-    host = "127.0.0.1" if settings.RTMP_DEBUG else settings.RTMP_HOST
-    port = settings.RTMP_PORT
-    return f"rtmp://{host}:{port}/live/audio_{audio_id}"
+def _build_audio_pull_url(audio_name: str, audio_id: int) -> str:
+    """构建 raw audio RTMP 拉流地址（含设备名）。"""
+    from src.network.rtmp.puller import build_pull_url
+    return build_pull_url(audio_name, "audio", audio_id)
 
 
 async def start_stream_merge(
@@ -50,6 +49,7 @@ async def start_stream_merge(
     video_height: int,
     fps: int,
     audio_id: int | None = None,
+    audio_name: str = "",
 ) -> asyncio.subprocess.Process | None:
     """启动 FFmpeg 合并子进程。
 
@@ -80,7 +80,7 @@ async def start_stream_merge(
 
     # 音频源
     if audio_id is not None:
-        audio_url = _build_audio_pull_url(audio_id)
+        audio_url = _build_audio_pull_url(audio_name, audio_id)
         cmd += [
             "-i", audio_url,
             "-c:v", "libx264",
@@ -112,6 +112,7 @@ async def push_frame(proc: asyncio.subprocess.Process, frame: np.ndarray) -> Non
         return
     try:
         proc.stdin.write(frame.tobytes())
+        await proc.stdin.drain()
     except BrokenPipeError:
         logger.warning("FFmpeg stdin pipe broken — stream ended")
     except Exception:
