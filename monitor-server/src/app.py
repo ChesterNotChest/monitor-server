@@ -58,6 +58,11 @@ async def print_urls():
     except Exception as e:
         logging.getLogger(__name__).warning("seed_admin failed: %s", e)
 
+    # Debug FLV 测试数据链路
+    if settings.DEBUG_FLV_TRANSMIT:
+        from src.debug_data import start_debug_data
+        start_debug_data()
+
 
 @app.on_event("shutdown")
 async def shutdown_cleanup():
