@@ -1,16 +1,22 @@
 """人脸图片文件存储 —— 内部逻辑模块。
 
-提供头像图片的本地磁盘存储、替换、删除及校验功能。
+提供头像图片的本地磁盘存储、替换、删除及校验功能，
+以及从头像图片提取 128D 人脸特征编码。
 数据库仅存相对路径，文件实体存储在 ``FACE_IMAGE_DIR`` 下。
 """
 
+import json
+import logging
 import os
 import shutil
 from pathlib import Path
 
+import numpy as np
 from fastapi import UploadFile
 
 from src.config import settings
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png"}
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
@@ -62,3 +68,45 @@ def delete_avatar(person_id: int) -> None:
     person_dir = _person_dir(person_id)
     if person_dir.exists():
         shutil.rmtree(person_dir)
+
+
+def extract_face_encoding(person_id: int) -> str | None:
+    """从已保存的头像图片提取 128D 人脸特征向量，返回 JSON 数组字符串。
+
+    自动查找 person_{id}/ 目录下的 avatar.{jpg,jpeg,png}。
+    若目录不存在、无头像文件、或未检测到人脸则返回 None。
+
+    用于写入 NamedPerson.feat_json_id，使 FaceRecognizer 能在
+    load_known_people() 时加载该人员的特征用于实时识别。
+    """
+    person_dir = _person_dir(person_id)
+    if not person_dir.exists():
+        return None
+
+    avatar_file: Path | None = None
+    for ext in (".jpg", ".jpeg", ".png"):
+        candidate = person_dir / f"avatar{ext}"
+        if candidate.exists():
+            avatar_file = candidate
+            break
+    if avatar_file is None:
+        return None
+
+    try:
+        import face_recognition
+    except Exception:
+        logger.warning("face_recognition not installed; skip encoding for person %d", person_id)
+        return None
+
+    try:
+        image = face_recognition.load_image_file(str(avatar_file))
+        encodings = face_recognition.face_encodings(image)
+        if not encodings:
+            logger.warning("No face found in avatar for person %d", person_id)
+            return None
+        # 取第一张脸的特征向量
+        vector = np.asarray(encodings[0], dtype=float)
+        return json.dumps(vector.tolist())
+    except Exception:
+        logger.exception("Failed to extract face encoding for person %d", person_id)
+        return None
