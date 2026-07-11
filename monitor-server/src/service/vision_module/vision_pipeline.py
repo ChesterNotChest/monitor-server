@@ -108,7 +108,7 @@ class AIPipeline:
         self._frame_hooks: list[FrameHook] = []
         self._merge_proc: asyncio.subprocess.Process | None = None
         self._latest_frame: np.ndarray | None = None
-        self._last_push_time: float = 0.0
+        self._next_frame_due: float = 0.0  # 下一帧的绝对推送时刻
         self._push_interval: float = 1.0 / max(settings.FPS_TARGET, 1)
         self._running = False
         self._task: asyncio.Task | None = None
@@ -238,16 +238,20 @@ class AIPipeline:
             annotated = draw_detections(frame, detections)
             _t4 = time.monotonic()
 
-            # 推流 — 匀速节流：按目标 fps 均匀写入，消除 YOLO burst 导致的时间戳抖动
+            # 推流 — 绝对时钟调度：按固定 15fps 节拍推，不等相对间隔
             if self._merge_proc:
-                _pn = time.monotonic()
-                # 存下最近帧，按帧间隔匀速推送
-                self._latest_frame = annotated
-                if _pn - self._last_push_time >= self._push_interval:
-                    await push_frame(self._merge_proc, self._latest_frame)
-                    self._last_push_time = _pn
+                _now = time.monotonic()
+                if self._next_frame_due == 0.0:
+                    self._next_frame_due = _now
+                if _now >= self._next_frame_due:
+                    await push_frame(self._merge_proc, annotated)
+                    self._next_frame_due += self._push_interval
+                # 睡到下一帧的绝对时刻（避免累积漂移）
+                _wait = self._next_frame_due - time.monotonic()
+                if _wait > 0:
+                    await asyncio.sleep(_wait)
 
-            # 可观测性：每 5 秒打印一次帧率 + 分段耗时
+            # 可观测性：每 5 秒打印一次帧率 + 分段耗时 + 端到端延迟
             _tn = time.monotonic()
             if _tn - _loop_last_log >= 5.0:
                 _fps = _loop_frame_count / (_tn - _loop_last_log)
@@ -255,8 +259,10 @@ class AIPipeline:
                 _yolo_ms = (_t2 - _t1) * 1000
                 _hooks_ms = (_t3 - _t2) * 1000
                 _draw_ms = (_t4 - _t3) * 1000
-                logger.info("[obs] FPS=%.1f | read=%.0f yolo=%.0f hooks=%.0f draw=%.0f ms",
-                            _fps, _read_ms, _yolo_ms, _hooks_ms, _draw_ms)
+                # 管线内延迟 = 从读帧开始到推送完成的耗时
+                _latency_ms = (_tn - _t0) * 1000
+                logger.info("[obs] FPS=%.1f | r=%.0f y=%.0f hk=%.0f dr=%.0f ms | latency=%.0f ms",
+                            _fps, _read_ms, _yolo_ms, _hooks_ms, _draw_ms, _latency_ms)
                 _loop_frame_count = 0
                 _loop_last_log = _tn
 

@@ -97,7 +97,7 @@ async def start_stream_merge(
     push_url = _build_push_url(view_id)
     cmd: list[str] = [
         ffmpeg,
-        "-fflags", "+genpts",
+        "-vsync", "cfr",
         "-f", "rawvideo", "-pix_fmt", "bgr24",
         "-s", f"{video_width}x{video_height}", "-r", str(fps),
         "-i", "pipe:0",

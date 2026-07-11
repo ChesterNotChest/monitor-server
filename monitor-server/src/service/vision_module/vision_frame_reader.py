@@ -57,6 +57,11 @@ class FrameReader:
     def fps(self) -> float:
         return self._source_fps
 
+    @property
+    def open_time(self) -> float:
+        """Reader 打开时的墙上时钟（Unix 秒），用于计算帧采集时刻。"""
+        return self._open_time
+
     # ── Lifecycle ───────────────────────────────
 
     def open(self, video_id: int, video_name: str) -> bool:
