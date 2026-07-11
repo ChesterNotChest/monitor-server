@@ -20,14 +20,14 @@ def _public_srs_http_port() -> int:
 
 def build_push_url(view_id: int) -> str:
     if settings.DEBUG_WEB_STREAM:
-        return f"rtmp://{DEBUG_RTMP_HOST}:{DEBUG_RTMP_PORT}/view/{view_id}"
-    return f"rtmp://{settings.SRS_HOST}:{settings.SRS_RTMP_PORT}/view/{view_id}"
+        return f"rtmp://{DEBUG_RTMP_HOST}:{DEBUG_RTMP_PORT}/live/{view_id}"
+    return f"rtmp://{settings.SRS_HOST}:{settings.SRS_RTMP_PORT}/live/{view_id}"
 
 
 def build_play_urls(view_id: int) -> dict[str, str | None]:
     if settings.DEBUG_WEB_STREAM:
         return {
-            "rtmp_url": f"rtmp://{DEBUG_RTMP_HOST}:{DEBUG_RTMP_PORT}/view/{view_id}",
+            "rtmp_url": f"rtmp://{DEBUG_RTMP_HOST}:{DEBUG_RTMP_PORT}/live/{view_id}",
             "flv_url": None,
             "webrtc_url": None,
         }
@@ -37,7 +37,7 @@ def build_play_urls(view_id: int) -> dict[str, str | None]:
     public_http_port = _public_srs_http_port()
 
     return {
-        "rtmp_url": f"rtmp://{public_host}:{public_rtmp_port}/view/{view_id}",
-        "flv_url": f"http://{public_host}:{public_http_port}/view/{view_id}.flv",
-        "webrtc_url": f"http://{public_host}:1985/rtc/v1/whep/?app=view&stream={view_id}",
+        "rtmp_url": f"rtmp://{public_host}:{public_rtmp_port}/live/{view_id}",
+        "flv_url": f"http://{public_host}:{public_http_port}/live/{view_id}.flv",
+        "webrtc_url": f"http://{public_host}:1985/rtc/v1/whep/?app=live&stream={view_id}",
     }

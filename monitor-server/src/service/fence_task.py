@@ -20,7 +20,7 @@ def create_fence(
     density: float = 0.6,
     leave_frames: int = 5,
 ):
-    return ElectronicFenceRepo(db).create(
+    fence = ElectronicFenceRepo(db).create(
         name=name,
         view_id=view_id,
         coords=coords,
@@ -28,6 +28,8 @@ def create_fence(
         density=density,
         leave_frames=leave_frames,
     )
+    db.commit()
+    return fence
 
 
 def update_fence(

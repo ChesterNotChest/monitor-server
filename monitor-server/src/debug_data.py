@@ -19,13 +19,13 @@ from src.extensions import SessionLocal, engine, Base
 logger = logging.getLogger(__name__)
 
 # 固定的测试数据 ID，避免 URL 变化
-TEST_NODE_ID = 9999
-TEST_VIDEO_DEVICE_ID = 9999
-TEST_AUDIO_DEVICE_ID = 9999
-TEST_VIEW_ID = 9999
-TEST_EXCEPTION_ID = 9999
-TEST_RECORDING_ID = 9999
-TEST_ALERT_ID = 9999
+TEST_NODE_ID = 1
+TEST_VIDEO_DEVICE_ID = 1
+TEST_AUDIO_DEVICE_ID = 1
+TEST_VIEW_ID = 1
+TEST_EXCEPTION_ID = 1
+TEST_RECORDING_ID = 1
+TEST_ALERT_ID = 1
 
 CASSETTE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "test_cassette")
 RECOVERY_INTERVAL = 60  # seconds
@@ -131,7 +131,7 @@ def create_test_data() -> bool:
 
         # Alert group (required by exception, NOT NULL)
         from src.models.alert_group import AlertGroup
-        TEST_GROUP_ID = 9999
+        TEST_GROUP_ID = 1
         group = db.get(AlertGroup, TEST_GROUP_ID)
         if group is None:
             group = AlertGroup(
