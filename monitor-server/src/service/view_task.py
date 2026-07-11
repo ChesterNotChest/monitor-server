@@ -93,6 +93,7 @@ def create_view(
 
         return ViewResponse(
             id=view.id,
+            name=view.name,
             audio_id=view.audio_id,
             video_id=view.video_id,
             cache_path=view.cache_path,
@@ -156,6 +157,7 @@ def list_views(db: Session) -> list[ViewResponse]:
     return [
         ViewResponse(
             id=v.id,
+            name=v.name,
             audio_id=v.audio_id,
             video_id=v.video_id,
             cache_path=v.cache_path,
@@ -182,6 +184,7 @@ def get_view(db: Session, view_id: int) -> ViewResponse | None:
     urls = build_play_urls(view.id)
     return ViewResponse(
         id=view.id,
+        name=view.name,
         audio_id=view.audio_id,
         video_id=view.video_id,
         cache_path=view.cache_path,

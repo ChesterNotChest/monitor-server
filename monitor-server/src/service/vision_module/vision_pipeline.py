@@ -182,4 +182,8 @@ class AIPipeline:
             if self._merge_proc:
                 await push_frame(self._merge_proc, annotated)
 
+            # 录制：每帧推入环形缓冲区
+            from src.service import replay_task
+            replay_task.push_frame(view_id, annotated.tobytes())
+
         logger.info("Pipeline main loop exited for view_id=%d", view_id)
