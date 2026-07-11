@@ -13,7 +13,7 @@ import logging
 import numpy as np
 
 from src.constants import YOLOEntityType
-from src.service.vision_module.vision_event_bus import FACE, event_bus
+from src.service.vision_module.vision_event_bus import FACE, FENCE, ACTION, event_bus
 from src.service.vision_module.vision_yolo.detector import Detection
 from src.service.vision_module.vision_types import Track
 
@@ -40,8 +40,10 @@ _ENTITY_LABELS: dict[int, str] = {
     YOLOEntityType.KNIFE: "Knife",
 }
 
-# ── 当前帧的人脸标签（Face 模块产出后更新） ──
+# ── 当前帧的 Part B 标签（各模块产出后更新） ──
 _face_labels: dict[int, str] = {}
+_fence_labels: dict[int, str] = {}
+_action_labels: dict[int, str] = {}
 
 
 async def _on_face_event(payload: dict) -> None:
@@ -52,11 +54,35 @@ async def _on_face_event(payload: dict) -> None:
         _face_labels = {int(k): v for k, v in labels.items()}
 
 
+async def _on_fence_event(payload: dict) -> None:
+    """订阅 FENCE topic，更新围栏标签映射。"""
+    global _fence_labels
+    fences: list[dict] = payload.get("fences", [])
+    if fences:
+        _fence_labels = {
+            f["track_id"]: f"Fence-{f.get('fence_id', '?')}"
+            for f in fences if "track_id" in f
+        }
+
+
+async def _on_action_event(payload: dict) -> None:
+    """订阅 ACTION topic，更新动作标签映射。"""
+    global _action_labels
+    actions: list[dict] = payload.get("actions", [])
+    if actions:
+        _action_labels = {
+            a["track_id"]: f"Action-{a.get('action_type_id', '?')}"
+            for a in actions if "track_id" in a
+        }
+
+
 # 启动时注册订阅
 import asyncio as _asyncio
 try:
     loop = _asyncio.get_running_loop()
     loop.create_task(event_bus.subscribe(FACE, _on_face_event))
+    loop.create_task(event_bus.subscribe(FENCE, _on_fence_event))
+    loop.create_task(event_bus.subscribe(ACTION, _on_action_event))
 except RuntimeError:
     pass  # 无运行中的 event loop（如测试导入）
 

@@ -18,7 +18,7 @@ from src.config import settings
 from src.constants import YOLOEntityType
 from src.service.vision_module.vision_frame_reader import FrameReader, FrameReaderState
 from src.service.vision_module.vision_yolo.detector import YoloDetector, Detection, YoloState
-from src.service.vision_module.vision_annotation import draw_detections, _face_labels
+from src.service.vision_module.vision_annotation import draw_detections, _face_labels, _fence_labels, _action_labels
 from src.service.vision_module.vision_merger import (
     start_stream_merge, push_frame, stop_stream_merge,
 )
@@ -68,6 +68,8 @@ def _enrich_detection_labels(
     detections: list[Detection],
     tracks: list[Track] | None,
     face_labels: dict[int, str],
+    fence_labels: dict[int, str] | None = None,
+    action_labels: dict[int, str] | None = None,
 ) -> None:
     """Match person detections to ByteTrack tracks by IoU, set label_suffix.
 
@@ -75,6 +77,8 @@ def _enrich_detection_labels(
     """
     if not tracks:
         return
+    fence_labels = fence_labels or {}
+    action_labels = action_labels or {}
     for det in detections:
         if det.entity_type_id != YOLOEntityType.PERSON:
             continue
@@ -86,10 +90,17 @@ def _enrich_detection_labels(
                 best_iou = iou
                 best_track = track
         if best_track is not None and best_iou > 0.3:
-            parts = [f"ID {best_track.track_id}"]
-            face = face_labels.get(best_track.track_id)
+            tid = best_track.track_id
+            parts = [f"ID {tid}"]
+            face = face_labels.get(tid)
             if face:
                 parts.append(f"Face: {face}")
+            fence = fence_labels.get(tid)
+            if fence:
+                parts.append(fence)
+            action = action_labels.get(tid)
+            if action:
+                parts.append(action)
             det.label_suffix = " ".join(parts)
 
 
@@ -255,7 +266,8 @@ class AIPipeline:
             _t3 = time.monotonic()
 
             # 标注叠加 — 一步到位：用 Track/Face 信息富化 Detection 标签，单遍绘制
-            _enrich_detection_labels(detections, ctx.tracks, _face_labels)
+            _enrich_detection_labels(detections, ctx.tracks, _face_labels,
+                                         _fence_labels, _action_labels)
             annotated = draw_detections(frame, detections)
             _t4 = time.monotonic()
 

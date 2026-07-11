@@ -33,16 +33,14 @@ class VideoAIProcessor:
         if not tracks:
             return
 
-        # FIXME: 临时禁用 face recognizer 排查管线性能瓶颈
-        # await self.face_recognizer.recognize_and_publish(ctx.frame, tracks, ctx.view_id)
+        await self.face_recognizer.recognize_and_publish(ctx.frame, tracks, ctx.view_id)
         await self.fence_engine.check_and_publish(tracks, ctx.timestamp)
 
-        # FIXME: 临时禁用 SlowFast 排查管线性能瓶颈
-        # for track in tracks:
-        #     crop = _crop(ctx.frame, track)
-        #     if crop is None:
-        #         continue
-        #     await self.slowfast_runner.enqueue_and_publish(track.track_id, crop, ctx.view_id)
+        for track in tracks:
+            crop = _crop(ctx.frame, track)
+            if crop is None:
+                continue
+            await self.slowfast_runner.enqueue_and_publish(track.track_id, crop, ctx.view_id)
 
 
 def register_video_ai_hooks(
