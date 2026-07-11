@@ -117,19 +117,11 @@ class FrameReader:
         return True, frame, timestamp, self._frame_id
 
     def _read_internal(self) -> tuple[bool, np.ndarray | None]:
-        """底层读取，含 FPS 跳帧。"""
+        """底层读取，直接取最新帧（不做跳帧窗口——RTMP read 本身已阻塞等帧）。"""
         if self._cap is None:
             return False, None
-        # 跳帧：读到最后可用的帧
-        last_frame = None
-        last_ret = False
-        deadline = time.time() + self._frame_interval
-        while time.time() < deadline:
-            ret, frame = self._cap.read()
-            if not ret:
-                return False, None
-            last_ret, last_frame = ret, frame
-        return last_ret, last_frame
+        ret, frame = self._cap.read()
+        return ret, frame
 
     def _handle_read_failure(
         self,

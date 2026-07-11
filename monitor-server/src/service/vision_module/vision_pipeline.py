@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
@@ -106,6 +107,9 @@ class AIPipeline:
         self._yolo = YoloDetector()
         self._frame_hooks: list[FrameHook] = []
         self._merge_proc: asyncio.subprocess.Process | None = None
+        self._latest_frame: np.ndarray | None = None
+        self._last_push_time: float = 0.0
+        self._push_interval: float = 1.0 / max(settings.FPS_TARGET, 1)
         self._running = False
         self._task: asyncio.Task | None = None
 
@@ -181,9 +185,14 @@ class AIPipeline:
                          audio_name: str = "") -> None:
         """主循环：逐帧读取 → YOLO → hooks → 标注 → 推流。"""
         merge_started = False
+        _loop_frame_count = 0
+        _loop_last_log = time.monotonic()
 
         while self._running:
+            _loop_frame_count += 1
+            _t0 = time.monotonic()
             success, frame, ts, fid = self._reader.read()
+            _t1 = time.monotonic()
             if not success:
                 if self._reader.state == FrameReaderState.ERROR:
                     logger.error("FrameReader in ERROR state — stopping pipeline")
@@ -193,7 +202,8 @@ class AIPipeline:
             # 首帧启动 FFmpeg merge
             if not merge_started:
                 h, w = frame.shape[:2] if frame is not None else (480, 640)
-                fps = int(self._reader.fps or settings.FPS_TARGET)
+                # 推流帧率对齐节流速率，而非原始源帧率
+                fps = settings.FPS_TARGET
                 self._merge_proc = await start_stream_merge(
                     view_id, w, h, fps, audio_id, audio_name,
                 )
@@ -204,6 +214,7 @@ class AIPipeline:
 
             # YOLO 检测
             detections = await self._yolo.detect_and_publish(frame, view_id)
+            _t2 = time.monotonic()
 
             # 帧上下文
             ctx = FrameContext(
@@ -220,13 +231,33 @@ class AIPipeline:
                     await hook(ctx)
                 except Exception:
                     logger.exception("Frame hook %s failed", getattr(hook, "__name__", hook))
+            _t3 = time.monotonic()
 
             # 标注叠加 — 一步到位：用 Track/Face 信息富化 Detection 标签，单遍绘制
             _enrich_detection_labels(detections, ctx.tracks, _face_labels)
             annotated = draw_detections(frame, detections)
+            _t4 = time.monotonic()
 
-            # 推流
+            # 推流 — 匀速节流：按目标 fps 均匀写入，消除 YOLO burst 导致的时间戳抖动
             if self._merge_proc:
-                await push_frame(self._merge_proc, annotated)
+                _pn = time.monotonic()
+                # 存下最近帧，按帧间隔匀速推送
+                self._latest_frame = annotated
+                if _pn - self._last_push_time >= self._push_interval:
+                    await push_frame(self._merge_proc, self._latest_frame)
+                    self._last_push_time = _pn
+
+            # 可观测性：每 5 秒打印一次帧率 + 分段耗时
+            _tn = time.monotonic()
+            if _tn - _loop_last_log >= 5.0:
+                _fps = _loop_frame_count / (_tn - _loop_last_log)
+                _read_ms = (_t1 - _t0) * 1000
+                _yolo_ms = (_t2 - _t1) * 1000
+                _hooks_ms = (_t3 - _t2) * 1000
+                _draw_ms = (_t4 - _t3) * 1000
+                logger.info("[obs] FPS=%.1f | read=%.0f yolo=%.0f hooks=%.0f draw=%.0f ms",
+                            _fps, _read_ms, _yolo_ms, _hooks_ms, _draw_ms)
+                _loop_frame_count = 0
+                _loop_last_log = _tn
 
         logger.info("Pipeline main loop exited for view_id=%d", view_id)

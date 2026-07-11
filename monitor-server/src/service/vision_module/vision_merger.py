@@ -88,40 +88,78 @@ async def start_stream_merge(
     encoder = _detect_encoder()
     if encoder == "h264_nvenc":
         vcodec_args = ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll",
-                       "-b:v", "2M", "-rc", "vbr"]
+                       "-b:v", "2M", "-rc", "vbr",
+                       "-zerolatency", "1", "-delay", "0",
+                       "-g", "30"]  # 每秒一个关键帧，解决灰屏
     else:
         vcodec_args = ["-c:v", encoder, "-preset", "ultrafast"]
 
     push_url = _build_push_url(view_id)
     cmd: list[str] = [
         ffmpeg,
+        "-fflags", "+genpts",
         "-f", "rawvideo", "-pix_fmt", "bgr24",
         "-s", f"{video_width}x{video_height}", "-r", str(fps),
         "-i", "pipe:0",
         *vcodec_args,
+        "-flvflags", "no_duration_filesize",
+        "-rtmp_live", "live",
         "-f", "flv", push_url,
     ]
 
     logger.info("FFmpeg merge: %s", " ".join(cmd))
     try:
-        return await asyncio.create_subprocess_exec(
+        proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
+        # 后台读取 ffmpeg stderr，避免管道满阻塞
+        asyncio.create_task(_read_stderr(proc, view_id),
+                            name=f"ffmpeg-stderr-view-{view_id}")
+        return proc
     except Exception:
         logger.exception("Failed to start FFmpeg merge")
         return None
 
 
+async def _read_stderr(proc: asyncio.subprocess.Process, view_id: int) -> None:
+    """后台读取 ffmpeg stderr 并记录日志。"""
+    if proc.stderr is None:
+        return
+    try:
+        while True:
+            line = await proc.stderr.readline()
+            if not line:
+                break
+            text = line.decode("utf-8", errors="replace").rstrip()
+            if text:
+                logger.debug("[ffmpeg-%d] %s", view_id, text)
+    except Exception:
+        logger.debug("ffmpeg stderr reader stopped for view_id=%d", view_id)
+
+
+# ── 可观测性 ──────────────────────────────────
+_push_frame_count: int = 0
+_push_last_log: float = 0.0
+
 async def push_frame(proc: asyncio.subprocess.Process, frame: np.ndarray) -> None:
     """写入一帧到 ffmpeg stdin（同步 drain，确保帧到达编码器）。"""
+    global _push_frame_count, _push_last_log
     if proc.stdin is None or proc.returncode is not None:
         return
     try:
         proc.stdin.write(frame.tobytes())
         await proc.stdin.drain()
+        _push_frame_count += 1
+        import time as _time
+        now = _time.monotonic()
+        if now - _push_last_log >= 5.0:
+            fps = _push_frame_count / (now - _push_last_log) if _push_last_log > 0 else 0
+            logger.info("[obs] push FPS: %.1f (frames=%d)", fps, _push_frame_count)
+            _push_frame_count = 0
+            _push_last_log = now
     except BrokenPipeError:
         logger.warning("FFmpeg stdin pipe broken — stream ended")
     except Exception:
