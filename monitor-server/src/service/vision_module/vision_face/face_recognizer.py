@@ -146,12 +146,12 @@ class FaceRecognizer:
         if self._face_lib is None:
             return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
 
-        rgb_crop = crop[:, :, ::-1]
+        rgb_crop = np.ascontiguousarray(crop[:, :, ::-1])
         try:
             locations = self._face_lib.face_locations(rgb_crop)
             if not locations:
                 return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
-            encodings = self._face_lib.face_encodings(rgb_crop, locations)
+            encodings = self._face_encodings(rgb_crop, locations)
             if not encodings:
                 return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
         except Exception:
@@ -172,6 +172,17 @@ class FaceRecognizer:
 
         match_index = matches.index(True)
         return FaceResult(track.track_id, self._known_names[match_index], FaceResultStatus.NORMAL)
+
+    def _face_encodings(self, rgb_crop: np.ndarray, locations: list[tuple[int, int, int, int]]) -> list[np.ndarray]:
+        try:
+            return self._face_lib.face_encodings(rgb_crop, locations)
+        except TypeError as exc:
+            if "compute_face_descriptor" not in str(exc) and "incompatible function arguments" not in str(exc):
+                raise
+            logger.warning(
+                "face_recognition location-bound encoding is incompatible; retrying without locations"
+            )
+            return self._face_lib.face_encodings(rgb_crop)
 
     def _extract_encoding(self, person: NamedPerson) -> np.ndarray | None:
         raw = person.feat_json_id
