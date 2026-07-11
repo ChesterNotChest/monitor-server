@@ -55,7 +55,6 @@ class Settings(BaseSettings):
     FPS_TARGET: int = 15
     YOLO_CONFIDENCE: float = 0.5
     YOLO_MODEL_PATH: str = "src/third-party/yolo/yolo11n.pt"
-    YOLO_DEVICE: str = "0"  # "0" | "cuda" | "cpu"
     STREAM_RECONNECT_MAX_RETRIES: int = 10
     FACE_MATCH_TOLERANCE: float = 0.6
     FACE_SKIP_FRAMES: int = 5
@@ -75,6 +74,7 @@ class Settings(BaseSettings):
 
     # --- 本地 View 流调试 ---
     DEBUG_WEB_STREAM: bool = False
+    DEBUG_FLV_TRANSMIT: bool = False
 
     # --- JWT 认证 ---
     JWT_SECRET: str = "change-me-in-production"
