@@ -11,13 +11,24 @@ services:
       APP_DEBUG: ${APP_DEBUG:-false}
       HOST: 0.0.0.0
       PORT: 8000
-      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/monitor.db}
+      FACE_IMAGE_DIR: /app/face_images
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       STREAM_SERVER_URL: ${STREAM_SERVER_URL:-}
+      RTMP_HOST: stream-server
+      RTMP_PORT: 1935
+      SRS_HOST: stream-server
+      SRS_RTMP_PORT: 1935
+      SRS_HTTP_PORT: 8080
+      SRS_PUBLIC_HOST: ${SRS_PUBLIC_HOST:-10.126.59.25}
+      SRS_PUBLIC_RTMP_PORT: ${RTMP_PORT:-1935}
+      SRS_PUBLIC_HTTP_PORT: ${STREAM_HTTP_PORT:-8082}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./media:/app/media
-      - ${MODEL_DIR:-/home/liusu/video/models}:/app/models:ro
+      - ./face_images:/app/face_images
+      - ${MODEL_DIR:-/home/liusu/video/models}:/app/src/third-party:ro
     expose:
       - "8000"
     restart: unless-stopped
