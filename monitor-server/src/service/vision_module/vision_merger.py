@@ -20,31 +20,6 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-# ── 异步推送 ──────────────────────────────────
-# 每帧只 write() 不入队 drain()，后台 drain task 独立处理，
-# 避免 NVENC 编码延迟反压主循环。
-
-_push_queues: dict[int, asyncio.Queue] = {}
-_drain_tasks: dict[int, asyncio.Task] = {}
-
-
-async def _drain_loop(proc: asyncio.subprocess.Process, queue: asyncio.Queue) -> None:
-    """后台 drain：从队列取帧 → write + drain。"""
-    while True:
-        frame = await queue.get()
-        if frame is None:       # sentinel
-            break
-        if proc.stdin is None or proc.returncode is not None:
-            continue
-        try:
-            proc.stdin.write(frame.tobytes())
-            await proc.stdin.drain()
-        except BrokenPipeError:
-            logger.warning("FFmpeg stdin pipe broken, drain exiting")
-            break
-        except Exception:
-            logger.exception("Drain error, continuing")
-
 
 def _find_ffmpeg() -> str:
     """定位 ffmpeg 可执行文件。"""
@@ -141,7 +116,7 @@ async def start_stream_merge(
 
 
 async def push_frame(proc: asyncio.subprocess.Process, frame: np.ndarray) -> None:
-    """写入一帧标注Video流到 ffmpeg stdin。"""
+    """写入一帧到 ffmpeg stdin（同步 drain，确保帧到达编码器）。"""
     if proc.stdin is None or proc.returncode is not None:
         return
     try:
