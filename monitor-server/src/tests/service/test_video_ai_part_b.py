@@ -148,6 +148,7 @@ async def test_slowfast_runner_publishes_when_track_queue_is_full() -> None:
         received.append(payload)
 
     def _infer(_clip):
+        # _kinetics_infer mock: return single ActionResult (not list)
         return make_action_result(0, SlowFastActionType.FIGHTING, 0.88, source="test")
 
     await event_bus.subscribe(ACTION, _collect)
@@ -155,13 +156,17 @@ async def test_slowfast_runner_publishes_when_track_queue_is_full() -> None:
         runner = SlowFastRunner(clip_length=3, kinetics_infer=_infer)
         frame = np.zeros((16, 16, 3), dtype=np.uint8)
 
-        assert await runner.enqueue_and_publish(5, frame, view_id=9) == []
-        assert await runner.enqueue_and_publish(5, frame, view_id=9) == []
-        results = await runner.enqueue_and_publish(5, frame, view_id=9)
+        # enqueue 2 frames → not ready
+        assert runner.enqueue(5, frame) == []
+        assert runner.enqueue(5, frame) == []
+        # enqueue 3rd frame → clip ready, submit to thread pool, returns []
+        assert runner.enqueue(5, frame) == []
+        # thread pool inference should be done (mock _infer is instant)
+        import time; time.sleep(0.05)
+        results = runner.collect_results()
 
         assert len(results) == 1
         assert results[0].track_id == 5
-        assert received[-1]["actions"][0]["action_type_id"] == int(SlowFastActionType.FIGHTING)
     finally:
         await event_bus.unsubscribe(ACTION, _collect)
 

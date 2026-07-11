@@ -48,13 +48,13 @@ class VideoAIProcessor:
             _logging.getLogger(__name__).info("[Direct] Face labels: %s", face_labels)
         _fl.update(face_labels)  # 增量更新，不清空已有标签
 
-        action_results: list = []
+        # SlowFast: enqueue crops (non-blocking) + collect completed inferences
         for track in tracks:
             crop = _crop_padded(ctx.frame, track, pad=0.3)
             if crop is None:
                 continue
-            results = await self.slowfast_runner.enqueue_and_publish(track.track_id, crop, ctx.view_id)
-            action_results.extend(results)
+            self.slowfast_runner.enqueue(track.track_id, crop)
+        action_results = self.slowfast_runner.collect_results()
         if action_results:
             # 同 track 多模型竞争 → 取最高置信度；不清空已有标签（增量更新）
             best: dict[int, tuple[float, str]] = {}
