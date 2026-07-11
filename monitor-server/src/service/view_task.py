@@ -93,6 +93,7 @@ def create_view(
 
         return ViewResponse(
             id=view.id,
+            name=view.name,
             audio_id=view.audio_id,
             video_id=view.video_id,
             cache_path=view.cache_path,
@@ -146,17 +147,50 @@ def delete_view(db: Session, view_id: int) -> bool:
         raise
 
 
-def list_views(db: Session):
-    """List all monitor Views."""
+def list_views(db: Session) -> list[ViewResponse]:
+    """List all monitor Views with playback URLs."""
 
+    from src.network.rtmp.pusher import build_play_urls
     from src.repository.monitor_view_repo import MonitorViewRepo
 
-    return MonitorViewRepo(db).all()
+    views = MonitorViewRepo(db).all()
+    return [
+        ViewResponse(
+            id=v.id,
+            name=v.name,
+            audio_id=v.audio_id,
+            video_id=v.video_id,
+            cache_path=v.cache_path,
+            created_at=v.created_at,
+            flv_url=build_play_urls(v.id).get("flv_url"),
+            webrtc_url=build_play_urls(v.id).get("webrtc_url"),
+            rtmp_url=build_play_urls(v.id).get("rtmp_url"),
+            warnings=[],
+        )
+        for v in views
+    ]
 
 
-def get_view(db: Session, view_id: int):
-    """Return one monitor View by id."""
+def get_view(db: Session, view_id: int) -> ViewResponse | None:
+    """Return one monitor View by id with playback URLs."""
 
+    from src.network.rtmp.pusher import build_play_urls
     from src.repository.monitor_view_repo import MonitorViewRepo
 
-    return MonitorViewRepo(db).get(view_id)
+    view = MonitorViewRepo(db).get(view_id)
+    if view is None:
+        return None
+
+    urls = build_play_urls(view.id)
+    return ViewResponse(
+        id=view.id,
+        name=view.name,
+        audio_id=view.audio_id,
+        video_id=view.video_id,
+        cache_path=view.cache_path,
+        created_at=view.created_at,
+        flv_url=urls.get("flv_url"),
+        webrtc_url=urls.get("webrtc_url"),
+        rtmp_url=urls.get("rtmp_url"),
+        warnings=[],
+    )

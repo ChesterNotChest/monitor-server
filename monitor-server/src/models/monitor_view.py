@@ -12,6 +12,7 @@ class MonitorView(Base):
     __tablename__ = "monitor_views"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True, default=None)
     video_id: Mapped[int] = mapped_column(
         ForeignKey("video_devices.id", ondelete="RESTRICT"), nullable=False, index=True
     )

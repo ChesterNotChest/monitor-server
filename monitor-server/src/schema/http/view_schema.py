@@ -14,6 +14,7 @@ class ViewResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int = Field(..., description="监控视图 ID")
+    name: str | None = Field(None, description="视图名称")
     audio_id: int = Field(..., description="关联音频设备 ID")
     video_id: int = Field(..., description="关联视频设备 ID")
     cache_path: str | None = Field(None, description="合流缓存文件路径")

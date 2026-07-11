@@ -11,6 +11,8 @@ import logging
 from src.service.alert_module.engine import AlertEngine
 from src.service.audio_module.audio_yamnet import YamnetRunner
 from src.service.vision_module.vision_pipeline import AIPipeline
+from src.service.vision_module.vision_event_bus import event_bus, RECORDING
+from src.service import replay_task
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,22 @@ logger = logging.getLogger(__name__)
 _active_pipelines: dict[int, AIPipeline] = {}
 _alert_engines: dict[int, AlertEngine] = {}
 _yamnet_runners: dict[int, YamnetRunner] = {}
+_recording_subscribed: bool = False
+
+
+async def _on_recording(payload: dict) -> None:
+    """EventBus RECORDING 订阅者：桥接 AlertEngine → replay_task 录制会话。"""
+    view_id = payload.get("view_id")
+    if view_id is None:
+        return
+    from src.extensions import SessionLocal
+    db = SessionLocal()
+    try:
+        replay_task.alert_triggered(view_id, db)
+    except Exception:
+        logger.exception("Recording subscriber failed for view_id=%d", view_id)
+    finally:
+        db.close()
 
 
 async def start_pipeline(view_id: int, video_id: int, video_name: str,
@@ -59,11 +77,21 @@ async def start_pipeline(view_id: int, video_id: int, video_name: str,
         _yamnet_runners[view_id] = yamnet
         logger.info("YamnetRunner started for view_id=%d audio_id=%d", view_id, audio_id)
 
+    # 4. 初始化录制缓冲区 + 注册 RECORDING 订阅者
+    replay_task.start_buffer(view_id)
+    logger.info("Recording buffer started for view_id=%d", view_id)
+
+    global _recording_subscribed
+    if not _recording_subscribed:
+        await event_bus.subscribe(RECORDING, _on_recording)
+        _recording_subscribed = True
+        logger.info("RECORDING subscriber registered")
+
     return True
 
 
 async def stop_pipeline(view_id: int) -> None:
-    """停止指定 View 的 AI 推理管线（YAMNet → AlertEngine → AIPipeline）。"""
+    """停止指定 View 的 AI 推理管线（YAMNet → AlertEngine → AIPipeline → 录制清理）。"""
     # 先停 YAMNet
     yamnet = _yamnet_runners.pop(view_id, None)
     if yamnet:
@@ -80,6 +108,24 @@ async def stop_pipeline(view_id: int) -> None:
     pipeline = _active_pipelines.pop(view_id, None)
     if pipeline:
         await pipeline.stop()
+
+    # 清理录制缓冲区
+    from src.extensions import SessionLocal
+    db = SessionLocal()
+    try:
+        replay_task.stop_buffer(view_id, db)
+        logger.info("Recording buffer stopped for view_id=%d", view_id)
+    except Exception:
+        logger.exception("Failed to stop recording buffer for view_id=%d", view_id)
+    finally:
+        db.close()
+
+    # 若无活跃管线，注销 RECORDING 订阅者
+    global _recording_subscribed
+    if not _active_pipelines and _recording_subscribed:
+        await event_bus.unsubscribe(RECORDING, _on_recording)
+        _recording_subscribed = False
+        logger.info("RECORDING subscriber unregistered")
 
 
 async def stop_all() -> None:
