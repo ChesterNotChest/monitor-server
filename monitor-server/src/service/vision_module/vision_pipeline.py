@@ -14,9 +14,10 @@ from typing import Awaitable, Callable
 import numpy as np
 
 from src.config import settings
+from src.constants import YOLOEntityType
 from src.service.vision_module.vision_frame_reader import FrameReader, FrameReaderState
 from src.service.vision_module.vision_yolo.detector import YoloDetector, Detection, YoloState
-from src.service.vision_module.vision_annotation import draw_detections, draw_part_b_overlay
+from src.service.vision_module.vision_annotation import draw_detections, _face_labels
 from src.service.vision_module.vision_merger import (
     start_stream_merge, push_frame, stop_stream_merge,
 )
@@ -43,6 +44,52 @@ class FrameContext:
 # ── 类型别名 ──────────────────────────────────
 
 FrameHook = Callable[[FrameContext], Awaitable[None]]
+
+
+# ── 标注富化 ──────────────────────────────────
+
+def _bbox_iou(a: list[float], b: list[float]) -> float:
+    """Compute IoU between two bboxes [x1,y1,x2,y2]."""
+    x_left = max(a[0], b[0])
+    y_top = max(a[1], b[1])
+    x_right = min(a[2], b[2])
+    y_bottom = min(a[3], b[3])
+    if x_right <= x_left or y_bottom <= y_top:
+        return 0.0
+    inter = (x_right - x_left) * (y_bottom - y_top)
+    area_a = (a[2] - a[0]) * (a[3] - a[1])
+    area_b = (b[2] - b[0]) * (b[3] - b[1])
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _enrich_detection_labels(
+    detections: list[Detection],
+    tracks: list[Track] | None,
+    face_labels: dict[int, str],
+) -> None:
+    """Match person detections to ByteTrack tracks by IoU, set label_suffix.
+
+    Mutates detections in-place.  Only person-class detections get enriched.
+    """
+    if not tracks:
+        return
+    for det in detections:
+        if det.entity_type_id != YOLOEntityType.PERSON:
+            continue
+        best_track: Track | None = None
+        best_iou = 0.0
+        for track in tracks:
+            iou = _bbox_iou(det.bbox, track.bbox)
+            if iou > best_iou:
+                best_iou = iou
+                best_track = track
+        if best_track is not None and best_iou > 0.3:
+            parts = [f"ID {best_track.track_id}"]
+            face = face_labels.get(best_track.track_id)
+            if face:
+                parts.append(f"Face: {face}")
+            det.label_suffix = " ".join(parts)
 
 
 # ── Pipeline 调度器 ───────────────────────────
@@ -174,9 +221,9 @@ class AIPipeline:
                 except Exception:
                     logger.exception("Frame hook %s failed", getattr(hook, "__name__", hook))
 
-            # 标注叠加
+            # 标注叠加 — 一步到位：用 Track/Face 信息富化 Detection 标签，单遍绘制
+            _enrich_detection_labels(detections, ctx.tracks, _face_labels)
             annotated = draw_detections(frame, detections)
-            draw_part_b_overlay(frame, ctx.tracks if ctx.tracks else [])
 
             # 推流
             if self._merge_proc:

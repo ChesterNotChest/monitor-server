@@ -53,6 +53,7 @@ class Settings(BaseSettings):
 
     # --- AI 推理管线 ---
     FPS_TARGET: int = 15
+    YOLO_DEVICE: str = "cpu"
     YOLO_CONFIDENCE: float = 0.5
     YOLO_MODEL_PATH: str = "src/third-party/yolo/yolo11n.pt"
     STREAM_RECONNECT_MAX_RETRIES: int = 10

@@ -80,6 +80,8 @@ def draw_detections(frame: np.ndarray, detections: list[Detection]) -> np.ndarra
         x1, y1, x2, y2 = [int(v) for v in det.bbox]
         color = _bbox_color(det.entity_type_id)
         label = _ENTITY_LABELS.get(det.entity_type_id, f"#{det.entity_type_id}")
+        if det.label_suffix:
+            label = f"{label} {det.label_suffix}"
 
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
         _draw_label(annotated, label, x1, y1 - 10, color)
