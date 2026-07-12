@@ -1,10 +1,4 @@
-"""告警引擎 —— 订阅 EventBus → 汇聚活跃事件 → 匹配 ExceptionDef → 创建 SituationEvent。
-
-流程：
-    1. 订阅 EventBus 全部 5 个 event type
-    2. 内存活跃事件池 {event_type: [{payload, expires_at}, ...]}，TTL = ALERT_EVENT_TTL
-    3. 每 ALERT_CHECK_INTERVAL 检查：清理过期 → 收集活跃 → 匹配 ExceptionDef → 触发
-"""
+"""告警引擎 —— EventBus订阅 → 匹配 → 立刻推送告警 + 启动录制。"""
 
 from __future__ import annotations
 
@@ -13,17 +7,14 @@ import logging
 import time
 from dataclasses import dataclass
 
-from sqlalchemy.orm import Session
-
 from src.extensions import SessionLocal
-from src.service.vision_module.vision_event_bus import ENTITY, ACTION, SOUND, FACE, FENCE, RECORDING
+from src.service.vision_module.vision_event_bus import ENTITY, ACTION, SOUND, FACE, FENCE
 
-# ── 可配置常量 ──
+logger = logging.getLogger(__name__)
+
 ALERT_EVENT_TTL: float = 5.0
 ALERT_CHECK_INTERVAL: float = 5.0
 ALERT_COOLDOWN: float = 30.0
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,40 +24,26 @@ class _EventEntry:
 
 
 class AlertEngine:
-    """告警引擎 —— 单个 View 的告警规则匹配器。"""
-
     def __init__(self, view_id: int) -> None:
         self._view_id = view_id
-        self._pool: dict[str, list[_EventEntry]] = {
-            ENTITY: [], ACTION: [], SOUND: [], FACE: [], FENCE: [],
-        }
-        self._triggered: dict[tuple[int, int], float] = {}
+        self._pool = {ENTITY: [], ACTION: [], SOUND: [], FACE: [], FENCE: []}
+        self._triggered: dict[tuple[int, int, int], float] = {}
+        self._ongoing: dict[tuple[int, int, int], dict] = {}
         self._running = False
         self._task: asyncio.Task | None = None
 
     async def start(self) -> None:
-        """启动告警引擎：订阅 EventBus，启动定时检查。"""
         from src.service.vision_module.vision_event_bus import event_bus
-
         self._running = True
-        for event_type in self._pool:
-            await event_bus.subscribe(event_type, self._on_event)
+        for et in self._pool:
+            await event_bus.subscribe(et, self._on_event)
         self._task = asyncio.create_task(self._check_loop())
         logger.info("AlertEngine started for view %d", self._view_id)
 
     async def _on_event(self, payload: dict) -> None:
-        now = time.time()
-        event_type = payload.get("type", ENTITY)
-        if event_type in self._pool:
-            self._pool[event_type].append(_EventEntry(
-                payload=payload,
-                expires_at=now + ALERT_EVENT_TTL,
-            ))
-            logger.info(
-                "[AlertEngine v=%d] _on_event %s keys=%s pool_sizes=%s",
-                self._view_id, event_type, list(payload.keys()),
-                {k: len(v) for k, v in self._pool.items()},
-            )
+        et = payload.get("type", ENTITY)
+        if et in self._pool:
+            self._pool[et].append(_EventEntry(payload=payload, expires_at=time.time() + ALERT_EVENT_TTL))
 
     async def _check_loop(self) -> None:
         while self._running:
@@ -78,140 +55,160 @@ class AlertEngine:
 
     async def _check(self) -> None:
         now = time.time()
-
-        # 1. 清理过期
         for et in self._pool:
             self._pool[et] = [e for e in self._pool[et] if e.expires_at > now]
 
-        # 2. 收集活跃 ID
-        active_entities = self._collect_ids(ENTITY, "entity_type_ids")
-        active_actions = self._collect_ids(ACTION, "action_type_ids")
-        active_sounds = self._collect_ids(SOUND, "sound_type_ids")
-        active_faces = self._collect_ids(FACE, "face_result_ids")
-        active_fences = self._collect_ids(FENCE, "fence_event_ids")
+        ae = self._cids(ENTITY, "entity_type_ids")
+        aa = self._cids(ACTION, "action_type_ids")
+        as_ = self._cids(SOUND, "sound_type_ids")
+        af = self._cids(FACE, "face_result_ids")
+        afe = self._cids(FENCE, "fence_event_ids")
 
-        logger.info(
-            "[AlertEngine v=%d] _check pool=%s active: E=%s A=%s S=%s F=%s FE=%s",
-            self._view_id,
-            {k: len(v) for k, v in self._pool.items()},
-            active_entities, active_actions, active_sounds,
-            active_faces, active_fences,
-        )
-
-        if not any([active_entities, active_actions, active_sounds, active_faces, active_fences]):
-            logger.info("[AlertEngine v=%d] _check skip: no active ids", self._view_id)
+        if not any([ae, aa, as_, af, afe]):
+            self._end_inactive(set())
             return
 
-        # 3. 加载 ExceptionDef
         db = SessionLocal()
         try:
             from src.repository.exception_def_repo import ExceptionDefRepo
-            repo = ExceptionDefRepo(db)
-            exc_defs = repo.with_details() if hasattr(repo, "with_details") else repo.all()
+            excs = ExceptionDefRepo(db).with_details()
+            matched_now: set[tuple[int, int, int]] = set()
+            for exc in excs:
+                if not self._match(exc, ae, aa, as_, af, afe):
+                    continue
+                tid = self._ft(ENTITY, ae) or self._ft(FACE, af) or -1
+                key = (self._view_id, exc.id, tid)
+                matched_now.add(key)
 
-            logger.info(
-                "[AlertEngine v=%d] _check loaded %d ExceptionDef(s)",
-                self._view_id, len(exc_defs),
-            )
-            for exc in exc_defs:
-                detail = {
-                    "id": exc.id, "name": exc.name,
-                    "entities": [e.id for e in exc.entities] if hasattr(exc, "entities") and exc.entities else [],
-                    "actions": [a.id for a in exc.actions] if hasattr(exc, "actions") and exc.actions else [],
-                    "sounds": [s.id for s in exc.sounds] if hasattr(exc, "sounds") and exc.sounds else [],
-                    "face_result_id": exc.face_result_id,
-                    "fence_event_id": exc.fence_event_id,
-                }
-                matched = self._match(exc, active_entities, active_actions, active_sounds,
-                              active_faces, active_fences)
-                logger.info(
-                    "[AlertEngine v=%d] _match exc=%s detail=%s → %s",
-                    self._view_id, exc.id, detail, "MATCH" if matched else "miss",
-                )
-                if matched:
-                    await self._trigger(db, exc, now)
+                cd = getattr(exc, "cooldown_seconds", None) or ALERT_COOLDOWN
+                if key in self._triggered and now - self._triggered[key] < cd:
+                    self._triggered[key] = now
+                    if key in self._ongoing:
+                        self._keep_alive()
+                    continue
+
+                self._triggered[key] = now
+
+                if key not in self._ongoing:
+                    # 新告警 → 创建 SituationEvent + 启动录制 → 推送告警(含recording_id)
+                    try:
+                        from src.repository.situation_event_repo import SituationEventRepo
+                        event = SituationEventRepo(db).create(view_id=self._view_id, exception_id=exc.id)
+                        db.commit()  # 先提交释放写锁，否则 _start_rec 的 SQLite 写会被阻塞
+
+                        # 启动录制（立即创建Recording行，返回recording_id）
+                        mr = getattr(exc, "max_recording_seconds", 10) or 10
+                        wd = getattr(exc, "wind_down_seconds", 10) or 10
+                        rec_id = self._start_rec({
+                            "view_id": self._view_id, "exception_id": exc.id,
+                            "exception_name": getattr(exc, "name", None),
+                            "track_id": tid,
+                            "severity": getattr(exc, "severity", None).name if getattr(exc, "severity", None) else None,
+                        }, mr, wd)
+
+                        # 回填 recording_id
+                        if rec_id:
+                            event.recording_id = rec_id
+                            db.commit()
+                        logger.info("Alert: view=%d exc=%d id=%d track=%d rec=%s", self._view_id, exc.id, event.id, tid, rec_id)
+
+                        # WSS 推送（recording_id 已就绪，前端立即可回放）
+                        from src.network.wss.alert_handler import alert_registry
+                        try:
+                            await alert_registry.broadcast({
+                                "id": event.id, "view_id": event.view_id,
+                                "exception_id": event.exception_id,
+                                "exception_name": getattr(exc, "name", None),
+                                "track_id": tid,
+                                "timestamp": event.timestamp.isoformat() if event.timestamp else None,
+                                "severity": getattr(exc, "severity", None).name if getattr(exc, "severity", None) else None,
+                                "recording_id": rec_id,
+                            })
+                        except Exception:
+                            logger.exception("WSS broadcast failed")
+
+                        self._ongoing[key] = {}
+                    except Exception:
+                        logger.exception("Failed to create alert")
+                else:
+                    self._keep_alive()
+
+            self._end_inactive(matched_now)
         finally:
             db.close()
 
-    def _match(self, exc, active_entities, active_actions, active_sounds,
-               active_faces, active_fences) -> bool:
-        """AND 条件匹配。
+    # ── 录制（直连 replay_task） ──
 
-        def.entities ⊆ active_entities
-        AND def.actions ⊆ active_actions
-        AND def.sounds ⊆ active_sounds
-        AND (def.face_result_id IS NULL OR def.face_result_id ∈ active_faces)
-        AND (def.fence_event_id IS NULL OR def.fence_event_id ∈ active_fences)
-        """
+    def _start_rec(self, d: dict, mr: int, wd: int) -> int | None:
+        from src.service import replay_task
+        db2 = SessionLocal()
+        try:
+            return replay_task.alert_triggered(d["view_id"], db2, action="start",
+                                               max_recording_seconds=mr, wind_down_seconds=wd,
+                                               alert_details=d)
+        except Exception:
+            logger.exception("start_rec failed")
+            return None
+        finally:
+            db2.close()
+
+    def _keep_alive(self):
+        from src.service import replay_task
+        db2 = SessionLocal()
+        try:
+            replay_task.alert_triggered(self._view_id, db2, action="keep_alive")
+        except Exception:
+            logger.exception("keep_alive failed")
+        finally:
+            db2.close()
+
+    def _end_inactive(self, matched):
+        ended = set(self._ongoing.keys()) - matched
+        for key in ended:
+            self._ongoing.pop(key)
+            # 录制停止 → 重置冷却，下次可立即重新触发
+            self._triggered.pop(key, None)
+            from src.service import replay_task
+            db2 = SessionLocal()
+            try:
+                replay_task.alert_triggered(key[0], db2, action="end")
+            except Exception:
+                logger.exception("end_rec failed")
+            finally:
+                db2.close()
+
+    # ── 匹配 ──
+
+    def _match(self, exc, ae, aa, as_, af, afe) -> bool:
         if hasattr(exc, "entities") and exc.entities:
-            if not set(e.id for e in exc.entities).issubset(active_entities):
-                return False
+            if not set(e.id for e in exc.entities).issubset(ae): return False
         if hasattr(exc, "actions") and exc.actions:
-            if not set(a.id for a in exc.actions).issubset(active_actions):
-                return False
+            if not set(a.id for a in exc.actions).issubset(aa): return False
         if hasattr(exc, "sounds") and exc.sounds:
-            if not set(s.id for s in exc.sounds).issubset(active_sounds):
-                return False
-        if exc.face_result_id is not None and exc.face_result_id not in active_faces:
-            return False
-        if exc.fence_event_id is not None and exc.fence_event_id not in active_fences:
-            return False
+            if not set(s.id for s in exc.sounds).issubset(as_): return False
+        if exc.face_result_id is not None and exc.face_result_id not in af: return False
+        if exc.fence_event_id is not None and exc.fence_event_id not in afe: return False
         return True
 
-    async def _trigger(self, db: Session, exc, now: float) -> None:
-        dedup_key = (self._view_id, exc.id)
-
-        if dedup_key in self._triggered:
-            elapsed = now - self._triggered[dedup_key]
-            if elapsed < ALERT_COOLDOWN:
-                from src.service.vision_module.vision_event_bus import event_bus
-                await event_bus.publish(RECORDING, {
-                    "action": "keep_alive", "view_id": self._view_id,
-                })
-                return
-
-        self._triggered[dedup_key] = now
-
-        try:
-            from src.repository.situation_event_repo import SituationEventRepo
-            repo = SituationEventRepo(db)
-            event = repo.create(view_id=self._view_id, exception_id=exc.id)
-            logger.info(
-                "Alert triggered: view=%d exception=%d severity=%s id=%d",
-                self._view_id, exc.id, getattr(exc, "severity", None), event.id,
-            )
-
-            # 通过 WSS 实时推送告警到浏览器
-            try:
-                from src.network.wss.alert_handler import alert_registry
-                await alert_registry.broadcast({
-                    "id": event.id,
-                    "view_id": event.view_id,
-                    "exception_id": event.exception_id,
-                    "timestamp": event.timestamp.isoformat() if event.timestamp else None,
-                    "severity": getattr(exc, "severity", None).name if getattr(exc, "severity", None) else None,
-                })
-            except Exception:
-                logger.exception("Failed to broadcast alert via WSS")
-        except Exception:
-            logger.exception("Failed to create SituationEvent")
-
-    def _collect_ids(self, event_type: str, key: str) -> set[int]:
-        ids: set[int] = set()
-        for entry in self._pool[event_type]:
-            val = entry.payload.get(key, [])
-            if isinstance(val, list):
-                ids.update(val)
-            elif isinstance(val, int):
-                ids.add(val)
+    def _cids(self, et, key):
+        ids = set()
+        for e in self._pool[et]:
+            v = e.payload.get(key, [])
+            if isinstance(v, list): ids.update(v)
+            elif isinstance(v, int): ids.add(v)
         return ids
 
+    def _ft(self, et, active):
+        for e in self._pool[et]:
+            for x in e.payload.get("entities", []):
+                if isinstance(x, dict) and x.get("entity_type_id") in active:
+                    return x.get("track_id")
+            if e.payload.get("track_id"): return int(e.payload["track_id"])
+        return None
+
     async def stop(self) -> None:
-        """停止告警引擎。"""
         self._running = False
         from src.service.vision_module.vision_event_bus import event_bus
-        for event_type in self._pool:
-            await event_bus.unsubscribe(event_type, self._on_event)
-        if self._task is not None:
-            self._task.cancel()
-        logger.info("AlertEngine stopped for view %d", self._view_id)
+        for et in self._pool:
+            await event_bus.unsubscribe(et, self._on_event)
+        if self._task: self._task.cancel()
