@@ -63,6 +63,25 @@ python -u -m src.run
 | `DEBUG_WEB_STREAM=true` | 必设 | 推流到 :1935 SRS `/view/` 路径 |
 | `RTMP_PORT=1935` | 默认 | 与 SRS listen 端口一致，`.env` 中定义 |
 
+### 2.2.1 API 路径规则
+
+wwh 合并后路由路径已尽量统一，但各 router 定义仍有差异。**错用路径会触发 307 重定向 → Authorization header 丢失 → 401**。
+
+```
+路由 path="/"       → URL 带尾斜杠:    /api/v1/fences/  /api/v1/views/
+路由 path=""        → URL 不带尾斜杠:   /api/v1/persons  /api/v1/events
+路由 path="/{id}"   → URL 按原样:       /api/v1/views/1  /api/v1/fences/1/
+```
+
+| 端点 | 正确 URL |
+|------|---------|
+| 登录 | `POST /api/v1/auth/login` |
+| 创建设备 | `POST /api/v1/views/` |
+| 删除设备 | `DELETE /api/v1/views/{id}` |
+| 围栏 CRUD | 均带 `/`：`GET/POST /api/v1/fences/`、`PUT/DELETE /api/v1/fences/{id}/` |
+| 人员 CRUD | `GET/POST /api/v1/persons`、`POST /api/v1/persons/{id}/avatar` |
+| 事件 | `GET /api/v1/events` |
+
 ### 2.3 创建 View
 
 ```bash
@@ -107,11 +126,22 @@ vlc $VIEW.rtmp_url
 - [ ] obs 日志正常：`[obs] FPS=17.0 | r=0 y=16 hk=0 dr=0 ms | pipe=<50 age=<50ms`
 - [ ] 编码器确认：日志中 `Using encoder: h264_nvenc`
 - [ ] 帧删除 View 后可重建
+- [ ] Server 重启后自动恢复已有 View 管线（日志：`Auto-recovered N existing view pipeline(s)`）
 - [ ] 重连 VLC 不出现长时间快进
 
 ---
 
 ## 四、关键设计决策
+
+### SRS 单端口统一 ✅ (2026-07-12)
+- SRS 5.0 替代 node-media-server，所有流走 `:1935`
+- `/live/` = 原始流（Node 推入），`/view/` = AI 标注流（Server 推出）
+- :1936 废弃，`DEBUG_RTMP_PORT` 从配置读取（`settings.RTMP_PORT`）
+
+### View 管线自动恢复 ✅ (2026-07-12)
+- Server 重启后自动遍历 DB 中所有 View，恢复 AI 管线
+- `app.py` startup 事件中执行，`start_pipeline` 已有幂等保护
+- 日志验证：`Auto-recovered N existing view pipeline(s)`
 
 ### 一笔标注（单遍绘制）
 - 不改旧架构的两遍绘制（`draw_detections` + `draw_part_b_overlay`）

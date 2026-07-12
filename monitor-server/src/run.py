@@ -37,6 +37,10 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
     stream=sys.stderr,
 )
+# ── 告警调试：以下模块输出 DEBUG 级别日志 ──
+logging.getLogger("src.service.vision_module.vision_event_bus").setLevel(logging.DEBUG)
+logging.getLogger("src.service.alert_module.engine").setLevel(logging.DEBUG)
+logging.getLogger("src.service.audio_module.audio_yamnet").setLevel(logging.DEBUG)
 
 import uvicorn
 
