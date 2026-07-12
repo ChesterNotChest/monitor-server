@@ -240,11 +240,19 @@ def set_sound_label(label: str | None) -> None:
     _sound_time = _time.time() if label else 0.0
 
 
-def draw_sound_overlay(frame: np.ndarray) -> np.ndarray:
-    """在左下角绘制最近一次安全相关音频检测结果（持久化 + 经过时间）。
+def draw_server_timestamp(frame: np.ndarray) -> np.ndarray:
+    """左上角叠加 Server 处理时间戳（黄色），与 Node 右下角 drawtext 对比 = 端到端延迟。"""
+    import cv2 as _cv2
+    import time as _time
+    ts = _time.strftime("%H:%M:%S")
+    (tw, th), _ = _cv2.getTextSize(ts, _cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    _cv2.rectangle(frame, (4, 4), (tw + 10, th + 10), (0, 0, 0), -1)
+    _cv2.putText(frame, ts, (8, th + 6), _cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+    return frame
 
-    红底白字，显示格式: ``SOUND: Gunshot (3s ago)``。
-    """
+
+def draw_sound_overlay(frame: np.ndarray) -> np.ndarray:
+    """左下角音频检测标签（红字），格式 ``SOUND: Gunshot (3s ago)``。"""
     import cv2 as _cv2
     import time as _time
     global _sound_label, _sound_time
@@ -254,12 +262,10 @@ def draw_sound_overlay(frame: np.ndarray) -> np.ndarray:
     text = f"SOUND: {_sound_label} ({elapsed:.0f}s ago)"
     h, w = frame.shape[:2]
     (tw, th), _ = _cv2.getTextSize(text, _cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-    # 半透明背景
     overlay = frame.copy()
     _cv2.rectangle(overlay, (10, h - th - 16), (tw + 20, h - 4), (0, 0, 0), -1)
     _cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, dst=frame)
-    _cv2.putText(frame, text, (16, h - 10),
-                 _cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+    _cv2.putText(frame, text, (16, h - 10), _cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
     return frame
 
 

@@ -20,7 +20,7 @@ from src.service.vision_module.vision_frame_reader import FrameReader, FrameRead
 from src.service.vision_module.vision_yolo.detector import YoloDetector, Detection, YoloState
 from src.service.vision_module.vision_annotation import (
     draw_detections, draw_action_regions, draw_fence_polygons,
-    draw_sound_overlay,
+    draw_sound_overlay, draw_server_timestamp,
     _face_labels, _fence_labels, _action_labels,
 )
 from src.service.vision_module.vision_merger import (
@@ -303,15 +303,23 @@ class AIPipeline:
         while self._running:
             # ── 时钟门控：等够整拍再开始处理，消除 asyncio 拥堵偏差 ──
             _now = time.monotonic()
-            if self._next_frame_due == 0.0:
+            if self._next_frame_due <= 0.001:
                 self._next_frame_due = _now
             _wait = self._next_frame_due - _now
             if _wait > 0:
                 await asyncio.sleep(_wait)
-            elif _wait < -self._push_interval:
-                # 落后超过 1 帧：跳帧追赶
-                self._next_frame_due = time.monotonic()
-            self._next_frame_due += self._push_interval
+
+            # ── 缓冲排空：grab()（不解码）丢弃积压帧，追赶实时 ──
+            _target = self._next_frame_due
+            _drain_count = 0
+            while (_drain_count < 50 and
+                   (_target - time.monotonic()) < -self._push_interval):
+                if not self._reader.grab():
+                    break
+                _drain_count += 1
+            if _drain_count:
+                logger.info("[drain] dropped %d frames", _drain_count)
+            self._next_frame_due = time.monotonic() + self._push_interval
 
             _loop_frame_count += 1
             _t0 = time.monotonic()
@@ -382,7 +390,8 @@ class AIPipeline:
                 logger.info("[Fence] ctx.fence_polygons is None (process_frame not setting it?)")
             _t4 = time.monotonic()
 
-            # 音频事件叠加（左下角常驻）
+            # 诊断叠加：Server 时间戳（左上角）+ 音频事件（左下角）
+            annotated = draw_server_timestamp(annotated)
             annotated = draw_sound_overlay(annotated)
 
             # 推流 + 缓存用于断流时 frame hold

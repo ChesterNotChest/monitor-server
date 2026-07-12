@@ -139,6 +139,12 @@ class FrameReader:
         timestamp = time.time() - self._open_time
         return True, frame, timestamp, self._frame_id
 
+    def grab(self) -> bool:
+        """丢弃下一帧（不解码，仅抓取编码包）。比 read() 快，用于缓冲排空。"""
+        if self._cap is None:
+            return False
+        return self._cap.grab()
+
     def _read_internal(self) -> tuple[bool, np.ndarray | None]:
         """底层读取，直接取最新帧（不做跳帧窗口——RTMP read 本身已阻塞等帧）。"""
         if self._cap is None:
