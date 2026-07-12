@@ -84,7 +84,7 @@ pipeline {
                         case "$HOST_WORKSPACE" in
                             /var/jenkins_home/*) HOST_WORKSPACE="/home/liusu/jenkins/${HOST_WORKSPACE#/var/jenkins_home/}" ;;
                         esac
-                        test -d "$MODEL_DIR"
+                        docker run --rm -v "$MODEL_DIR:/models:ro" "$DOCKER_IMAGE:$IMAGE_TAG" test -d /models
                         docker network inspect servercicd_default >/dev/null
                         docker ps --filter name=monitor-mysql --format '{{.Names}} {{.Status}}' | grep -q '^monitor-mysql '
                         docker compose --project-directory "$HOST_WORKSPACE" -f "$HOST_WORKSPACE/$COMPOSE_FILE" up -d --remove-orphans
