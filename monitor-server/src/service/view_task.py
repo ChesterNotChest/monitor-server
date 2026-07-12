@@ -62,12 +62,13 @@ def create_view(
             "-c:v", "copy", "-c:a", "aac", "-f", "flv", push_url,
             "-y",
         ]
+        raw_merge_proc = None
         try:
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            raw_merge_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except FileNotFoundError:
             warnings.append("ffmpeg not found — cannot start view merge")
 
-        # 2) 如果 AI 依赖可用，额外启动 AI 推理管线（可选增强）
+        # 2) 如果 AI 依赖可用，启动 AI 推理管线并替换原始合流
         try:
             import asyncio
             import threading
@@ -93,8 +94,12 @@ def create_view(
                                                 audio_id, _audio_name))
             except RuntimeError:
                 threading.Thread(target=_launch, daemon=True).start()
+
+            # AI 管线已启动 — 终止原始合流，避免两路 ffmpeg 竞争同一 SRS 流
+            if raw_merge_proc is not None and raw_merge_proc.poll() is None:
+                raw_merge_proc.terminate()
         except ImportError:
-            pass  # AI 不可用，纯合流已足够
+            pass  # AI 不可用，原始合流保底
 
         return ViewResponse(
             id=view.id,
