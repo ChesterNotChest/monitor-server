@@ -332,6 +332,58 @@ RTMP_DEBUG=false
 SECRET_KEY=节点token
 ```
 
+### 5. 完整链路验证
+
+Server CD 部署成功后，只验证 `/health` 还不够。完整视频链路应按下面顺序确认：
+
+```text
+Node --WSS 经 nginx--> monitor-server
+Node --RTMP 推 raw 流--> SRS live
+monitor-server --RTMP 拉 raw 流--> SRS live
+monitor-server --RTMP 推处理后流--> SRS view
+Web --HTTP/WebRTC 拉流--> SRS view
+```
+
+关键现象：
+
+```text
+WSS 路由：/ws 或 /api/v1/ws，经 monitor-nginx 的 8081 进入
+raw 输入流：rtmp://stream-server:1935/live/{device_name}_{video|audio}_{id}
+处理后输出：rtmp://stream-server:1935/view/{view_id}
+公网播放地址：http://10.126.59.25:8082/rtc/v1/whep/?app=view&stream={view_id}
+```
+
+部署后可看日志确认：
+
+```bash
+docker logs --tail=200 monitor-app
+```
+
+正常应出现：
+
+```text
+[WSS] Auth complete
+FrameReader connected
+AIPipeline started
+FFmpeg merge
+push FPS
+```
+
+如果出现下面这种日志，表示 OpenCV/FFmpeg 把 RTMP 拉流误打开成 listen 模式：
+
+```text
+Cannot open connection tcp://stream-server:1935?listen&listen_timeout=...
+FrameReader failed to open rtmp://stream-server:1935/live/...
+```
+
+这时检查代码或容器环境里的 `OPENCV_FFMPEG_CAPTURE_OPTIONS`，应使用：
+
+```text
+rw_timeout;5000000
+```
+
+不要使用 `timeout;5000000`。
+
 ---
 
 ## 认证

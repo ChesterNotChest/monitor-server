@@ -27,8 +27,9 @@ if _yolo_device in ("", "cpu"):
 # 确保 YOLO_DEVICE 在 os.environ 中有确定值（下游 detector.py 依赖此变量）
 os.environ.setdefault("YOLO_DEVICE", _yolo_device)
 
-# OpenCV FFmpeg 超时（必须在 cv2 首次 import 之前设置，否则不生效）
-os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "timeout;5000000")
+# OpenCV FFmpeg RTMP 读超时（必须在 cv2 首次 import 之前设置，否则不生效）。
+# 使用 rw_timeout；timeout 在部分 OpenCV/FFmpeg 组合下会被误解析为 RTMP listen 模式。
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rw_timeout;5000000")
 
 import logging
 logging.basicConfig(

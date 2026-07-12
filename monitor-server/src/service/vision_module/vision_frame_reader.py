@@ -7,9 +7,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from contextlib import contextmanager
 from enum import Enum, auto
+
+# Keep in sync with src.run for tests/imports that bypass the normal entrypoint.
+# Use rw_timeout; timeout can make FFmpeg RTMP open in listen mode.
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rw_timeout;5000000")
 
 import cv2
 import numpy as np
@@ -72,8 +77,6 @@ class FrameReader:
         """
         url = build_pull_url(video_name, "video", video_id)
         logger.info("FrameReader connecting to %s", url)
-        import os
-        os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "timeout;5000000")
         self._cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
         if not self._cap.isOpened():
             logger.error("FrameReader failed to open %s", url)
