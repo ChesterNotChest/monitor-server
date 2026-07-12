@@ -38,4 +38,4 @@ def test_play_urls_use_public_srs_endpoint(monkeypatch):
 
     assert urls["rtmp_url"] == "rtmp://10.126.59.25:1935/view/7"
     assert urls["flv_url"] == "http://10.126.59.25:8082/view/7.flv"
-    assert urls["webrtc_url"] == "http://10.126.59.25:8082/rtc/v1/whep/?app=view&stream=7"
+    assert urls["webrtc_url"] == "http://10.126.59.25:1985/rtc/v1/whep/?app=view&stream=7"

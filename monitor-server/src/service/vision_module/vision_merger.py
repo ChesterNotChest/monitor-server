@@ -65,9 +65,13 @@ def _detect_encoder() -> str:
 
 
 def _build_push_url(view_id: int) -> str:
-    """构建最终合流 RTMP 推送地址。"""
+    """构建 AI 标注流 RTMP 推送地址。
+
+    调试模式走本地 RTMP（配置 RTMP_PORT，默认 1935，对应 SRS），
+    生产模式走 SRS（SRS_HOST:SRS_RTMP_PORT）。
+    """
     host = "127.0.0.1" if settings.DEBUG_WEB_STREAM else settings.SRS_HOST
-    port = 1936 if settings.DEBUG_WEB_STREAM else settings.SRS_RTMP_PORT
+    port = settings.RTMP_PORT if settings.DEBUG_WEB_STREAM else settings.SRS_RTMP_PORT
     return f"rtmp://{host}:{port}/view/{view_id}"
 
 
