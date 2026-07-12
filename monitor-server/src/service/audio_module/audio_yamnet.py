@@ -157,7 +157,7 @@ class YamnetRunner:
             if class_id < len(scores_np) and scores_np[class_id] > self._threshold:
                 await event_bus.publish(SOUND, {
                     "view_id": self._view_id,
-                    "sound_type": sound_type_val,
+                    "sound_type_ids": [sound_type_val],
                     "score": float(scores_np[class_id]),
                 })
 

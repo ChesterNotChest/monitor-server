@@ -180,6 +180,19 @@ class AlertEngine:
                 "Alert triggered: view=%d exception=%d severity=%s id=%d",
                 self._view_id, exc.id, getattr(exc, "severity", None), event.id,
             )
+
+            # 通过 WSS 实时推送告警到浏览器
+            try:
+                from src.network.wss.alert_handler import alert_registry
+                await alert_registry.broadcast({
+                    "id": event.id,
+                    "view_id": event.view_id,
+                    "exception_id": event.exception_id,
+                    "timestamp": event.timestamp.isoformat() if event.timestamp else None,
+                    "severity": getattr(exc, "severity", None).name if getattr(exc, "severity", None) else None,
+                })
+            except Exception:
+                logger.exception("Failed to broadcast alert via WSS")
         except Exception:
             logger.exception("Failed to create SituationEvent")
 

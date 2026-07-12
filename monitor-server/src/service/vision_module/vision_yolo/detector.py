@@ -149,5 +149,10 @@ class YoloDetector:
             for d in detections if d.entity_type_id is not None
         ]
         if entities:
-            await event_bus.publish(ENTITY, {"view_id": view_id, "entities": entities})
+            entity_type_ids = [e["entity_type_id"] for e in entities]
+            await event_bus.publish(ENTITY, {
+                "view_id": view_id,
+                "entities": entities,
+                "entity_type_ids": entity_type_ids,
+            })
         return detections

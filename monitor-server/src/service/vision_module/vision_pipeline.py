@@ -40,11 +40,11 @@ class FrameContext:
     frame: np.ndarray                # BGR24, (H, W, 3)
     frame_id: int                    # 单调递增
     timestamp: float                 # Unix 相对时间（秒）
+    view_id: int                     # 监控视图 ID
     detections: list[Detection]      # YOLO 原始输出
     tracks: list[Track] | None = None  # ByteTrack 产出（B 模块填充）
     action_regions: dict[int, tuple[int, int, int, int]] | None = None  # SlowFast padded crop
     fence_polygons: list[list[tuple[float, float]]] | None = None  # 围栏多边形
-    view_id: int = 0
 
 
 # ── 类型别名 ──────────────────────────────────
