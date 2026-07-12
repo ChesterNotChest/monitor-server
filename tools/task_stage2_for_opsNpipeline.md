@@ -60,11 +60,12 @@ obs:  r=0ms  y=16ms  hk=0ms  pipe=16ms  push=17fps  帧率对齐
 - [x] Face 标签增量更新（不清空已有标签）
 - [x] SlowFast 线程池：推理不阻塞主循环
 
-### 4.2 引导测试（待执行）
+### 4.2 引导测试 ✅ (2026-07-12)
 
-- [ ] 4.2.1 `POST /api/v1/persons/` 创建人物
-- [ ] 4.2.2 `POST /api/v1/persons/{id}/avatar` 上传头像
-- [ ] 4.2.3 重启管线 → VLC 观察 `Person ID N Face: {name}`
+- [x] 4.2.1 `POST /api/v1/persons/` 创建人物 Chester
+- [x] 4.2.2 `POST /api/v1/persons/{id}/avatar` 上传头像 → 128D encoding 入库
+- [x] 4.2.3 重启管线 → Face: Chester (track 1 & 42)
+- [x] ⚠️ dlib 上传时 SIGSEGV（§8.4），离线提取 encoding 绕过
 
 ## 五、音频合流缺口
 
@@ -82,7 +83,7 @@ obs:  r=0ms  y=16ms  hk=0ms  pipe=16ms  push=17fps  帧率对齐
 |------|------|------|
 | Node 累积延迟 | 修复中 | 采集 30fps→17fps + nobuffer + 4M；待验证 |
 | Fence 围栏标注 | ✅ 已测 | 2026-07-12 验证：`db.commit()` 修复后 TTL 重载正常，橙色半透明围栏成功绘制到流上 |
-| 时间戳嵌入 | 搁置 | §五音频合流前置，PTS/SEI 方案已讨论 |
+| 时间戳嵌入 | ✅ 减弱 | Node drawtext 始终在跑（`ffmpeg_dshow.py` line 90），延迟问题已通过 nobuffer+4M+GOP false+17fps 组合缓解，obs age=75ms 不影响。Server 侧 cv2.putText 方案未做 |
 | EventBus 订阅静默失败 | Workaround | `video_ai_processor.py` 直接更新全局 dict |
 | PyAV 替代 subprocess | 搁置 | 按需，当前 ffmpeg pipe 足够稳 |
 
@@ -90,7 +91,7 @@ obs:  r=0ms  y=16ms  hk=0ms  pipe=16ms  push=17fps  帧率对齐
 
 ### 7.1 围栏 CRUD
 
-所有操作需要 `fence:manage` 权限（`security_guard` / `operator` 角色）。**注意**：所有 URL 必须带尾斜杠 `/`（见 §8.2）。
+所有操作需要 `fence:manage` 权限（`security_guard` / `operator` 角色）。**URL 已统一**: wwh 合并后所有端点统一尾斜杠 `/`，307 问题已根治（§8.2）。
 
 ```powershell
 # 认证
@@ -190,19 +191,26 @@ FenceEngine.check() → FenceEvent
 
 **当前缺口**: 前端侧边栏需要主动轮询 `/events/`，暂无服务端推送。Node ↔ Server 已有 WSS 通道，前端 ↔ Server 的 WSS 推送可复用类似模式（非本阶段范围）。
 
-### 7.4 其他常用 API 路径
+### 7.4 常用 API 路径
 
-| 方法 | 路径 | 用途 | 权限 |
-|------|------|------|------|
+| 方法 | 正确 URL | 用途 | 权限 |
+|------|---------|------|------|
+| POST | `/api/v1/auth/login` | 登录 | — |
+| GET | `/api/v1/auth/me` | 当前用户 | — |
 | GET | `/api/v1/nodes/` | 列出节点 | — |
 | GET | `/api/v1/nodes/{id}/videos/` | 节点的视频设备 | — |
-| POST | `/api/v1/views/` | 创建监控视图 | — |
+| POST | `/api/v1/views/` | 创建视图 | — |
 | GET | `/api/v1/views/` | 列出视图 | — |
 | DELETE | `/api/v1/views/{id}/` | 删除视图 | — |
-| POST | `/api/v1/persons/` | 创建人员 | — |
-| POST | `/api/v1/persons/{id}/avatar/` | 上传人员头像 | — |
-| GET | `/api/v1/events/` | 事件日志（支持?view_id=） | — |
-| GET | `/api/v1/auth/me/` | 当前用户信息 | — |
+| GET | `/api/v1/fences/` | 列出围栏 | fence:manage |
+| POST | `/api/v1/fences/` | 创建围栏 | fence:manage |
+| PUT | `/api/v1/fences/{id}/` | 更新围栏 | fence:manage |
+| DELETE | `/api/v1/fences/{id}/` | 删除围栏 | fence:manage |
+| GET | `/api/v1/persons` | 列出人员 | — |
+| POST | `/api/v1/persons` | 创建人员 | — |
+| POST | `/api/v1/persons/{id}/avatar` | 上传头像 (multipart) | — |
+| GET | `/api/v1/events` | 事件日志（?view_id=） | — |
+| GET | `/api/v1/alerts` | 告警列表 | alert:list |
 
 ## 八、踩坑记录
 
@@ -221,21 +229,20 @@ FenceEngine.check() → FenceEvent
 
 **同类风险**: `detection_task.py` 等其他 Service 可能同有遗漏，待排查。
 
-### 8.2 尾斜杠 307 重定向 → 丢失 CORS / Authorization 头 (2026-07-11/12)
+### 8.2 尾斜杠 307 重定向 → 丢失 CORS / Authorization 头 ✅ (2026-07-12)
 
 **现象 A（前端）**: 浏览器请求 `/api/v1/views`（无尾斜杠）→ FastAPI 307 重定向到 `/api/v1/views/` → 307 响应不含 `Access-Control-Allow-Origin` → 浏览器 CORS 报错
 
-**现象 B（API / 脚本）**: `GET /api/v1/fences` → 307 → 重定向后新请求不保留 Authorization header → 401 Not authenticated
+**现象 B（API / 脚本）**: `GET /api/v1/fences/`（带尾斜杠）→ 307 重定向到 `/api/v1/fences` → 新请求不保留 Authorization header → 401
 
-**根因**: Starlette 的尾斜杠重定向在 CORSMiddleware 之前处理，307 响应不经过 CORS 中间件。
+**根因**: Starlette 的尾斜杠重定向在 CORSMiddleware 之前处理。不同 router 定义了不同的 path 风格（`""` vs `"/"`），导致 URL 格式不统一。
 
-**修复（前端）**: `client.ts` 所有请求统一加尾斜杠 `/`（已由前端对齐员完成，@2026-07-11）
+**修复** (wwh 分支, 2026-07-12): 所有 router 路径统一使用 `"/"` 后缀：
+- `fence_router`: `""` → `"/"`，`"/{fence_id}"` → `"/{fence_id}/"`
+- 其他 router 同模式
+- 效果：所有 API URL 统一带尾斜杠 `/`，307 重定向不再发生
 
-**规避（后端脚本）**: 所有 API 调用都用尾斜杠路径：
-```
-✅ http://127.0.0.1:8002/api/v1/fences/       ← 带 /
-❌ http://127.0.0.1:8002/api/v1/fences        ← 无 /，触发 307
-```
+**前端**: 合并 wwh 后所有端点都用尾斜杠 `/` 即可，无需逐个确认。
 
 ### 8.3 Server 重启后 Node 设备 ID 偏移
 
@@ -244,3 +251,15 @@ FenceEngine.check() → FenceEvent
 **根因**: Node 的 device_id 由 Server WSS 下发映射表决定。Server DB 清空后设备重新注册，但 Node 未同步收到更新。
 
 **规避**: Server 重建 DB 后需同步重启 Node。
+
+### 8.4 dlib SIGSEGV 崩溃 → 头像上传 API 不稳定 ✅ (2026-07-12)
+
+**现象**: `POST /api/v1/persons/{id}/avatar` 时 Server 进程 SIGSEGV 崩溃退出（无 HTTP 响应，curl 报 exit 56）
+
+**根因**: `extract_face_encoding()` 把全尺寸 JPEG 直塞 `face_encodings(image)`，dlib C 层 `compute_face_descriptor` 在 Windows 上处理大图时 SIGSEGV。管线没崩是因为只传 50~150px 的人脸 crop。
+
+**修复** (`face_image.py`): 借鉴管线同款路径——先 `face_locations` 找人脸 → `ascontiguousarray` crop → `face_encodings(crop, locations)`，ABI 不兼容时回退不带 locations。
+```
+之前: load_image_file → face_encodings(full_img)        → SIGSEGV
+现在: load_image_file → face_locations → crop → encode  → HTTP 200 ✅
+```

@@ -130,6 +130,14 @@ def delete_view(db: Session, view_id: int) -> bool:
         video_id = view.video_id
         audio_id = view.audio_id
 
+        # 先清围栏——围栏生命周期包含于 View
+        from sqlalchemy import select
+        from src.repository.electronic_fence_repo import ElectronicFenceRepo
+        from src.models.electronic_fence import ElectronicFence
+        fence_repo = ElectronicFenceRepo(db)
+        for fence in db.scalars(select(ElectronicFence).where(ElectronicFence.view_id == view_id)).all():
+            fence_repo.delete(fence.id)
+
         view_repo.delete(view_id)
         stop_merge(view_id)
         check_and_stop_stream(db, "video", video_id)

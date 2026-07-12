@@ -99,13 +99,33 @@ def extract_face_encoding(person_id: int) -> str | None:
         return None
 
     try:
+        # 用管线同款路径：先找人脸位置 → crop → 再编码（避免全尺寸图直塞 dlib SIGSEGV）
         image = face_recognition.load_image_file(str(avatar_file))
-        encodings = face_recognition.face_encodings(image)
-        if not encodings:
+        locations = face_recognition.face_locations(image)
+        if not locations:
             logger.warning("No face found in avatar for person %d", person_id)
             return None
-        # 取第一张脸的特征向量
-        vector = np.asarray(encodings[0], dtype=float)
+
+        top, right, bottom, left = locations[0]
+        crop = np.ascontiguousarray(image[top:bottom, left:right])
+
+        encoding = None
+        try:
+            encodings = face_recognition.face_encodings(crop,
+                                                         known_face_locations=[(0, right - left, bottom - top, 0)])
+            if encodings:
+                encoding = encodings[0]
+        except TypeError:
+            # dlib ABI 不兼容时回退：不带 locations 参数
+            logger.debug("dlib location-bound encoding failed, retrying without locations")
+            encodings = face_recognition.face_encodings(crop)
+            if encodings:
+                encoding = encodings[0]
+
+        if encoding is None:
+            logger.warning("Face found but encoding failed for person %d", person_id)
+            return None
+        vector = np.asarray(encoding, dtype=float)
         return json.dumps(vector.tolist())
     except Exception:
         logger.exception("Failed to extract face encoding for person %d", person_id)
