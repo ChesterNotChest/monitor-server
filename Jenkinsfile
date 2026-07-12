@@ -48,10 +48,16 @@ pipeline {
 
         stage("Test") {
             steps {
-                sh '''
-                    set -eu
-                    docker run --rm ${DOCKER_IMAGE}:${BUILD_NUMBER} python -m pytest src/tests/ --tb=short
-                '''
+                withEnv(["MODEL_DIR=${params.MODEL_DIR}"]) {
+                    sh '''
+                        set -eu
+                        test -f "$MODEL_DIR/yolo/yolo11n.pt"
+                        docker run --rm \
+                          -v "$MODEL_DIR:/app/src/third-party:ro" \
+                          ${DOCKER_IMAGE}:${BUILD_NUMBER} \
+                          python -m pytest src/tests/ --tb=short
+                    '''
+                }
             }
         }
 
