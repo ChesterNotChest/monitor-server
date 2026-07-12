@@ -58,7 +58,8 @@ class Detection:
     class_id: int            # 原始 COCO class_id
     confidence: float        # 置信度 0-1
     entity_type_id: int | None  # 映射后的 EntityType id，非关注类为 None
-    label_suffix: str | None = None  # 附加标签（Track ID / Face / Action / Fence）
+    label_suffix: str | None = None  # 附加标签（PID / Face / Fence / Action）
+    alert_level: int = 0     # 0=normal(绿) 1=important(黄) 2=danger(红)
 
 
 class YoloDetector:

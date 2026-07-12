@@ -15,7 +15,7 @@ from typing import Awaitable, Callable
 import numpy as np
 
 from src.config import settings
-from src.constants import YOLOEntityType
+from src.constants import YOLOEntityType, SlowFastActionType
 from src.service.vision_module.vision_frame_reader import FrameReader, FrameReaderState
 from src.service.vision_module.vision_yolo.detector import YoloDetector, Detection, YoloState
 from src.service.vision_module.vision_annotation import (
@@ -53,7 +53,7 @@ class FrameContext:
 FrameHook = Callable[[FrameContext], Awaitable[None]]
 
 
-# ── 标注富化 ──────────────────────────────────
+# ── 标注富化 + 三级显示策略 ────────────────────
 
 def _bbox_iou(a: list[float], b: list[float]) -> float:
     """Compute IoU between two bboxes [x1,y1,x2,y2]."""
@@ -70,6 +70,39 @@ def _bbox_iou(a: list[float], b: list[float]) -> float:
     return inter / union if union > 0 else 0.0
 
 
+# 危险动作 → 红框 + ! 标签
+_DANGER_ACTIONS = {
+    SlowFastActionType.FIGHTING: "Fighting",
+    SlowFastActionType.FALLING: "Falling",
+    SlowFastActionType.SMOKING: "Smoking",
+    SlowFastActionType.LYING_DOWN: "Lying_down",
+    SlowFastActionType.RUNNING: "Running",
+}
+
+# 重要动作 → 黄框
+_IMPORTANT_ACTIONS = {
+    SlowFastActionType.CLIMBING: "Climbing",
+    SlowFastActionType.THROWING: "Throwing",
+    SlowFastActionType.PUSHING: "Pushing",
+    SlowFastActionType.LOITERING: "Loitering",
+    SlowFastActionType.CROWDING: "Crowding",
+    SlowFastActionType.POINTING: "Pointing",
+    SlowFastActionType.WAVING: "Waving",
+    SlowFastActionType.HUGGING: "Hugging",
+}
+
+# 危险实体 → 红框（非 Person 类）
+_DANGER_ENTITIES = {YOLOEntityType.KNIFE}
+
+# 不显示的实体（非 Person、非 Knife 的杂物）
+_SUPPRESSED_ENTITIES = {
+    YOLOEntityType.CAR, YOLOEntityType.TRUCK, YOLOEntityType.BUS,
+    YOLOEntityType.MOTORCYCLE, YOLOEntityType.BICYCLE,
+    YOLOEntityType.DOG, YOLOEntityType.CAT, YOLOEntityType.BIRD,
+    YOLOEntityType.BACKPACK, YOLOEntityType.SUITCASE,
+}
+
+
 def _enrich_detection_labels(
     detections: list[Detection],
     tracks: list[Track] | None,
@@ -77,17 +110,26 @@ def _enrich_detection_labels(
     fence_labels: dict[int, str] | None = None,
     action_labels: dict[int, str] | None = None,
 ) -> None:
-    """Match person detections to ByteTrack tracks by IoU, set label_suffix.
+    """三级标注策略：危险(红) > 重要(黄) > 抑制(不显示)。
 
-    Mutates detections in-place.  Only person-class detections get enriched.
+    每条 Person 检测最多附加 3 个属性标签。框颜色取最高优先级的属性。
+    Knife → 红框。其他非 Person 实体 → 不绘制。
     """
     if not tracks:
         return
     fence_labels = fence_labels or {}
     action_labels = action_labels or {}
+
     for det in detections:
+        # 非 Person 实体 → Knife 危险，其余抑制
         if det.entity_type_id != YOLOEntityType.PERSON:
+            if det.entity_type_id in _DANGER_ENTITIES:
+                det.alert_level = 2  # 红框
+                det.label_suffix = _ENTITY_LABEL(det.entity_type_id)
+            # else: 不设 label_suffix → draw_detections 跳过
             continue
+
+        # Person：IoU 匹配 ByteTrack
         best_track: Track | None = None
         best_iou = 0.0
         for track in tracks:
@@ -95,24 +137,65 @@ def _enrich_detection_labels(
             if iou > best_iou:
                 best_iou = iou
                 best_track = track
-        if best_track is not None and best_iou > 0.3:
-            tid = best_track.track_id
-            parts = [f"ID {tid}"]
-            face = face_labels.get(tid)
-            if face:
-                parts.append(f"Face: {face}")
-            fence = fence_labels.get(tid)
-            if fence:
-                parts.append(fence)
-            action = action_labels.get(tid)
-            if action:
-                parts.append(action)
-            det.label_suffix = " ".join(parts)
-        if any(d.label_suffix for d in detections if d.entity_type_id == YOLOEntityType.PERSON):
-            logger.debug("[Enrich] face=%s fence=%s action=%s",
-                         {k: v for k, v in face_labels.items()},
-                         {k: v for k, v in fence_labels.items()},
-                         {k: v for k, v in action_labels.items()})
+
+        if best_track is None or best_iou <= 0.3:
+            continue
+
+        tid = best_track.track_id
+        parts: list[tuple[int, str]] = []  # (level, text), 0=info 1=important 2=danger
+
+        # Face — Stranger → 黄框，命名对象 → 黄框
+        face = face_labels.get(tid)
+        if face:
+            parts.append((1, f"Face: {face}"))
+            det.alert_level = max(det.alert_level, 1)
+
+        # Fence — 围栏入侵 → 红框
+        fence = fence_labels.get(tid)
+        if fence:
+            parts.append((2, fence))
+            det.alert_level = max(det.alert_level, 2)
+
+        # Action — 三级分类
+        action = action_labels.get(tid)
+        if action:
+            for act_name in action.split("|"):
+                act = _classify_action(act_name)
+                if act is None:
+                    continue  # 抑制
+                level, label = act
+                parts.append((level, label))
+                det.alert_level = max(det.alert_level, level)
+
+        # 按优先级排序（危险在前），最多 3 个属性
+        parts.sort(key=lambda x: (-x[0], x[1]))
+        attr_text = " ".join(label for _, label in parts[:3])
+
+        # 标签格式: "1  Face: Stranger  ! Fighting" (ID 直接数字)
+        base = str(tid)
+        det.label_suffix = f"{base}  {attr_text}" if attr_text else base
+
+
+def _ENTITY_LABEL(entity_type_id: int) -> str:
+    """实体类型 → 显示名。"""
+    names = {
+        YOLOEntityType.PERSON: "Person",
+        YOLOEntityType.KNIFE: "Knife",
+    }
+    return names.get(entity_type_id, f"#{entity_type_id}")
+
+
+def _classify_action(name: str) -> tuple[int, str] | None:
+    """动作名 → (level, label) 或 None（抑制）。"""
+    try:
+        atype = SlowFastActionType[name.upper()]
+    except (KeyError, ValueError):
+        return None
+    if atype in _DANGER_ACTIONS:
+        return (2, f"! {_DANGER_ACTIONS[atype]}")
+    if atype in _IMPORTANT_ACTIONS:
+        return (1, _IMPORTANT_ACTIONS[atype])
+    return None  # Walking/Standing/Sitting → 抑制
 
 
 # ── Pipeline 调度器 ───────────────────────────

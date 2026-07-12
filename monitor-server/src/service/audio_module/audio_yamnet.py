@@ -308,8 +308,17 @@ class YamnetRunner:
         else:
             set_sound_label(None)  # 无危险时清除
 
-        # 4. EventBus 发布（沿用旧 SOUND_TYPE_MAP，供 AlertEngine）
+        # 4. EventBus 发布 — 独立危险 + 组合标签（供 AlertEngine 跨模态融合）
         had_alert = False
+        for score, name in dangers:
+            had_alert = True
+            await event_bus.publish(SOUND, {
+                "type": SOUND,
+                "view_id": self._view_id,
+                "sound_name": name,       # "Screaming" / "Fighting" / "Riot" ...
+                "score": score,
+            })
+        # 同时发布旧 SOUND_TYPE_MAP 格式（兼容现有 AlertEngine 规则）
         for sound_type_val, class_id in SOUND_TYPE_MAP.items():
             if class_id < len(scores_np) and scores_np[class_id] > self._threshold:
                 had_alert = True

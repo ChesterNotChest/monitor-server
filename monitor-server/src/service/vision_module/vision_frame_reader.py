@@ -13,8 +13,17 @@ from contextlib import contextmanager
 from enum import Enum, auto
 
 # Keep in sync with src.run for tests/imports that bypass the normal entrypoint.
-# Use rw_timeout; timeout can make FFmpeg RTMP open in listen mode.
-os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rw_timeout;5000000")
+# Low-latency RTMP: disable ffmpeg buffering, tiny RTMP buffer, live mode.
+os.environ.setdefault(
+    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+    "rw_timeout;5000000|"
+    "fflags;nobuffer|"
+    "flags;low_delay|"
+    "analyzeduration;0|"
+    "probesize;32|"
+    "rtmp_live;live|"
+    "buffer_size;65536",
+)
 
 import cv2
 import numpy as np

@@ -20,23 +20,14 @@ from src.service.vision_module.vision_types import Track
 logger = logging.getLogger(__name__)
 
 # ── 配色方案 ──────────────────────────────────
-_COLOR_PERSON = (0, 255, 0)       # 绿色 — 人
-_COLOR_OBJECT = (0, 0, 255)       # 红色 — 物品/危险物
+_COLOR_NORMAL = (0, 255, 0)       # 绿色 — 正常
+_COLOR_IMPORTANT = (0, 215, 255)  # 黄色 — 关注
+_COLOR_DANGER = (0, 0, 255)       # 红色 — 危险
 _COLOR_TEXT = (255, 255, 255)     # 白色文字
 _COLOR_LABEL_BG = (0, 0, 0)       # 文字背景黑色
 
 _ENTITY_LABELS: dict[int, str] = {
     YOLOEntityType.PERSON: "Person",
-    YOLOEntityType.CAR: "Car",
-    YOLOEntityType.TRUCK: "Truck",
-    YOLOEntityType.BUS: "Bus",
-    YOLOEntityType.MOTORCYCLE: "Moto",
-    YOLOEntityType.BICYCLE: "Bike",
-    YOLOEntityType.DOG: "Dog",
-    YOLOEntityType.CAT: "Cat",
-    YOLOEntityType.BIRD: "Bird",
-    YOLOEntityType.BACKPACK: "Bag",
-    YOLOEntityType.SUITCASE: "Case",
     YOLOEntityType.KNIFE: "Knife",
 }
 
@@ -96,29 +87,36 @@ except RuntimeError:
     pass  # 无运行中的 event loop（如测试导入）
 
 
-def _bbox_color(entity_type_id: int | None) -> tuple[int, int, int]:
-    """实体类型 → 框颜色。PERSON 绿色，其余红色。"""
-    if entity_type_id == YOLOEntityType.PERSON:
-        return _COLOR_PERSON
-    return _COLOR_OBJECT
+def _alert_color(level: int) -> tuple[int, int, int]:
+    """alert_level → 框颜色。0=绿 1=黄 2=红。"""
+    if level >= 2:
+        return _COLOR_DANGER
+    if level == 1:
+        return _COLOR_IMPORTANT
+    return _COLOR_NORMAL
 
 
 def draw_detections(frame: np.ndarray, detections: list[Detection]) -> np.ndarray:
-    """在帧上绘制 YOLO 实体框和标签。返回新帧（不修改原帧）。"""
+    """在帧上绘制检测框和标签。
+
+    三级着色：danger(红) > important(黄) > normal(绿)。
+    label_suffix 为 None 的检测跳过（抑制的实体）。
+    """
     annotated = frame.copy()
+    drawn = 0
 
     for det in detections:
-        if det.entity_type_id is None:
+        if det.label_suffix is None:
             continue
+        drawn += 1
         x1, y1, x2, y2 = [int(v) for v in det.bbox]
-        color = _bbox_color(det.entity_type_id)
-        label = _ENTITY_LABELS.get(det.entity_type_id, f"#{det.entity_type_id}")
-        if det.label_suffix:
-            label = f"{label} {det.label_suffix}"
+        color = _alert_color(det.alert_level)
+        label = det.label_suffix
 
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
         _draw_label(annotated, label, x1, y1 - 10, color)
 
+    logger.info("[Draw] total=%d drawn=%d", len(detections), drawn)
     return annotated
 
 
