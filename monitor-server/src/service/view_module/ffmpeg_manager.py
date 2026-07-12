@@ -33,7 +33,7 @@ def _get_merge_urls(
     except ImportError:
         video_url = f"rtmp://{settings.RTMP_HOST}:{settings.RTMP_PORT}/live/video_{video_id}"
         audio_url = f"rtmp://{settings.RTMP_HOST}:{settings.RTMP_PORT}/live/audio_{audio_id}"
-        push_url = f"rtmp://127.0.0.1:1936/view/{view_id}"
+        push_url = f"rtmp://127.0.0.1:{settings.RTMP_PORT}/view/{view_id}"
 
     return video_url, audio_url, push_url
 

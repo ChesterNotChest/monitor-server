@@ -209,5 +209,24 @@ def draw_action_regions(
     return annotated
 
 
+_COLOR_FENCE = (0, 165, 255)  # 橙色 — 围栏边界
+
+
+def draw_fence_polygons(
+    frame: np.ndarray,
+    polygons: list[list[tuple[float, float]]],
+) -> np.ndarray:
+    """在帧上绘制围栏多边形（橙色填充 + 边界线）。"""
+    import cv2
+    annotated = frame.copy()
+    overlay = annotated.copy()
+    for coords in polygons:
+        pts = np.array([(int(x), int(y)) for x, y in coords], dtype=np.int32)
+        if len(pts) >= 3:
+            cv2.fillPoly(overlay, [pts], _COLOR_FENCE)
+    cv2.addWeighted(overlay, 0.2, annotated, 0.8, 0, dst=annotated)
+    return annotated
+
+
 # late import after defining _bbox_color
 import cv2

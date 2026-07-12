@@ -17,7 +17,7 @@ class ElectronicFence(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     view_id: Mapped[int] = mapped_column(
-        ForeignKey("monitor_views.id", ondelete="RESTRICT"), nullable=False, index=True,
+        ForeignKey("monitor_views.id", ondelete="CASCADE"), nullable=False, index=True,
     )
     coords: Mapped[list] = mapped_column(JSON, nullable=False)
     dwell_time: Mapped[int] = mapped_column(Integer, default=10)

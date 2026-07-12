@@ -3,8 +3,10 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 dist/
+objs/
 build/
 *.egg
+*.jpg
 
 # ===== 虚拟环境 / Conda =====
 .venv/
@@ -57,3 +59,4 @@ monitor-server/Ultralytics/
 monitor-server/src/third-party/*
 !monitor-server/src/third-party/.gitkeep
 !monitor-server/src/third-party/download_weights.py
+condaenv.*.requirements.txt

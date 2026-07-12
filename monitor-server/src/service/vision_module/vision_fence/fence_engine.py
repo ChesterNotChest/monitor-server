@@ -50,6 +50,8 @@ class FenceEngine:
     ) -> None:
         self.view_id = view_id
         self._fences: list[_FenceConfig] = []
+        self._fences_loaded_at: float = 0.0
+        self._fences_ttl: float = 5.0  # 5 秒重载一次围栏
         self._windows: defaultdict[tuple[int, int], deque[tuple[float, bool]]] = defaultdict(deque)
         self._states: defaultdict[tuple[int, int], FenceState] = defaultdict(lambda: FenceState.NOT_ENTERED)
         self._leave_counts: defaultdict[tuple[int, int], int] = defaultdict(int)
@@ -58,6 +60,22 @@ class FenceEngine:
             self._fences = [self._coerce_fence(fence) for fence in fences]
         elif db is not None:
             self.load_fences(db)
+
+    @property
+    def fence_polygons(self) -> list[list[tuple[float, float]]]:
+        """Return all fence polygon coordinates for drawing. TTL auto-reload."""
+        import time
+        import logging
+        _logger = logging.getLogger(__name__)
+        _now = time.monotonic()
+        if _now - self._fences_loaded_at >= self._fences_ttl:
+            from src.extensions import SessionLocal
+            with SessionLocal() as db:
+                self.load_fences(db)
+            self._fences_loaded_at = _now
+            _logger.info("[Fence] TTL reload: %d fence(s) loaded for view %d",
+                          len(self._fences), self.view_id)
+        return [fence.coords for fence in self._fences]
 
     def load_fences(self, db: Session) -> None:
         rows = db.scalars(
@@ -88,14 +106,16 @@ class FenceEngine:
                             entered=True,
                         ))
                 elif self._leave_counts[key] >= fence.leave_frames:
-                    self._states[key] = FenceState.NOT_ENTERED
-                    self._leave_counts[key] = 0
+                    self._drop_key(key)
                     events.append(FenceEvent(
                         fence_id=fence.id,
                         track_id=track.track_id,
                         result=FenceEventResult.ENTERED,
                         entered=False,
                     ))
+        # 清理已消失的 track（人走出画面）
+        active_ids = {t.track_id for t in tracks}
+        events.extend(self._cleanup_stale(active_ids, frame_timestamp))
         return events
 
     async def check_and_publish(
@@ -103,6 +123,14 @@ class FenceEngine:
         tracks: list[Track],
         frame_timestamp: float,
     ) -> list[FenceEvent]:
+        # 5 秒缓存：围栏配置低频变更，不必每帧查 DB
+        import time
+        _now = time.monotonic()
+        if _now - self._fences_loaded_at >= self._fences_ttl:
+            from src.extensions import SessionLocal
+            with SessionLocal() as db:
+                self.load_fences(db)
+            self._fences_loaded_at = _now
         events = self.check(tracks, frame_timestamp)
         if events:
             await event_bus.publish(
@@ -141,6 +169,51 @@ class FenceEngine:
         if not window:
             return 0.0
         return sum(1 for _, value in window if value) / len(window)
+
+    def _drop_key(self, key: tuple[int, int]) -> None:
+        """Delete all state for a (fence, track) pair — return to default silence."""
+        self._states.pop(key, None)
+        self._leave_counts.pop(key, None)
+        self._windows.pop(key, None)
+
+    def _cleanup_stale(
+        self,
+        active_ids: set[int],
+        frame_timestamp: float,
+    ) -> list[FenceEvent]:
+        """Generate leave events for tracks that disappeared from frame.
+
+        Uses the last window timestamp: if the track hasn't been seen for
+        longer than the fence's ``dwell_time``, it's considered gone.
+        """
+        events: list[FenceEvent] = []
+        for (fence_id, track_id), state in list(self._states.items()):
+            if track_id in active_ids:
+                continue
+            window = self._windows.get((fence_id, track_id))
+            if not window:
+                self._drop_key((fence_id, track_id))
+                continue
+            fence = self._find_fence(fence_id)
+            if fence is None:
+                self._drop_key((fence_id, track_id))
+                continue
+            if frame_timestamp - window[-1][0] > fence.dwell_time:
+                if state == FenceState.ENTERED:
+                    events.append(FenceEvent(
+                        fence_id=fence_id,
+                        track_id=track_id,
+                        result=FenceEventResult.ENTERED,
+                        entered=False,
+                    ))
+                self._drop_key((fence_id, track_id))
+        return events
+
+    def _find_fence(self, fence_id: int) -> _FenceConfig | None:
+        for f in self._fences:
+            if f.id == fence_id:
+                return f
+        return None
 
     def _coerce_fence(self, fence: ElectronicFence | _FenceConfig) -> _FenceConfig:
         if isinstance(fence, _FenceConfig):

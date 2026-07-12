@@ -294,6 +294,7 @@ async def test_fence_engine_enters_and_resets_after_leave_frames() -> None:
         leave_frames=2,
     )
     engine = FenceEngine(view_id=2, fences=[fence])
+    engine._fences_loaded_at = 999999.0  # 绕过 TTL DB 重载
     inside = [Track([10, 10, 50, 50], track_id=4, score=0.9)]
     outside = [Track([200, 200, 250, 250], track_id=4, score=0.9)]
 
@@ -326,6 +327,7 @@ async def test_video_ai_processor_registers_frame_hook_and_sets_tracks() -> None
     processor = register_video_ai_hooks(pipeline, view_id=1)
     processor.face_recognizer._face_lib = None
     processor.fence_engine._fences = []
+    processor.fence_engine._fences_loaded_at = 999999.0  # 绕过 TTL DB 重载
     processor.slowfast_runner.clip_length = 99
 
     ctx = SimpleNamespace(

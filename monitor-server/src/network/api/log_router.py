@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from src.constants import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from src.extensions import get_db
 from src.middleware.rbac import require_permission
-from src.schema.http.log_schema import LogEntry, LogListResponse
+from src.schema.http.log import LogEntryResponse as LogEntry, LogListResponse
 from src.service import log_task
 
 router = APIRouter(prefix="/logs", tags=["系统日志"])

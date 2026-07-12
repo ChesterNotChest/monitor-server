@@ -1,22 +1,40 @@
 # 模式二 Playbook：AI 标注流全链路验证
 
-**状态**: 稳定可用（2026-07-11）  
-**标注**: Person ID N + 右下角时间戳  
-**编码**: NVENC GPU (p1, zerolatency), 15fps 稳推  
-**测试**: 245 passed, 2 skipped  
+**状态**: 稳定可用（2026-07-12）  
+**标注**: Person ID N + Face: Chester/Stranger + Fence + 右下角时间戳  
+**编码**: NVENC GPU (p1, zerolatency), 17fps 稳推  
+**RTMP**: SRS 5.0 替代 node-media-server，统一 :1935  
+**测试**: 250 passed, 1 skipped  
+**目录假设**: monitor-server、monitor-node、monitor-web 为同级目录
+
+### 前置清理（每次复现前执行）
+
+多次启停会在系统中累积僵尸进程（孤儿 bash + curl 重试循环），导致 API 被反复调用、View 膨胀、Server 崩溃。
+
+```powershell
+# 杀所有残留进程（SRS 除外，如不需要重启 SRS 可保留）
+Get-Process | Where-Object { $_.ProcessName -match "python|bash|curl|ffmpeg" } | Stop-Process -Force
+
+# 清 DB
+Remove-Item monitor-server\monitor.db* -Force
+
+# 确认端口干净
+netstat -ano | findstr "1935 5000 8002"
+```
 
 ---
 
 ## 一、拓扑
 
 ```
-Camera/Mic → Node(ffmpeg dshow) → RTMP :1935 → Server(OpenCV+YOLO+标注) → RTMP :1936 → VLC
-  (原始流)                                    (AI 标注流, video-only)
+Camera/Mic → Node(ffmpeg dshow) → RTMP :1935/live/ → SRS → Server(OpenCV+YOLO+标注) → RTMP :1935/view/ → VLC
+  (原始流)                                                              (AI 标注流, video-only)
 ```
 
-- Node 推流: `{device_name}_{device_type}_{device_id}` 如 `USB_webcam_video_1`
-- Server 推标注流: `rtmp://127.0.0.1:1936/view/{view_id}`
-- Audio 流独立存在（:1935 上），当前 AI 管线为 video-only
+- Node 推原始流: `rtmp://127.0.0.1:1935/live/{device_name}_{device_type}_{device_id}` 如 `USB_webcam_video_1`
+- Server 推标注流: `rtmp://127.0.0.1:1935/view/{view_id}`（SRS 统一端口）
+- :1936 已废弃，旧 node-media-server 靶子不再需要
+- Audio 流独立存在（:1935 /live/ 上），当前 AI 管线为 video-only
 
 ---
 
@@ -24,32 +42,38 @@ Camera/Mic → Node(ffmpeg dshow) → RTMP :1935 → Server(OpenCV+YOLO+标注) 
 
 ### 2.1 启动顺序（严格遵守）
 
+**启动顺序: SRS → Server → Node**。Node 最后启动，否则 WSS 会无限重试连 Server（预期行为，非故障）。
+
 ```bash
-# ── Terminal 0: RTMP 服务器 (:1935) ──
-cd E:/AI/monitor-node/rtmp_server
-node index.js
+# ── Terminal 0: SRS (:1935) ──
+# 注意：不要启动 node-media-server（会与 SRS 端口冲突）
+# KEY POINT: 使用仓库的 srs/srs.conf，不用 SRS 安装目录下的出厂配置
+#   (仓库配置: daemon off, 无 GOP 缓存, 端口全部对齐)
+cd <monitor-server 项目根目录>
+<path-to-srs>\objs\srs.exe -c srs\srs.conf
+# 常见 SRS 路径:
+#   "C:\Program Files (x86)\SRS\objs\srs.exe"    (Windows 默认安装)
+#   ".\monitor-server\srs-bin\srs-setup.exe"  (仓库自带 installer)
+# 验证: netstat -ano | findstr "1935.*LISTEN"
 
-# ── Terminal 1: RTMP 靶子 (:1936) ──
-cd E:/AI/monitor-server/tools
-node rtmp_debug_server.js
-
-# ── Terminal 3: Node (采集+推流) ──
-cd E:/AI/monitor-node
-$env:RTMP_DEBUG="false"
-$env:DEBUG_WSS="false"
-$env:SERVER_BASE_URL="127.0.0.1"
-$env:WSS_PORT="8002"
-$env:RTMP_PORT="1935"
-python run.py
-
-# ── Terminal 2: Server (AI 管线) ──
-cd E:/AI/monitor-server/monitor-server
+# ── Terminal 1: Server (AI 管线) ──
+cd monitor-server                                 # 从项目根目录进入
 Remove-Item monitor.db* -Force                    # 清 DB 避免 streaming flag 残留
 $env:DEBUG_WEB_STREAM="true"
 $env:YOLO_DEVICE="0"
 $env:APP_DEBUG="false"
 $env:PORT="8002"
 python -u -m src.run
+
+# ── Terminal 2: Node (采集+推流 → SRS) ──
+cd ../monitor-node                               # 从 monitor-server 根目录切到同级 monitor-node
+$env:RTMP_DEBUG="false"
+$env:DEBUG_WSS="false"
+$env:SERVER_BASE_URL="127.0.0.1"
+$env:WSS_PORT="8002"
+$env:RTMP_PORT="1935"
+python run.py
+# 注意: Node 的 WSS 会持续重试直到 Server 上线，启动时大量 WSS connection error 日志是正常的
 ```
 
 ### 2.2 关键参数
@@ -59,15 +83,35 @@ python -u -m src.run
 | `APP_DEBUG=false` | 必设 | 禁用 uvicorn reload，否则改代码会断 WSS |
 | `PORT=8002` | 推荐 | 避开 :8000 僵尸进程 |
 | `YOLO_DEVICE=0` | GPU 机器 | CPU 机器用 `cpu` |
-| `DEBUG_WEB_STREAM=true` | 必设 | 推流到 :1936（而非 SRS） |
+| `DEBUG_WEB_STREAM=true` | 必设 | 推流到 :1935 SRS `/view/` 路径 |
+| `RTMP_PORT=1935` | 默认 | 与 SRS listen 端口一致，`.env` 中定义 |
+
+### 2.2.1 API 路径规则
+
+wwh 合并后路由路径已尽量统一，但各 router 定义仍有差异。**错用路径会触发 307 重定向 → Authorization header 丢失 → 401**。
+
+```
+路由 path="/"       → URL 带尾斜杠:    /api/v1/fences/  /api/v1/views/
+路由 path=""        → URL 不带尾斜杠:   /api/v1/persons  /api/v1/events
+路由 path="/{id}"   → URL 按原样:       /api/v1/views/1  /api/v1/fences/1/
+```
+
+| 端点 | 正确 URL |
+|------|---------|
+| 登录 | `POST /api/v1/auth/login` |
+| 创建设备 | `POST /api/v1/views/` |
+| 删除设备 | `DELETE /api/v1/views/{id}` |
+| 围栏 CRUD | 均带 `/`：`GET/POST /api/v1/fences/`、`PUT/DELETE /api/v1/fences/{id}/` |
+| 人员 CRUD | `GET/POST /api/v1/persons`、`POST /api/v1/persons/{id}/avatar` |
+| 事件 | `GET /api/v1/events` |
 
 ### 2.3 创建 View
 
 ```bash
-cd E:/AI/monitor-server/monitor-server
+cd monitor-server                                 # 从项目根目录进入
 
-# 读取密码
-$PWD = (Get-Content admin_password.txt | Select-String "密码: (.+)" | % { $_.Matches.Groups[1].Value })
+# 读取密码（直接取第 3 行，避免正则编码问题）
+$PWD = (Get-Content admin_password.txt)[2] -replace '密码: ', ''
 
 # 登录
 $TOKEN = (Invoke-RestMethod -Uri "http://127.0.0.1:8002/api/v1/auth/login" -Method POST `
@@ -78,36 +122,49 @@ $TOKEN = (Invoke-RestMethod -Uri "http://127.0.0.1:8002/api/v1/auth/login" -Meth
 while (-not ((Invoke-RestMethod "http://127.0.0.1:8002/api/v1/nodes/1/videos" `
   -Headers @{Authorization="Bearer $TOKEN"}).videos.Count -gt 0)) { sleep 5 }
 
-# 创建 View
-Invoke-RestMethod -Uri "http://127.0.0.1:8002/api/v1/views/" -Method POST `
+# 创建 View（返回的 rtmp_url 即为 VLC 播放地址）
+$VIEW = Invoke-RestMethod -Uri "http://127.0.0.1:8002/api/v1/views/" -Method POST `
   -Headers @{Authorization="Bearer $TOKEN"} -ContentType "application/json" `
   -Body '{ "video_id": 1, "audio_id": 1 }'
 
-# VLC 播放
-vlc rtmp://127.0.0.1:1936/view/1
+# VLC 播放 AI 标注流
+vlc $VIEW.rtmp_url
+# 或手动: vlc rtmp://127.0.0.1:1935/view/1
 ```
 
 ---
 
 ## 三、验证 Checklist
 
-- [ ] 双靶子在线：`netstat -ano | findstr "1935.*LISTEN"` 和 `1936`
+- [ ] SRS 在线：`netstat -ano | findstr "1935.*LISTEN"`（单端口，无 :1936）
 - [ ] Node 在线：`port :5000 LISTEN`
 - [ ] Server 在线：`port :8002 LISTEN`
 - [ ] 设备已注册：`GET /api/v1/nodes/1/videos` 返回 `USB webcam`
+- [ ] 原始流可用：`ffprobe rtmp://127.0.0.1:1935/live/USB_webcam_video_1` 返回 `h264, 30fps`
 - [ ] View 创建零警告或仅 `already in use`（非阻塞）
-- [ ] VLC 播放 `rtmp://127.0.0.1:1936/view/1`
-- [ ] 画面有 YOLO 框 + `Person ID N` 标签
-- [ ] 右下角有 `HH:MM:SS` 时间戳
-- [ ] 流声明 15fps：`ffprobe -v error -show_entries stream=r_frame_rate rtmp://127.0.0.1:1936/view/1`
-- [ ] obs 日志正常：`[obs] FPS=15.0 | r=0 y=16 hk=0 dr=0 ms | pipe=78 frame_age=77 ms`
+- [ ] VLC 播放 `rtmp://127.0.0.1:1935/view/1`（注意: `/view/` 而非 `/live/`）
+- [ ] 画面有 YOLO 框 + `Person ID N` 标签 + `Face: Stranger/Chester`
+- [ ] 右下角有 `HH:MM:SS` 时间戳（Node drawtext）
+- [ ] 流声明 17fps：`ffprobe -v error -show_entries stream=r_frame_rate rtmp://127.0.0.1:1935/view/1`
+- [ ] obs 日志正常：`[obs] FPS=17.0 | r=0 y=16 hk=0 dr=0 ms | pipe=<50 age=<50ms`
 - [ ] 编码器确认：日志中 `Using encoder: h264_nvenc`
 - [ ] 帧删除 View 后可重建
+- [ ] Server 重启后自动恢复已有 View 管线（日志：`Auto-recovered N existing view pipeline(s)`）
 - [ ] 重连 VLC 不出现长时间快进
 
 ---
 
 ## 四、关键设计决策
+
+### SRS 单端口统一 ✅ (2026-07-12)
+- SRS 5.0 替代 node-media-server，所有流走 `:1935`
+- `/live/` = 原始流（Node 推入），`/view/` = AI 标注流（Server 推出）
+- :1936 废弃，`DEBUG_RTMP_PORT` 从配置读取（`settings.RTMP_PORT`）
+
+### View 管线自动恢复 ✅ (2026-07-12)
+- Server 重启后自动遍历 DB 中所有 View，恢复 AI 管线
+- `app.py` startup 事件中执行，`start_pipeline` 已有幂等保护
+- 日志验证：`Auto-recovered N existing view pipeline(s)`
 
 ### 一笔标注（单遍绘制）
 - 不改旧架构的两遍绘制（`draw_detections` + `draw_part_b_overlay`）
@@ -132,11 +189,10 @@ vlc rtmp://127.0.0.1:1936/view/1
 
 ## 五、坑点清单
 
-### 坑 1: FrameReader 一次性失败即死
+### 坑 1: FrameReader 一次性失败即死 ✅ (2026-07-11)
 **现象**: Node 晚启动几秒 → 管线永久不可用  
 **根因**: `_run_loop` 中 `FrameReader.ERROR` 直接 `break`，无重试  
-**当前**: 已在 task 文档中计划修复，未实施  
-**规避**: 严格按启动顺序，Node 推流就绪后再创建 View
+**修复**: 指数退避重试 2s→60s，最多 10 次。首次 `open()` 失败不再阻止启动
 
 ### 坑 2: DB streaming flag 残留
 **现象**: 反复创建 View 后出现 `stream already in use or unavailable` 警告  
@@ -156,30 +212,24 @@ vlc rtmp://127.0.0.1:1936/view/1
 
 ### 坑 6: Node ffmpeg 画质时间戳（drawtext）性能问题
 **现象**: 加上 drawtext 后 Node 推流延迟从 20s 增长到 50s  
-**当前**: 已移除 Node drawtext，Server 侧用 cv2.putText（零开销）
+**当前**: Node drawtext 始终在跑（`ffmpeg_dshow.py`），延迟问题已通过 nobuffer+4M+GOP false+17fps 组合缓解，obs age=75ms 不影响
 
-### 坑 7: GOP 缓存导致重连快进 + 帧率误判
+### 坑 7: GOP 缓存导致重连快进 + 帧率误判 ✅ (2026-07-11)
 
-**现象 A** (已修复): VLC 重连 :1936 后从旧 GOP 开始回放  
-**现象 B** (2026-07-11 发现): 即便 VLC 正常，obs 显示 0ms/288ms 交替振荡，表观帧率 ~10fps  
+**现象 A**: VLC 重连后从旧 GOP 开始回放  
+**现象 B**: obs 显示 0ms/288ms 交替振荡，表观帧率 ~10fps  
 
-**根因**: `node-media-server` 的 `gop_cache: true` 在 GOP 完成前不为新客户端提供数据。这对两个靶子有不同影响：
+**根因**: node-media-server 的 `gop_cache: true` 在 GOP 完成前不为新客户端提供数据，扭曲帧到达时间分布  
 
-- **:1936** — VLC 重连时收到缓冲的旧 GOP → 快进回放
-- **:1935** — Server FrameReader 首次连接时 30s 超时；连通后帧以 GOP 为单位批量到达 → 读取时间 0ms/288ms 交替 → 表观帧率被压缩到 ~10fps → **误导判断为"Node 性能不足"**（实际摄像头稳出 30fps）
-
-**修复**: 两个靶子都设 `gop_cache: false`  
-- `tools/rtmp_debug_server.js` — 已修（:1936）  
-- `monitor-node/rtmp_server/index.js` — 2026-07-11 修（:1935）
+**修复**: node-media-server 设 `gop_cache: false`（当前已切 SRS，该问题不再适用）
 
 > **关键教训**: GOP 缓存不仅影响重连体验，还会扭曲帧到达时间分布，导致 obs 数据产生系统性偏差。
-> 帧率对齐问题（采集 30fps → 推流 30fps）只有在 `gop_cache: false` 后才会暴露。
 
-### 坑 8: FPS_TARGET 与采集帧率不匹配 → 慢动作
+### 坑 8: FPS_TARGET 与采集帧率不匹配 → 慢动作 ✅ (2026-07-11)
 
 **现象**: obs 显示稳定 FPS、r=0、无振荡，但 VLC 画面是慢动作  
 **根因**: 摄像头采集 30fps，管线只取 15fps（`FPS_TARGET=15`），每两帧跳一帧 → 时间拉伸 2×  
-**修复**: `FPS_TARGET` 对齐摄像头实际采集率（当前 30）  
+**修复**: `FPS_TARGET=17` 对齐 Node 采集帧率（Node: `-framerate 17`）  
 **诊断**: `ffprobe rtmp://127.0.0.1:1935/live/...` 看源流 `r_frame_rate`，对比 Server 的 `r_frame_rate`
 
 ---
@@ -196,7 +246,7 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 # 补回 cuDNN（如缺失）
 conda install -n monitor-server -c conda-forge cudnn --yes
 ```
-**诊断**: `ls E:/Miniconda3/envs/monitor-server/Library/bin/cudnn*` 应有输出。
+**诊断**: `ls $CONDA_PREFIX/Library/bin/cudnn*` 应有输出（或 `ls %CONDA_PREFIX%\Library\bin\cudnn*`）。
 **预防**: `environment.yml` 已加 `conda-forge::cudnn`，`--prune` 不会再删。
 
 > **教训**: TF+PyTorch 双框架是结构性冲突，conda 无法同时满足两者的 CUDA 版本需求。
@@ -214,7 +264,7 @@ conda install -n monitor-server -c conda-forge cudnn --yes
 
 | 字段 | 含义 | 健康值 |
 |------|------|--------|
-| `FPS` | 实际循环帧率 | 13-15 |
+| `FPS` | 实际循环帧率 | 15-17（目标 17） |
 | `r` | FrameReader 耗时 | 0ms |
 | `y` | YOLO 推理耗时 | 15-32ms |
 | `hk` | 帧钩子耗时（face/slowfast/fence） | <10ms |
@@ -233,14 +283,14 @@ push FPS 单独一行：
 ## 七、快速诊断
 
 ```bash
-# 服务存活
-netstat -ano | findstr "1935.*LISTEN 1936.*LISTEN 5000.*LISTEN 8002.*LISTEN"
+# 服务存活（SRS 单端口，无 :1936）
+netstat -ano | findstr "1935.*LISTEN 5000.*LISTEN 8002.*LISTEN"
 
-# Node 视频流
+# 原始流（Node → SRS）
 ffprobe -v error -show_entries stream=codec_type rtmp://127.0.0.1:1935/live/USB_webcam_video_1
 
-# AI 标注流
-ffprobe -v error -show_entries stream=r_frame_rate rtmp://127.0.0.1:1936/view/1
+# AI 标注流（Server → SRS /view/）
+ffprobe -v error -show_entries stream=r_frame_rate rtmp://127.0.0.1:1935/view/1
 
 # 列出 View
 curl -s http://127.0.0.1:8002/api/v1/views/ -H "Authorization: Bearer $TOKEN"

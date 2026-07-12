@@ -4,6 +4,8 @@ FastAPI 应用入口 —— 创建 app 实例、注册中间件、引入路由�
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+import os
 
 from src.config import settings
 from src.constants import API_PREFIX
@@ -25,6 +27,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 静态文件：命名人物头像
+_face_dir = os.path.abspath(settings.FACE_IMAGE_DIR)
+os.makedirs(_face_dir, exist_ok=True)
+app.mount("/face_images", StaticFiles(directory=_face_dir), name="face_images")
 
 
 @app.get("/health", tags=["health"])
@@ -58,10 +65,43 @@ async def print_urls():
     except Exception as e:
         logging.getLogger(__name__).warning("seed_admin failed: %s", e)
 
-    # Debug FLV 测试数据链路
-    if settings.DEBUG_FLV_TRANSMIT:
-        from src.debug_data import start_debug_data
-        start_debug_data()
+    # 恢复已有 View 的 AI 管线（Server 重启后自动续接）
+    from src.extensions import SessionLocal
+    from src.repository.monitor_view_repo import MonitorViewRepo
+    _db = SessionLocal()
+    try:
+        _views = MonitorViewRepo(_db).all(limit=1000)
+        _logger = logging.getLogger(__name__)
+        _logger.info("[Recovery] DB has %d view(s)", len(_views))
+        if _views:
+            import asyncio as _asyncio
+            from src.service.vision_task import start_pipeline as _start_pipeline, _active_pipelines
+            _recovered = 0
+            _skipped = 0
+            for _v in _views:
+                _vid = _v.video_id
+                _aid = _v.audio_id
+                _vname = _v.video_device.name
+                _aname = _v.audio_device.name
+                _view_id = _v.id
+                if _view_id in _active_pipelines:
+                    _logger.info("[Recovery] View %d: SKIP (already active)", _view_id)
+                    _skipped += 1
+                    continue
+                def _launch(vid=_view_id, vname=_vname, aname=_aname):
+                    async def _forever():
+                        await _start_pipeline(vid, _vid, vname, _aid, aname)
+                        while True:
+                            await _asyncio.sleep(3600)
+                    _asyncio.create_task(_forever())
+                _launch()
+                _recovered += 1
+            _logger.info("[Recovery] recovered=%d skipped=%d total=%d",
+                        _recovered, _skipped, len(_views))
+    except Exception as e:
+        logging.getLogger(__name__).warning("[Recovery] skipped: %s", e)
+    finally:
+        _db.close()
 
 
 @app.on_event("shutdown")
