@@ -14,6 +14,15 @@ class MonitorViewRepo(BaseRepo[MonitorView]):
     def __init__(self, db: Session) -> None:
         super().__init__(db)
 
+    def create(self, **kwargs: object):
+        import traceback, logging
+        _logger = logging.getLogger(__name__)
+        _logger.info("[VIEW-CREATE] video_id=%s audio_id=%s caller=%s",
+                    kwargs.get("video_id"), kwargs.get("audio_id"),
+                    " <- ".join(f'{f.filename.split(chr(92))[-1]}:{f.lineno}'
+                               for f in traceback.extract_stack()[-5:-1]))
+        return super().create(**kwargs)
+
     def device_in_use(self, *, video_id: int | None = None, audio_id: int | None = None) -> bool:
         """检查指定视频或音频设备是否已被任何 View 引用。
 

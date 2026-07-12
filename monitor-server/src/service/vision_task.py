@@ -46,8 +46,14 @@ async def start_pipeline(view_id: int, video_id: int, video_name: str,
     Returns:
         True if started successfully.
     """
+    import traceback as _tb
+    logger.info("[Pipeline] START view=%d video=%s(%d) audio=%s(%s) stack=%s",
+                view_id, video_name, video_id,
+                audio_name or "none", audio_id or "none",
+                "".join(_tb.format_stack()[-3]).strip().replace('\n',' ')[:120])
     if view_id in _active_pipelines:
-        logger.warning("Pipeline already running for view_id=%d", view_id)
+        logger.warning("[Pipeline] SKIP view=%d (already active, count=%d)",
+                      view_id, len(_active_pipelines))
         return False
 
     # 1. 启动视觉管线 (Part A)

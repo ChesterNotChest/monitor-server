@@ -71,36 +71,37 @@ async def print_urls():
     _db = SessionLocal()
     try:
         _views = MonitorViewRepo(_db).all(limit=1000)
+        _logger = logging.getLogger(__name__)
+        _logger.info("[Recovery] DB has %d view(s)", len(_views))
         if _views:
             import asyncio as _asyncio
-            import threading as _threading
-            from src.service.vision_task import start_pipeline as _start_pipeline
+            from src.service.vision_task import start_pipeline as _start_pipeline, _active_pipelines
             _recovered = 0
+            _skipped = 0
             for _v in _views:
-                # 提前捕获——db session 关闭后 ORM 对象不可用
                 _vid = _v.video_id
                 _aid = _v.audio_id
                 _vname = _v.video_device.name
                 _aname = _v.audio_device.name
                 _view_id = _v.id
+                if _view_id in _active_pipelines:
+                    _logger.info("[Recovery] View %d: SKIP (already active)", _view_id)
+                    _skipped += 1
+                    continue
                 def _launch(vid=_view_id, vname=_vname, aname=_aname):
                     async def _forever():
                         await _start_pipeline(vid, _vid, vname, _aid, aname)
                         while True:
                             await _asyncio.sleep(3600)
-                    _asyncio.run(_forever())
-                _threading.Thread(target=_launch, daemon=True, name=f"view-{_view_id}").start()
+                    _asyncio.create_task(_forever())
+                _launch()
                 _recovered += 1
-            logging.getLogger(__name__).info("Auto-recovered %d existing view pipeline(s)", _recovered)
+            _logger.info("[Recovery] recovered=%d skipped=%d total=%d",
+                        _recovered, _skipped, len(_views))
     except Exception as e:
-        logging.getLogger(__name__).warning("View auto-recovery skipped: %s", e)
+        logging.getLogger(__name__).warning("[Recovery] skipped: %s", e)
     finally:
         _db.close()
-
-    # Debug FLV 测试数据链路
-    if settings.DEBUG_FLV_TRANSMIT:
-        from src.debug_data import start_debug_data
-        start_debug_data()
 
 
 @app.on_event("shutdown")

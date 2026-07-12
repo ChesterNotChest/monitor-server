@@ -108,7 +108,7 @@ def _enrich_detection_labels(
                 parts.append(action)
             det.label_suffix = " ".join(parts)
         if any(d.label_suffix for d in detections if d.entity_type_id == YOLOEntityType.PERSON):
-            logger.info("[Enrich] face=%s fence=%s action=%s",
+            logger.debug("[Enrich] face=%s fence=%s action=%s",
                          {k: v for k, v in face_labels.items()},
                          {k: v for k, v in fence_labels.items()},
                          {k: v for k, v in action_labels.items()})
@@ -213,6 +213,7 @@ class AIPipeline:
         merge_started = False
         _loop_frame_count = 0
         _hold_count = 0
+        _push_count = 0
         _loop_last_log = time.monotonic()
 
         while self._running:
@@ -301,6 +302,7 @@ class AIPipeline:
             self._latest_frame = annotated
             if self._merge_proc:
                 await push_frame(self._merge_proc, annotated)
+                _push_count += 1
 
             # 录制：每帧推入环形缓冲区
             from src.service import replay_task
@@ -317,11 +319,19 @@ class AIPipeline:
                 # 管线内延迟 + 帧在 OpenCV 缓冲中的滞留时间
                 _pipe_ms = (_tn - _t0) * 1000
                 _frame_age = (time.time() - (self._reader.open_time + ts)) if self._reader.open_time > 0 else 0
-                logger.info("[obs] FPS=%.1f | r=%.0f y=%.0f hk=%.0f dr=%.0f ms | pipe=%.0f age=%.0fms hold=%d",
+                # RTMP 缓冲深度: 流时间戳 vs 墙钟的差距
+                # buf > 1000ms → RTMP 有堆积；buf 持续增长 → 「隔夜效应」
+                _buf_ms = 0.0
+                if self._reader.open_time > 0 and self._reader.stream_pos_ms > 0:
+                    _elapsed = (time.time() - self._reader.open_time) * 1000.0
+                    _buf_ms = _elapsed - self._reader.stream_pos_ms
+                logger.info("[obs] FPS=%.1f | r=%.0f y=%.0f hk=%.0f dr=%.0f ms | pipe=%.0f age=%.0fms buf=%.0fms hold=%d sink=%d",
                             _fps, _read_ms, _yolo_ms, _hooks_ms, _draw_ms, _pipe_ms,
-                            _frame_age * 1000, _hold_count)
+                            _frame_age * 1000, _buf_ms, _hold_count,
+                            _loop_frame_count - _push_count)
                 _loop_frame_count = 0
                 _hold_count = 0
+                _push_count = 0
                 _loop_last_log = _tn
 
         logger.info("Pipeline main loop exited for view_id=%d", view_id)

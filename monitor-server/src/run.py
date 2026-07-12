@@ -41,6 +41,8 @@ logging.basicConfig(
 logging.getLogger("src.service.vision_module.vision_event_bus").setLevel(logging.DEBUG)
 logging.getLogger("src.service.alert_module.engine").setLevel(logging.DEBUG)
 logging.getLogger("src.service.audio_module.audio_yamnet").setLevel(logging.DEBUG)
+logging.getLogger("src.service.vision_module.vision_face.face_recognizer").setLevel(logging.DEBUG)
+logging.getLogger("src.service.vision_module.video_ai_processor").setLevel(logging.DEBUG)
 
 import uvicorn
 

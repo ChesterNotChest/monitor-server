@@ -148,6 +148,7 @@ class FaceRecognizer:
         return labels
 
     def _recognize_track(self, frame: np.ndarray, track: Track) -> FaceResult | None:
+        logger.debug("[Face] track %d: START crop", track.track_id)
         crop = _crop(frame, track.bbox)
         if crop is None:
             logger.info("[Face] track %d: crop failed", track.track_id)
@@ -162,14 +163,19 @@ class FaceRecognizer:
             logger.warning("[Face] track %d: face_lib not loaded", track.track_id)
             return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
 
+        logger.debug("[Face] track %d: rgb_crop %dx%d", track.track_id, width, height)
         rgb_crop = np.ascontiguousarray(crop[:, :, ::-1])
         try:
+            logger.debug("[Face] track %d: calling face_locations", track.track_id)
             locations = self._face_lib.face_locations(rgb_crop)
+            logger.debug("[Face] track %d: face_locations done, found=%d", track.track_id, len(locations))
             if not locations:
                 logger.info("[Face] track %d: no face_locations found in %dx%d crop",
                              track.track_id, width, height)
                 return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
+            logger.debug("[Face] track %d: calling face_encodings", track.track_id)
             encodings = self._face_encodings(rgb_crop, locations)
+            logger.debug("[Face] track %d: face_encodings done, count=%d", track.track_id, len(encodings))
             if not encodings:
                 logger.info("[Face] track %d: face found but encoding failed", track.track_id)
                 return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
@@ -182,11 +188,13 @@ class FaceRecognizer:
             return FaceResult(track.track_id, None, FaceResultStatus.STRANGER)
 
         encoding = encodings[0]
+        logger.debug("[Face] track %d: comparing against %d known", track.track_id, len(self._known_encodings))
         matches = self._face_lib.compare_faces(
             self._known_encodings,
             encoding,
             tolerance=self.tolerance,
         )
+        logger.debug("[Face] track %d: compare done, matched=%s", track.track_id, any(matches))
         if not any(matches):
             return FaceResult(track.track_id, None, FaceResultStatus.STRANGER)
 
@@ -195,8 +203,10 @@ class FaceRecognizer:
 
     def _face_encodings(self, rgb_crop: np.ndarray, locations: list[tuple[int, int, int, int]]) -> list[np.ndarray]:
         try:
+            logger.debug("[Face] _face_encodings with locations, crop=%s", rgb_crop.shape)
             return self._face_lib.face_encodings(rgb_crop, locations)
         except TypeError as exc:
+            logger.debug("[Face] _face_encodings TypeError, retrying without locations: %s", exc)
             if "compute_face_descriptor" not in str(exc) and "incompatible function arguments" not in str(exc):
                 raise
             logger.warning(

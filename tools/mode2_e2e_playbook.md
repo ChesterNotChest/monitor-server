@@ -7,6 +7,21 @@
 **测试**: 250 passed, 1 skipped  
 **目录假设**: monitor-server、monitor-node、monitor-web 为同级目录
 
+### 前置清理（每次复现前执行）
+
+多次启停会在系统中累积僵尸进程（孤儿 bash + curl 重试循环），导致 API 被反复调用、View 膨胀、Server 崩溃。
+
+```powershell
+# 杀所有残留进程（SRS 除外，如不需要重启 SRS 可保留）
+Get-Process | Where-Object { $_.ProcessName -match "python|bash|curl|ffmpeg" } | Stop-Process -Force
+
+# 清 DB
+Remove-Item monitor-server\monitor.db* -Force
+
+# 确认端口干净
+netstat -ano | findstr "1935 5000 8002"
+```
+
 ---
 
 ## 一、拓扑
@@ -27,23 +42,21 @@ Camera/Mic → Node(ffmpeg dshow) → RTMP :1935/live/ → SRS → Server(OpenCV
 
 ### 2.1 启动顺序（严格遵守）
 
+**启动顺序: SRS → Server → Node**。Node 最后启动，否则 WSS 会无限重试连 Server（预期行为，非故障）。
+
 ```bash
 # ── Terminal 0: SRS (:1935) ──
 # 注意：不要启动 node-media-server（会与 SRS 端口冲突）
-cd "C:\Program Files (x86)\SRS"
-objs\srs.exe -c conf\console.conf
+# KEY POINT: 使用仓库的 srs/srs.conf，不用 SRS 安装目录下的出厂配置
+#   (仓库配置: daemon off, 无 GOP 缓存, 端口全部对齐)
+cd <monitor-server 项目根目录>
+<path-to-srs>\objs\srs.exe -c srs\srs.conf
+# 常见 SRS 路径:
+#   "C:\Program Files (x86)\SRS\objs\srs.exe"    (Windows 默认安装)
+#   ".\monitor-server\srs-bin\srs-setup.exe"  (仓库自带 installer)
 # 验证: netstat -ano | findstr "1935.*LISTEN"
 
-# ── Terminal 1: Node (采集+推流 → SRS) ──
-cd ../monitor-node                               # 从 monitor-server 根目录切到同级 monitor-node
-$env:RTMP_DEBUG="false"
-$env:DEBUG_WSS="false"
-$env:SERVER_BASE_URL="127.0.0.1"
-$env:WSS_PORT="8002"
-$env:RTMP_PORT="1935"
-python run.py
-
-# ── Terminal 2: Server (AI 管线) ──
+# ── Terminal 1: Server (AI 管线) ──
 cd monitor-server                                 # 从项目根目录进入
 Remove-Item monitor.db* -Force                    # 清 DB 避免 streaming flag 残留
 $env:DEBUG_WEB_STREAM="true"
@@ -51,6 +64,16 @@ $env:YOLO_DEVICE="0"
 $env:APP_DEBUG="false"
 $env:PORT="8002"
 python -u -m src.run
+
+# ── Terminal 2: Node (采集+推流 → SRS) ──
+cd ../monitor-node                               # 从 monitor-server 根目录切到同级 monitor-node
+$env:RTMP_DEBUG="false"
+$env:DEBUG_WSS="false"
+$env:SERVER_BASE_URL="127.0.0.1"
+$env:WSS_PORT="8002"
+$env:RTMP_PORT="1935"
+python run.py
+# 注意: Node 的 WSS 会持续重试直到 Server 上线，启动时大量 WSS connection error 日志是正常的
 ```
 
 ### 2.2 关键参数
@@ -87,8 +110,8 @@ wwh 合并后路由路径已尽量统一，但各 router 定义仍有差异。**
 ```bash
 cd monitor-server                                 # 从项目根目录进入
 
-# 读取密码
-$PWD = (Get-Content admin_password.txt | Select-String "密码: (.+)" | % { $_.Matches.Groups[1].Value })
+# 读取密码（直接取第 3 行，避免正则编码问题）
+$PWD = (Get-Content admin_password.txt)[2] -replace '密码: ', ''
 
 # 登录
 $TOKEN = (Invoke-RestMethod -Uri "http://127.0.0.1:8002/api/v1/auth/login" -Method POST `
@@ -241,7 +264,7 @@ conda install -n monitor-server -c conda-forge cudnn --yes
 
 | 字段 | 含义 | 健康值 |
 |------|------|--------|
-| `FPS` | 实际循环帧率 | 15-17 |
+| `FPS` | 实际循环帧率 | 15-17（目标 17） |
 | `r` | FrameReader 耗时 | 0ms |
 | `y` | YOLO 推理耗时 | 15-32ms |
 | `hk` | 帧钩子耗时（face/slowfast/fence） | <10ms |
