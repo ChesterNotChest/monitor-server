@@ -65,6 +65,38 @@ async def print_urls():
     except Exception as e:
         logging.getLogger(__name__).warning("seed_admin failed: %s", e)
 
+    # 恢复已有 View 的 AI 管线（Server 重启后自动续接）
+    from src.extensions import SessionLocal
+    from src.repository.monitor_view_repo import MonitorViewRepo
+    _db = SessionLocal()
+    try:
+        _views = MonitorViewRepo(_db).all(limit=1000)
+        if _views:
+            import asyncio as _asyncio
+            import threading as _threading
+            from src.service.vision_task import start_pipeline as _start_pipeline
+            _recovered = 0
+            for _v in _views:
+                # 提前捕获——db session 关闭后 ORM 对象不可用
+                _vid = _v.video_id
+                _aid = _v.audio_id
+                _vname = _v.video_device.name
+                _aname = _v.audio_device.name
+                _view_id = _v.id
+                def _launch(vid=_view_id, vname=_vname, aname=_aname):
+                    async def _forever():
+                        await _start_pipeline(vid, _vid, vname, _aid, aname)
+                        while True:
+                            await _asyncio.sleep(3600)
+                    _asyncio.run(_forever())
+                _threading.Thread(target=_launch, daemon=True, name=f"view-{_view_id}").start()
+                _recovered += 1
+            logging.getLogger(__name__).info("Auto-recovered %d existing view pipeline(s)", _recovered)
+    except Exception as e:
+        logging.getLogger(__name__).warning("View auto-recovery skipped: %s", e)
+    finally:
+        _db.close()
+
     # Debug FLV 测试数据链路
     if settings.DEBUG_FLV_TRANSMIT:
         from src.debug_data import start_debug_data

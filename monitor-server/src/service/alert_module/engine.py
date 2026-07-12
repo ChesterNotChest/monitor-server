@@ -62,6 +62,11 @@ class AlertEngine:
                 payload=payload,
                 expires_at=now + ALERT_EVENT_TTL,
             ))
+            logger.info(
+                "[AlertEngine v=%d] _on_event %s keys=%s pool_sizes=%s",
+                self._view_id, event_type, list(payload.keys()),
+                {k: len(v) for k, v in self._pool.items()},
+            )
 
     async def _check_loop(self) -> None:
         while self._running:
@@ -85,7 +90,16 @@ class AlertEngine:
         active_faces = self._collect_ids(FACE, "face_result_ids")
         active_fences = self._collect_ids(FENCE, "fence_event_ids")
 
+        logger.info(
+            "[AlertEngine v=%d] _check pool=%s active: E=%s A=%s S=%s F=%s FE=%s",
+            self._view_id,
+            {k: len(v) for k, v in self._pool.items()},
+            active_entities, active_actions, active_sounds,
+            active_faces, active_fences,
+        )
+
         if not any([active_entities, active_actions, active_sounds, active_faces, active_fences]):
+            logger.info("[AlertEngine v=%d] _check skip: no active ids", self._view_id)
             return
 
         # 3. 加载 ExceptionDef
@@ -95,9 +109,26 @@ class AlertEngine:
             repo = ExceptionDefRepo(db)
             exc_defs = repo.with_details() if hasattr(repo, "with_details") else repo.all()
 
+            logger.info(
+                "[AlertEngine v=%d] _check loaded %d ExceptionDef(s)",
+                self._view_id, len(exc_defs),
+            )
             for exc in exc_defs:
-                if self._match(exc, active_entities, active_actions, active_sounds,
-                              active_faces, active_fences):
+                detail = {
+                    "id": exc.id, "name": exc.name,
+                    "entities": [e.id for e in exc.entities] if hasattr(exc, "entities") and exc.entities else [],
+                    "actions": [a.id for a in exc.actions] if hasattr(exc, "actions") and exc.actions else [],
+                    "sounds": [s.id for s in exc.sounds] if hasattr(exc, "sounds") and exc.sounds else [],
+                    "face_result_id": exc.face_result_id,
+                    "fence_event_id": exc.fence_event_id,
+                }
+                matched = self._match(exc, active_entities, active_actions, active_sounds,
+                              active_faces, active_fences)
+                logger.info(
+                    "[AlertEngine v=%d] _match exc=%s detail=%s → %s",
+                    self._view_id, exc.id, detail, "MATCH" if matched else "miss",
+                )
+                if matched:
                     await self._trigger(db, exc, now)
         finally:
             db.close()

@@ -68,6 +68,10 @@ class EventBus:
         """向所有订阅者广播事件。单个订阅者异常不影响其他订阅者。"""
         async with self._lock:
             subscribers = list(self._subscribers.get(event_type, []))
+        logger.info(
+            "[EventBus] publish %s keys=%s subs=%d",
+            event_type, list(payload.keys()), len(subscribers),
+        )
         for callback in subscribers:
             try:
                 await callback(payload)
