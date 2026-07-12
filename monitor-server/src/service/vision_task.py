@@ -58,8 +58,10 @@ async def start_pipeline(view_id: int, video_id: int, video_name: str,
 
     # 1.5 注册 Part B 模块 (ByteTrack + Face + Fence + SlowFast)
     try:
+        from src.extensions import SessionLocal
         from src.service.vision_module.video_ai_processor import register_video_ai_hooks
-        register_video_ai_hooks(pipeline, view_id)
+        db = SessionLocal()
+        register_video_ai_hooks(pipeline, view_id, db=db)
         logger.info("Part B hooks registered for view_id=%d", view_id)
     except Exception:
         logger.warning("Failed to register Part B hooks for view_id=%d", view_id, exc_info=True)

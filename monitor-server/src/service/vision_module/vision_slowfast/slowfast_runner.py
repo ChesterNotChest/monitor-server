@@ -6,6 +6,7 @@ import logging
 import os
 import re
 from collections import defaultdict, deque
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
@@ -41,13 +42,24 @@ _ACTION_KEYWORDS: tuple[tuple[SlowFastActionType, tuple[str, ...]], ...] = (
     (SlowFastActionType.PUSHING, ("pushing", "shoving", "push")),
     (SlowFastActionType.SITTING, ("sitting", "sit")),
     (SlowFastActionType.STANDING, ("standing", "stand")),
+    (SlowFastActionType.LYING_DOWN, ("lying", "lie", "sleeping", "sleep", "lay")),
+    (SlowFastActionType.LOITERING, ("loitering", "loiter", "linger", "idle")),
+    (SlowFastActionType.CROWDING, ("crowding", "crowd", "gather", "group")),
 )
 
 _AVA_ACTION_KEYWORDS: tuple[tuple[SlowFastActionType, tuple[str, ...]], ...] = (
     (SlowFastActionType.SMOKING, ("smoke", "smoking")),
-    (SlowFastActionType.FALLING, ("fall down", "lie/sleep")),
-    (SlowFastActionType.FIGHTING, ("fight/hit", "martial art", "grab")),
+    (SlowFastActionType.FALLING, ("fall down", "lie/sleep", "trip")),
+    (SlowFastActionType.FIGHTING, ("fight/hit", "martial art", "grab", "kick")),
     (SlowFastActionType.RUNNING, ("run/jog",)),
+    (SlowFastActionType.WALKING, ("walk",)),
+    (SlowFastActionType.STANDING, ("stand",)),
+    (SlowFastActionType.SITTING, ("sit",)),
+    (SlowFastActionType.WAVING, ("wave",)),
+    (SlowFastActionType.THROWING, ("throw",)),
+    (SlowFastActionType.CLIMBING, ("climb", "crawl", "crouch")),
+    (SlowFastActionType.LYING_DOWN, ("lie/sleep", "fall down")),
+    (SlowFastActionType.LOITERING, ("linger", "idle")),
     (SlowFastActionType.CLIMBING, ("climb",)),
     (SlowFastActionType.THROWING, ("throw",)),
     (SlowFastActionType.POINTING, ("point to",)),
@@ -127,6 +139,8 @@ class SlowFastRunner:
         self._ava_confidence_threshold = ava_confidence_threshold
         self._ava_max_results = ava_max_results
         self._device = device
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="slowfast")
+        self._pending: dict[int, Future] = {}  # track_id → inference future
 
     @property
     def state(self) -> SlowFastState:
@@ -173,22 +187,48 @@ class SlowFastRunner:
         return True
 
     def enqueue(self, track_id: int, frame_crop: np.ndarray) -> list[ActionResult]:
+        """Enqueue frame; submit inference to thread pool when clip is ready.
+
+        Returns [] — actual results arrive asynchronously via collect_results().
+        """
         queue = self._queues[track_id]
         queue.append(frame_crop.copy())
         self._state = SlowFastState.ACTIVE
 
         if len(queue) < self.clip_length:
+            if len(queue) == 1:
+                logger.info("[SlowFast] track %d: started collecting (need %d frames)",
+                             track_id, self.clip_length)
+            elif len(queue) % 8 == 0:
+                logger.info("[SlowFast] track %d: %d/%d frames collected",
+                             track_id, len(queue), self.clip_length)
             return []
 
+        logger.info("[SlowFast] track %d: clip ready, submitting to thread pool", track_id)
         clip = list(queue)
-        try:
-            results = self._infer(track_id, clip)
-        except Exception:
-            logger.exception("SlowFast inference failed for track %s", track_id)
-            queue.clear()
-            self._state = SlowFastState.ERROR
-            return []
         queue.clear()
+        # 推理扔到线程池，不阻塞主循环
+        self._pending[track_id] = self._executor.submit(self._infer, track_id, clip)
+        return []
+
+    def collect_results(self) -> list[ActionResult]:
+        """Harvest completed inference futures. Call from main loop each frame."""
+        results: list[ActionResult] = []
+        for track_id, fut in list(self._pending.items()):
+            if not fut.done():
+                continue
+            del self._pending[track_id]
+            try:
+                result = fut.result()
+            except Exception:
+                logger.exception("[SlowFast] inference failed for track %d", track_id)
+                continue
+            if result:
+                logger.info("[SlowFast] track %d: result=%s", track_id,
+                             [(r.action_type_id, r.confidence) for r in result])
+            else:
+                logger.info("[SlowFast] track %d: no action detected in clip", track_id)
+            results.extend(result)
         return results
 
     async def enqueue_and_publish(
@@ -305,23 +345,32 @@ class SlowFastRunner:
                 logits = self._ava_model(inputs, boxes)
                 scores = torch.sigmoid(logits)[0]
 
+            # 诊断：打印 top-5 预测（不管阈值）
+            top_indices = torch.topk(scores, k=min(5, scores.numel())).indices.tolist()
+            top_scores = [float(scores[i]) for i in top_indices]
+            top_labels = [(self._ava_label_for_index(i), top_scores[j])
+                           for j, i in enumerate(top_indices)]
+            logger.info("[SlowFast AVA] track %d: top5=%s", track_id, top_labels)
+
             candidates: list[ActionResult] = []
             for index, confidence in enumerate(scores.tolist()):
                 if confidence < self._ava_confidence_threshold:
                     continue
                 label = self._ava_label_for_index(index)
                 action = map_ava_label_to_action(label)
-                if action is None:
-                    continue
-                candidates.append(
-                    ActionResult(
+                if action is not None:
+                    candidates.append(ActionResult(
                         track_id=track_id,
                         action_type_id=int(action),
                         label=action.name,
                         confidence=float(confidence),
                         source=f"slowfast_ava:{label}",
-                    ),
-                )
+                    ))
+            if not candidates:
+                # 低于阈值但最高分也打印出来，便于调阈值
+                max_conf = max(scores.tolist()) if scores.numel() > 0 else 0.0
+                logger.info("[SlowFast AVA] track %d: all below threshold (max=%.3f, thresh=%.2f)",
+                             track_id, max_conf, self._ava_confidence_threshold)
             return _select_ava_results(candidates, max_results=self._ava_max_results)
         except Exception:
             logger.exception("SlowFast AVA inference failed")

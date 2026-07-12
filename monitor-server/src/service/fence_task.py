@@ -61,4 +61,7 @@ def update_fence(
 
 
 def delete_fence(db: Session, fence_id: int) -> bool:
-    return ElectronicFenceRepo(db).delete(fence_id)
+    ok = ElectronicFenceRepo(db).delete(fence_id)
+    if ok:
+        db.commit()
+    return ok

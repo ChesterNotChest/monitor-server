@@ -14,11 +14,11 @@ import os
 import numpy as np
 
 # ── 必须在 ultralytics import 之前禁用 CUDA ─────────────────
-# 否则 Windows 上缺少 cuDNN DLL 会导致进程崩溃。
-# YOLO_DEVICE 环境变量在 src.config 中读取，但 config 导入
-# 在 ultralytics 之后——这里直接用 os.environ 判断。
-if os.environ.get("YOLO_DEVICE", "cpu") in ("", "cpu"):
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+# run.py 启动时已根据 YOLO_DEVICE 设置 CUDA_VISIBLE_DEVICES。
+# 这里用 setdefault 兜底测试等不走 run.py 的场景。
+_yolo_device = os.environ.get("YOLO_DEVICE", "cpu")
+if _yolo_device in ("", "cpu"):
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
 from ultralytics import YOLO
 
@@ -58,6 +58,7 @@ class Detection:
     class_id: int            # 原始 COCO class_id
     confidence: float        # 置信度 0-1
     entity_type_id: int | None  # 映射后的 EntityType id，非关注类为 None
+    label_suffix: str | None = None  # 附加标签（Track ID / Face / Action / Fence）
 
 
 class YoloDetector:

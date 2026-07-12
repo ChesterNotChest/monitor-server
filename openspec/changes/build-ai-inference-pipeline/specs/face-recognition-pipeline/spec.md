@@ -4,6 +4,34 @@
 
 ## ADDED Requirements
 
+### Requirement: Runtime dependency compatibility
+
+系统 SHALL install `face_recognition` together with a CPU `dlib` build for the Server conda environment. The runtime SHALL NOT require CUDA/cuDNN initialization for importing `face_recognition` or extracting 128D face encodings.
+
+#### Scenario: Import face_recognition without CUDA/cuDNN
+
+- **WHEN** the Server conda environment imports `dlib` and `face_recognition`
+- **THEN** `dlib.DLIB_USE_CUDA` is `False`
+- **AND** importing `face_recognition` does not raise a cuDNN initialization error
+
+#### Scenario: Extract a real face encoding
+
+- **WHEN** `face_recognition.face_encodings()` is called on a clear real face image
+- **THEN** at least one encoding is returned
+- **AND** each returned face encoding contains 128 float values
+
+#### Scenario: Fallback when location-bound encoding is incompatible
+
+- **WHEN** `face_recognition.face_encodings(rgb_crop, locations)` raises a dlib `compute_face_descriptor()` argument compatibility error
+- **THEN** the face recognition pipeline retries encoding with `face_recognition.face_encodings(rgb_crop)`
+- **AND** the face recognition pipeline returns `NO_RESULT` only if the fallback also returns no encodings
+
+#### Scenario: Encode contiguous RGB crops
+
+- **WHEN** a BGR person crop is converted to RGB for dlib/face_recognition
+- **THEN** the RGB crop passed to face detection and descriptor extraction is C-contiguous
+- **AND** dlib descriptor extraction does not receive a negative-stride RGB view
+
 ### Requirement: 人脸检测
 
 系统 SHALL 对 ByteTrack 产出的每个 person 区域裁剪（person crop），在 crop 内使用 face_recognition 做人脸检测。输入前 SHALL 做 BGR→RGB 转换（OpenCV 默认 BGR，face_recognition 期望 RGB）。若 crop 尺寸小于 50×50 px，SHALL 跳过。

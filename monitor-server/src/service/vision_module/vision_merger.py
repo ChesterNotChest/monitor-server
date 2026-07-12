@@ -1,7 +1,9 @@
-"""合流推 SRS——FFmpeg 子进程合并标注 video frame pipe + raw audio RTMP pull。
+"""合流推流——FFmpeg 子进程：标注Video流编码后推送 RTMP。
 
-标注帧以 rawvideo BGR24 格式通过 stdin pipe 推入 FFmpeg。
-输出为 FLV 编码 RTMP push 到 SRS View 成品流。
+pipe:0 (raw BGR24) → GPU/CPU 编码 → RTMP :1936/view/{view_id}
+
+注意：当前为 video-only 模式。Audio流由独立的 raw merge 管线处理
+（纯 RTMP→RTMP），或后续通过 SRS 合流。
 """
 
 from __future__ import annotations
@@ -9,6 +11,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+import subprocess
+import sys
 
 import numpy as np
 
@@ -22,7 +26,6 @@ def _find_ffmpeg() -> str:
     path = shutil.which("ffmpeg")
     if path:
         return path
-    # Windows 常见路径
     for candidate in (r"C:\ffmpeg\bin\ffmpeg.exe",):
         import os
         if os.path.isfile(candidate):
@@ -30,17 +33,42 @@ def _find_ffmpeg() -> str:
     return "ffmpeg"
 
 
+def _detect_encoder() -> str:
+    """检测最优 H.264 编码器。
+
+    Priority: h264_nvenc (NVENC GPU) → h264_mf (Windows Media Foundation) → libx264 (CPU).
+    """
+    ffmpeg = _find_ffmpeg()
+    try:
+        result = subprocess.run(
+            [ffmpeg, "-encoders"], capture_output=True, text=True, timeout=10,
+        )
+        available = result.stdout + result.stderr
+    except Exception:
+        logger.warning("Failed to probe ffmpeg encoders, falling back to libx264")
+        return "libx264"
+
+    try:
+        import torch
+        if torch.cuda.is_available() and "h264_nvenc" in available:
+            logger.info("Using encoder: h264_nvenc (NVENC GPU)")
+            return "h264_nvenc"
+    except ImportError:
+        pass
+
+    if sys.platform == "win32" and "h264_mf" in available:
+        logger.info("Using encoder: h264_mf (Windows Media Foundation)")
+        return "h264_mf"
+
+    logger.info("Using encoder: libx264 (CPU)")
+    return "libx264"
+
+
 def _build_push_url(view_id: int) -> str:
-    """构建 View 成品流 RTMP 推送地址。"""
+    """构建最终合流 RTMP 推送地址。"""
     host = "127.0.0.1" if settings.DEBUG_WEB_STREAM else settings.SRS_HOST
     port = 1936 if settings.DEBUG_WEB_STREAM else settings.SRS_RTMP_PORT
     return f"rtmp://{host}:{port}/view/{view_id}"
-
-
-def _build_audio_pull_url(audio_name: str, audio_id: int) -> str:
-    """构建 raw audio RTMP 拉流地址（含设备名）。"""
-    from src.network.rtmp.puller import build_pull_url
-    return build_pull_url(audio_name, "audio", audio_id)
 
 
 async def start_stream_merge(
@@ -51,46 +79,33 @@ async def start_stream_merge(
     audio_id: int | None = None,
     audio_name: str = "",
 ) -> asyncio.subprocess.Process | None:
-    """启动 FFmpeg 合并子进程。
-
-    Args:
-        view_id: View ID，用于构建推流 URL。
-        video_width: 标注帧宽度。
-        video_height: 标注帧高度。
-        fps: 视频帧率。
-        audio_id: 可选音频设备 ID；None 则仅推视频。
-
-    Returns:
-        FFmpeg subprocess，stdin 管道就绪；失败返回 None。
-    """
+    """启动标注Video流推送 ffmpeg。返回 pipe:0 就绪的子进程。"""
     ffmpeg = _find_ffmpeg()
     if not ffmpeg:
         logger.error("ffmpeg not found")
         return None
 
+    encoder = _detect_encoder()
+    if encoder == "h264_nvenc":
+        vcodec_args = ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll",
+                       "-b:v", "2M", "-rc", "vbr",
+                       "-zerolatency", "1", "-delay", "0",
+                       "-g", "30"]  # 每秒一个关键帧，解决灰屏
+    else:
+        vcodec_args = ["-c:v", encoder, "-preset", "ultrafast"]
+
     push_url = _build_push_url(view_id)
     cmd: list[str] = [
         ffmpeg,
-        "-f", "rawvideo",
-        "-pix_fmt", "bgr24",
-        "-s", f"{video_width}x{video_height}",
-        "-r", str(fps),
+        "-vsync", "cfr",
+        "-f", "rawvideo", "-pix_fmt", "bgr24",
+        "-s", f"{video_width}x{video_height}", "-r", str(fps),
         "-i", "pipe:0",
+        *vcodec_args,
+        "-flvflags", "no_duration_filesize",
+        "-rtmp_live", "live",
+        "-f", "flv", push_url,
     ]
-
-    # 音频源
-    if audio_id is not None:
-        audio_url = _build_audio_pull_url(audio_name, audio_id)
-        cmd += [
-            "-i", audio_url,
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-c:a", "aac",
-        ]
-    else:
-        cmd += ["-c:v", "libx264", "-preset", "ultrafast"]
-
-    cmd += ["-f", "flv", push_url]
 
     logger.info("FFmpeg merge: %s", " ".join(cmd))
     try:
@@ -100,19 +115,51 @@ async def start_stream_merge(
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
+        # 后台读取 ffmpeg stderr，避免管道满阻塞
+        asyncio.create_task(_read_stderr(proc, view_id),
+                            name=f"ffmpeg-stderr-view-{view_id}")
         return proc
     except Exception:
         logger.exception("Failed to start FFmpeg merge")
         return None
 
 
+async def _read_stderr(proc: asyncio.subprocess.Process, view_id: int) -> None:
+    """后台读取 ffmpeg stderr 并记录日志。"""
+    if proc.stderr is None:
+        return
+    try:
+        while True:
+            line = await proc.stderr.readline()
+            if not line:
+                break
+            text = line.decode("utf-8", errors="replace").rstrip()
+            if text:
+                logger.debug("[ffmpeg-%d] %s", view_id, text)
+    except Exception:
+        logger.debug("ffmpeg stderr reader stopped for view_id=%d", view_id)
+
+
+# ── 可观测性 ──────────────────────────────────
+_push_frame_count: int = 0
+_push_last_log: float = 0.0
+
 async def push_frame(proc: asyncio.subprocess.Process, frame: np.ndarray) -> None:
-    """写入一帧到 FFmpeg stdin pipe。frame 格式为 BGR24 numpy array。"""
+    """写入一帧到 ffmpeg stdin（同步 drain，确保帧到达编码器）。"""
+    global _push_frame_count, _push_last_log
     if proc.stdin is None or proc.returncode is not None:
         return
     try:
         proc.stdin.write(frame.tobytes())
         await proc.stdin.drain()
+        _push_frame_count += 1
+        import time as _time
+        now = _time.monotonic()
+        if now - _push_last_log >= 5.0:
+            fps = _push_frame_count / (now - _push_last_log) if _push_last_log > 0 else 0
+            logger.info("[obs] push FPS: %.1f (frames=%d)", fps, _push_frame_count)
+            _push_frame_count = 0
+            _push_last_log = now
     except BrokenPipeError:
         logger.warning("FFmpeg stdin pipe broken — stream ended")
     except Exception:
@@ -120,7 +167,7 @@ async def push_frame(proc: asyncio.subprocess.Process, frame: np.ndarray) -> Non
 
 
 async def stop_stream_merge(proc: asyncio.subprocess.Process) -> None:
-    """终止 FFmpeg 子进程。"""
+    """终止 ffmpeg 子进程。"""
     try:
         if proc.stdin:
             proc.stdin.close()
