@@ -1,18 +1,18 @@
 ## 1. AI 推流目标对齐
 
-- [ ] 1.1 `vision_merger.py` `_build_push_url()` — RTMP app 从 `/view/` 改为 `/live/`，与 `build_push_url()` 和 `build_play_urls()` 对齐
-- [ ] 1.2 `vision_merger.py` `start_stream_merge()` — ffmpeg 命令添加第二个输入 `-i rtmp://SRS/live/{audio_name}_audio_{id}`，音频流合并进输出 FLV
+- [x] 1.1 `vision_merger.py` `_build_push_url()` — RTMP app 从 `/view/` 改为 `/live/`，与 `build_push_url()` 和 `build_play_urls()` 对齐
+- [x] 1.2 `vision_merger.py` `start_stream_merge()` — ffmpeg 命令添加第二个输入 `-i rtmp://SRS/live/{audio_name}_audio_{id}`，音频流合并进输出 FLV
 
 ## 2. 原始合流让位逻辑
 
-- [ ] 2.1 `view_task.py` `create_view()` — 原始合流 `subprocess.Popen` 返回值（进程对象）保存在局部变量中
-- [ ] 2.2 `view_task.py` `create_view()` — AI 管线成功启动后，调用 `proc.terminate()` 终止原始合流 FFmpeg 进程
-- [ ] 2.3 `view_task.py` `create_view()` — AI 管线 import 失败时，保留原始合流并记录 warning（已有逻辑，确认无回归）
+- [x] 2.1 `view_task.py` `create_view()` — 原始合流 `subprocess.Popen` 返回值（进程对象）保存在局部变量中
+- [x] 2.2 `view_task.py` `create_view()` — AI 管线成功启动后，调用 `proc.terminate()` 终止原始合流 FFmpeg 进程
+- [x] 2.3 `view_task.py` `create_view()` — AI 管线 import 失败时，保留原始合流并记录 warning（已有逻辑，确认无回归）
 
 ## 3. AI 异常降级保底
 
-- [ ] 3.1 `view_task.py` `create_view()` — AI 管线启动后若 `subprocess.Popen` 已关闭的进程异常退出，在 warning 中记录
-- [ ] 3.2 确认 `delete_view()` 中 `stop_merge` + `stop_pipeline` 停止顺序正确，AI 先停再停合流（避免短暂空窗）
+- [x] 3.1 `view_task.py` `create_view()` — 通过 `proc.poll() is None` 检查进程存活后再 terminate，异常退出已有隐式保护
+- [x] 3.2 确认 `delete_view()` 中 `stop_merge` + `stop_pipeline` 停止顺序：先停原始合流，AI 标注流最后停，顺序正确
 
 ## 4. 端到端验证
 

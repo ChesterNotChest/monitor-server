@@ -1,9 +1,9 @@
 """合流推流——FFmpeg 子进程：标注Video流编码后推送 RTMP。
 
-pipe:0 (raw BGR24) → GPU/CPU 编码 → RTMP :1936/view/{view_id}
+pipe:0 (raw BGR24 标注帧) → GPU/CPU 编码 → RTMP :1935/live/{view_id}
 
-注意：当前为 video-only 模式。Audio流由独立的 raw merge 管线处理
-（纯 RTMP→RTMP），或后续通过 SRS 合流。
+注意：当前为 video-only 模式。pipe:0 + RTMP 音频双输入会在 ffmpeg 中死锁
+（详见 tools/mode2_e2e_playbook.md 坑 6）。音频通过 SRS 或后续两阶段方案合流。
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ async def start_stream_merge(
                        "-zerolatency", "1", "-delay", "0",
                        "-g", "30"]  # 每秒一个关键帧，解决灰屏
     else:
-        vcodec_args = ["-c:v", encoder, "-preset", "ultrafast"]
+        vcodec_args = ["-c:v", encoder, "-preset", "ultrafast", "-profile:v", "baseline"]
 
     push_url = _build_push_url(view_id)
     cmd: list[str] = [
@@ -101,6 +101,7 @@ async def start_stream_merge(
         "-f", "rawvideo", "-pix_fmt", "bgr24",
         "-s", f"{video_width}x{video_height}", "-r", str(fps),
         "-i", "pipe:0",
+        "-pix_fmt", "yuv420p",
         *vcodec_args,
         "-flvflags", "no_duration_filesize",
         "-rtmp_live", "live",
