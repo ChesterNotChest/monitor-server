@@ -72,22 +72,24 @@ def create_view(
         import threading
         from src.service.vision_task import start_pipeline
 
+        # 提前捕获字符串值——后台线程不能访问已关闭 session 的 ORM 对象
+        _video_name = video.name
+        _audio_name = audio.name
+
         async def _pipeline_forever(view_id: int, video_id: int, video_name: str,
                                     audio_id: int, audio_name: str) -> None:
             await start_pipeline(view_id, video_id, video_name, audio_id, audio_name)
-            # 持久化循环：保持 start_pipeline 创建的 Task（_run_loop、
-            # YAMNet 等）不被取消。
             while True:
                 await asyncio.sleep(3600)
 
         def _launch() -> None:
-            asyncio.run(_pipeline_forever(view.id, video_id, video.name,
-                                          audio_id, audio.name))
+            asyncio.run(_pipeline_forever(view.id, video_id, _video_name,
+                                          audio_id, _audio_name))
 
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(start_pipeline(view.id, video_id, video.name,
-                                            audio_id, audio.name))
+            loop.create_task(start_pipeline(view.id, video_id, _video_name,
+                                            audio_id, _audio_name))
         except RuntimeError:
             threading.Thread(target=_launch, daemon=True).start()
 

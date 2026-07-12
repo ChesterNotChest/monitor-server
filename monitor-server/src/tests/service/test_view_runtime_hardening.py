@@ -70,7 +70,8 @@ def test_create_view_commits_view_and_streaming_state(monkeypatch):
         engine.dispose()
 
 
-def test_create_view_warns_when_raw_streams_are_unavailable(db, monkeypatch):
+def test_create_view_succeeds_without_raw_merge(db, monkeypatch):
+    """View 创建不再依赖 raw merge——AI 管线替代了它。"""
     from src.service.view_module import ffmpeg_manager, lifecycle
 
     node = Node(token="test-token")
@@ -81,17 +82,21 @@ def test_create_view_warns_when_raw_streams_are_unavailable(db, monkeypatch):
     db.add_all([video, audio])
     db.flush()
 
+    # 记录 start_merge 是否被调用
+    merge_called = []
     monkeypatch.setattr(lifecycle, "_send_update_stream_command", lambda *args: True)
     monkeypatch.setattr(
         ffmpeg_manager,
         "start_merge",
-        lambda *args, **kwargs: (False, ["rtmp://127.0.0.1:1935/live/missing"]),
+        lambda *args, **kwargs: merge_called.append(True) or (True, []),
     )
 
     result = view_task.create_view(db, audio_id=audio.id, video_id=video.id)
 
     assert result is not None
-    assert "Raw stream(s) not ready for merge" in result.warnings[-1]
+    assert result.id is not None
+    # 原始合流已禁用——AI 管线取代了它
+    assert not merge_called, "start_merge should NOT be called (raw merge disabled)"
 
 
 def test_wait_for_streams_uses_configured_probe_timeout(monkeypatch):

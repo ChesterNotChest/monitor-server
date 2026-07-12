@@ -50,7 +50,7 @@ class YOLOEntityType(enum.IntEnum):
 
 
 class SlowFastActionType(enum.IntEnum):
-    """SlowFast 行为识别类别（整数枚举，数据库存整数值）。Kinetics-400 预训练 12 类。"""
+    """SlowFast 行为识别类别（整数枚举，数据库存整数值）。与 seed_data.py ACTION_NAMES 对齐。"""
     WALKING = 1
     RUNNING = 2
     FALLING = 3
@@ -64,6 +64,9 @@ class SlowFastActionType(enum.IntEnum):
     SITTING = 11
     STANDING = 12
     SMOKING = 13
+    LYING_DOWN = 14
+    LOITERING = 15
+    CROWDING = 16
 
 
 class YAMNetSoundType(enum.IntEnum):

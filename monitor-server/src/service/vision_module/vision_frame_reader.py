@@ -57,6 +57,11 @@ class FrameReader:
     def fps(self) -> float:
         return self._source_fps
 
+    @property
+    def open_time(self) -> float:
+        """Reader 打开时的墙上时钟（Unix 秒），用于计算帧采集时刻。"""
+        return self._open_time
+
     # ── Lifecycle ───────────────────────────────
 
     def open(self, video_id: int, video_name: str) -> bool:
@@ -67,7 +72,6 @@ class FrameReader:
         """
         url = build_pull_url(video_name, "video", video_id)
         logger.info("FrameReader connecting to %s", url)
-        # 限制 OpenCV/FFmpeg 打开超时避免无限阻塞
         import os
         os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "timeout;5000000")
         self._cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
@@ -117,19 +121,11 @@ class FrameReader:
         return True, frame, timestamp, self._frame_id
 
     def _read_internal(self) -> tuple[bool, np.ndarray | None]:
-        """底层读取，含 FPS 跳帧。"""
+        """底层读取，直接取最新帧（不做跳帧窗口——RTMP read 本身已阻塞等帧）。"""
         if self._cap is None:
             return False, None
-        # 跳帧：读到最后可用的帧
-        last_frame = None
-        last_ret = False
-        deadline = time.time() + self._frame_interval
-        while time.time() < deadline:
-            ret, frame = self._cap.read()
-            if not ret:
-                return False, None
-            last_ret, last_frame = ret, frame
-        return last_ret, last_frame
+        ret, frame = self._cap.read()
+        return ret, frame
 
     def _handle_read_failure(
         self,
@@ -153,15 +149,11 @@ class FrameReader:
             self._consecutive_failures, _MAX_CONSECUTIVE_FAILURES, backoff,
         )
         time.sleep(backoff)
-
-        # 尝试重连
-        if self._cap is not None:
-            self._cap.release()
-            self._cap = None
-        if self._cap is None and hasattr(self, '_last_url'):
-            self._cap = cv2.VideoCapture(self._last_url)
-        if self._cap is not None and self._cap.isOpened():
-            self._state = FrameReaderState.ACTIVE
-            return True, None, 0.0, -1  # 重连成功，下一帧正常读
-
         return False, None, 0.0, -1
+
+    def reset_error(self) -> None:
+        """Reset ERROR state back to IDLE so re-open can be attempted."""
+        if self._state == FrameReaderState.ERROR:
+            self.close()
+            self._consecutive_failures = 0
+            logger.info("FrameReader error state reset")

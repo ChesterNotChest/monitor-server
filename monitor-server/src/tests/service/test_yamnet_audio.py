@@ -8,6 +8,8 @@ import time
 import numpy as np
 import pytest
 
+pytest.importorskip("tensorflow", reason="TensorFlow not available in this environment")
+
 from src.service.audio_module.audio_yamnet import (
     YamnetRunner, YamnetState, SOUND_TYPE_MAP, YAMNET_SAMPLE_RATE,
 )

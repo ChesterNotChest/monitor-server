@@ -49,6 +49,7 @@ event_bus.subscribe("ENTITY", on_entity)
 - [x] 4.5 `YOLO_CONFIDENCE` 过滤（默认 0.5），低于阈值丢弃
 - [x] 4.6 每帧推理后 publish 到 EventBus topic `ENTITY`
 - [x] 4.7 状态机：IDLE → ACTIVE → ERROR，单帧异常 skip 不崩溃
+- [x] 4.8 Add `YOLO_DEVICE` config with default `cpu`; deployment can set `YOLO_DEVICE=0` to use GPU.
 
 ## 5. 标注叠加 + 合流推 SRS
 
@@ -79,3 +80,4 @@ event_bus.subscribe("ENTITY", on_entity)
 
 - [x] 8.1 `config.py` 新增全部 AI 管线配置项（FPS_TARGET/YOLO_CONFIDENCE/YOLO_MODEL_PATH 等 17 项）
 - [x] 8.2 `.env` 使用默认值即可（config.py 已提供全部默认值）
+- [x] 8.3 `YOLO_DEVICE` defaults to `cpu` and remains overrideable from `.env`/environment for GPU deployments.
