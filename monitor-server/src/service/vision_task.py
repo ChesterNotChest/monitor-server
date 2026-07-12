@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 _active_pipelines: dict[int, AIPipeline] = {}
 _alert_engines: dict[int, AlertEngine] = {}
 _yamnet_runners: dict[int, YamnetRunner] = {}
+_pipeline_loops: dict[int, asyncio.AbstractEventLoop] = {}
+_pipeline_stop_events: dict[int, asyncio.Event] = {}
 
 
 async def start_pipeline(view_id: int, video_id: int, video_name: str,
@@ -32,11 +34,15 @@ async def start_pipeline(view_id: int, video_id: int, video_name: str,
         logger.warning("Pipeline already running for view_id=%d", view_id)
         return False
 
+    owner_loop = asyncio.get_running_loop()
+
     # 1. 启动视觉管线 (Part A)
     pipeline = AIPipeline()
     if not await pipeline.start(view_id, video_id, video_name, audio_id, audio_name):
         return False
     _active_pipelines[view_id] = pipeline
+    _pipeline_loops[view_id] = owner_loop
+    _pipeline_stop_events[view_id] = asyncio.Event()
 
     # 1.5 注册 Part B 模块 (ByteTrack + Face + Fence + SlowFast)
     try:
@@ -62,8 +68,31 @@ async def start_pipeline(view_id: int, video_id: int, video_name: str,
     return True
 
 
+async def wait_pipeline_stopped(view_id: int) -> None:
+    """Wait until ``stop_pipeline`` releases the owner loop keepalive."""
+
+    event = _pipeline_stop_events.get(view_id)
+    if event is not None:
+        await event.wait()
+
+
 async def stop_pipeline(view_id: int) -> None:
     """停止指定 View 的 AI 推理管线（YAMNet → AlertEngine → AIPipeline）。"""
+
+    owner_loop = _pipeline_loops.get(view_id)
+    current_loop = asyncio.get_running_loop()
+    if owner_loop is not None and owner_loop is not current_loop and owner_loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(
+            _stop_pipeline_on_owner_loop(view_id),
+            owner_loop,
+        )
+        await asyncio.wrap_future(future)
+        return
+
+    await _stop_pipeline_on_owner_loop(view_id)
+
+
+async def _stop_pipeline_on_owner_loop(view_id: int) -> None:
     # 先停 YAMNet
     yamnet = _yamnet_runners.pop(view_id, None)
     if yamnet:
@@ -80,6 +109,11 @@ async def stop_pipeline(view_id: int) -> None:
     pipeline = _active_pipelines.pop(view_id, None)
     if pipeline:
         await pipeline.stop()
+
+    _pipeline_loops.pop(view_id, None)
+    event = _pipeline_stop_events.pop(view_id, None)
+    if event is not None and not event.is_set():
+        event.set()
 
 
 async def stop_all() -> None:
