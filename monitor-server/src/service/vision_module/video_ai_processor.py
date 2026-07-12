@@ -81,7 +81,11 @@ class VideoAIProcessor:
 
         fence_events = await self.fence_engine.check_and_publish(tracks, ctx.timestamp)
         if fence_events:
-            _fel.update({e.track_id: f"Fence-{e.fence_id}" for e in fence_events})
+            for e in fence_events:
+                if e.entered:
+                    _fel[e.track_id] = f"Fence-{e.fence_id}"
+                else:
+                    _fel.pop(e.track_id, None)  # 离开围栏：清除标签
         ctx.fence_polygons = self.fence_engine.fence_polygons
 
 
