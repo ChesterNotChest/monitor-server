@@ -33,6 +33,16 @@ class VideoAIProcessor:
     async def process_frame(self, ctx: "FrameContext") -> None:
         tracks = self.tracker.update(ctx.detections)
         ctx.tracks = tracks
+        # 围栏多边形每帧都设——不管有没有人
+        polys = self.fence_engine.fence_polygons
+        ctx.fence_polygons = polys
+        import logging as _logging
+        _slog = _logging.getLogger(__name__)
+        if polys:
+            _slog.info("[ProcFrame] fence_polygons: %d polygon(s)", len(polys))
+        elif ctx.frame_id <= 3:
+            _slog.info("[ProcFrame] fence_polygons is EMPTY (fence_engine._fences=%d)",
+                        len(self.fence_engine._fences))
         if not tracks:
             return
 
@@ -41,7 +51,7 @@ class VideoAIProcessor:
         # 事件总线订阅 create_task 有时静默失败，详见 vision_annotation.py:84-94 注释
         import logging as _logging
         from src.service.vision_module.vision_annotation import (
-            _face_labels as _fl, _action_labels as _al,
+            _face_labels as _fl, _action_labels as _al, _fence_labels as _fel,
         )
         face_labels = self.face_recognizer.get_face_labels()
         if face_labels:
@@ -69,7 +79,10 @@ class VideoAIProcessor:
             _al.update({tid: name for tid, (_, name) in best.items()})
             _logging.getLogger(__name__).info("[Direct] Action labels: %s", dict(_al))
 
-        await self.fence_engine.check_and_publish(tracks, ctx.timestamp)
+        fence_events = await self.fence_engine.check_and_publish(tracks, ctx.timestamp)
+        if fence_events:
+            _fel.update({e.track_id: f"Fence-{e.fence_id}" for e in fence_events})
+        ctx.fence_polygons = self.fence_engine.fence_polygons
 
 
 def register_video_ai_hooks(

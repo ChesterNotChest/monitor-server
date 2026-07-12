@@ -44,9 +44,10 @@ obs:  r=0ms  y=16ms  hk=0ms  pipe=16ms  push=17fps  帧率对齐
 - [x] Face: Stranger 显示正常（dlib + C2 持久缓存 + 增量更新）
 - [x] Action: Sitting/Standing/Waving 等显示正常（SlowFast AVA+Kinetics 双模型 + 线程池）
 - [x] 枚举同步：`constants.py` 16 类对齐 `seed_data.py` ACTION_NAMES
-- [x] 可视化：浅绿虚线框标注 SlowFast padded crop 区域
-- [ ] Fence：逻辑就绪，待配置围栏区域即可激活
+- [x] 可视化：浅绿虚线框标注 SlowFast padded crop 区域 + 橙色半透明围栏区域
+- [x] Fence：围栏检测 + 标签 + 绘制全部就绪。FenceEngine 5s TTL 缓存 DB 查询
 - [x] 事件总线 Bug：workaround 绕过，`video_ai_processor.py` 直接更新全局 dict
+- [x] **SPEC**: 围栏生命周期严格包含于 View 生命周期。即需要等待view创建后，才能用API画围栏。View 存在并运行时，FenceEngine 每 5s 从 DB 重载围栏配置。围栏 API 创建/修改/删除后最多 5s 自动生效，无需重启管线
 - [x] 250 passed
 
 ## 四、人脸识别恢复 ⏳ (代码已恢复，待引导测试)
@@ -80,7 +81,166 @@ obs:  r=0ms  y=16ms  hk=0ms  pipe=16ms  push=17fps  帧率对齐
 | 项目 | 状态 | 原因 |
 |------|------|------|
 | Node 累积延迟 | 修复中 | 采集 30fps→17fps + nobuffer + 4M；待验证 |
-| Fence 围栏标注 | 未测 | 代码就绪，需配置围栏区域后验证 |
+| Fence 围栏标注 | ✅ 已测 | 2026-07-12 验证：`db.commit()` 修复后 TTL 重载正常，橙色半透明围栏成功绘制到流上 |
 | 时间戳嵌入 | 搁置 | §五音频合流前置，PTS/SEI 方案已讨论 |
 | EventBus 订阅静默失败 | Workaround | `video_ai_processor.py` 直接更新全局 dict |
 | PyAV 替代 subprocess | 搁置 | 按需，当前 ffmpeg pipe 足够稳 |
+
+## 七、围栏 API 注入路径
+
+### 7.1 围栏 CRUD
+
+所有操作需要 `fence:manage` 权限（`security_guard` / `operator` 角色）。**注意**：所有 URL 必须带尾斜杠 `/`（见 §8.2）。
+
+```powershell
+# 认证
+$TOKEN = (Invoke-RestMethod -Uri "http://127.0.0.1:8002/api/v1/auth/login/" -Method POST `
+  -ContentType "application/json" `
+  -Body "{`"username`":`"admin`",`"password`":`"<PWD>`"}").access_token
+
+# 列出所有围栏
+GET /api/v1/fences/
+# → [{id, name, view_id, coords:[[x,y],...], dwell_time, density, leave_frames}]
+
+# 创建围栏（view 必须先存在）
+POST /api/v1/fences/
+Body: {
+  "name": "区域-A",
+  "view_id": 1,
+  "coords": [[100,100],[500,100],[500,380],[100,380]],   # 4 点不规则四边形，像素坐标系
+  "dwell_time": 10,    # 停留时限 (秒)，可选，默认 10
+  "density": 0.6,      # 密度阈值 (0~1)，可选，默认 0.6
+  "leave_frames": 5    # 离开判定帧数，可选，默认 5
+}
+
+# 更新围栏坐标
+PUT /api/v1/fences/{fence_id}/
+Body: { "coords": [[...],[...],[...],[...]] }
+
+# 删除围栏
+DELETE /api/v1/fences/{fence_id}/  → 204 No Content
+```
+
+### 7.2 围栏生命周期
+
+```
+          POST /fences/                          DELETE /fences/{id}/
+              │                                        │
+              ▼                                        ▼
+┌──────────────────────────────┐      ┌──────────────────────────────┐
+│  DB: electronic_fences       │      │  DB: 围栏记录删除             │
+│  └─ 持久化                   │      │  └─ FenceEngine 最多 5s 感知 │
+└──────────────────────────────┘      └──────────────────────────────┘
+              │                                        │
+              ▼                                        ▼
+┌──────────────────────────────┐      ┌──────────────────────────────┐
+│  FenceEngine TTL 5s          │      │  流上围栏多边形消失           │
+│  └─ 从 DB 重载围栏          │      │  流上围栏多边形消失           │
+│  └─ ctx.fence_polygons 注入  │      │  ctx.fence_polygons 变为 []  │
+└──────────────────────────────┘      └──────────────────────────────┘
+              │
+              ▼
+┌──────────────────────────────┐
+│  vision_pipeline.py          │
+│  └─ draw_fence_polygons()    │
+│     └─ 橙色半透明覆盖 (alpha=0.2)│
+│        → :1936 RTMP 流       │
+└──────────────────────────────┘
+```
+
+**关键约束**: 围栏生命周期严格包含于 View 生命周期。必须先创建 View，再创建围栏。删除 View 时围栏不会自动删除（DB 有 `RESTRICT` 约束）。
+
+### 7.3 前端侧边栏数据流
+
+对于前端侧边栏展示围栏信息，现有 API 已经可以支撑三层数据：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  前端侧边栏                                                      │
+│                                                                  │
+│  ┌─ 围栏列表 ──────────────────────────────────────────────┐    │
+│  │  GET /api/v1/fences/                                     │    │
+│  │  → 围栏名称、多边形坐标、阈值参数                         │    │
+│  │  → 配合 Canvas/SVG 在预览图上绘制围栏边界                 │    │
+│  └──────────────────────────────────────────────────────────┘    │
+│                                                                  │
+│  ┌─ 实时告警 ──────────────────────────────────────────────┐    │
+│  │  GET /api/v1/events/?view_id=1                            │    │
+│  │  → 围栏闯入事件（Created by AlertEngine）                 │    │
+│  │  → 轮询间隔 ≤5s 即可（AlertEngine 检查周期 = 5s）        │    │
+│  │  ⚠ 暂无 WSS 直推前端，如需实时推送需新增通道              │    │
+│  └──────────────────────────────────────────────────────────┘    │
+│                                                                  │
+│  ┌─ 统计面板 ──────────────────────────────────────────────┐    │
+│  │  GET /api/v1/events/stats/by-exception                       │    │
+│  │  GET /api/v1/events/stats/trend?granularity=hour             │    │
+│  │  → 围栏闯入次数 / 趋势图                                   │    │
+│  └──────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**数据流链路**（围栏事件从管线到侧边栏）:
+```
+FenceEngine.check() → FenceEvent
+  → EventBus.publish(FENCE, ...)
+    → AlertEngine._on_event() → 汇聚到内存池
+      → 每 5s 匹配 ExceptionDef → 创建 SituationEvent → 写入 DB
+        → GET /api/v1/events/?view_id=1 → 前端轮询 ✅
+```
+
+**当前缺口**: 前端侧边栏需要主动轮询 `/events/`，暂无服务端推送。Node ↔ Server 已有 WSS 通道，前端 ↔ Server 的 WSS 推送可复用类似模式（非本阶段范围）。
+
+### 7.4 其他常用 API 路径
+
+| 方法 | 路径 | 用途 | 权限 |
+|------|------|------|------|
+| GET | `/api/v1/nodes/` | 列出节点 | — |
+| GET | `/api/v1/nodes/{id}/videos/` | 节点的视频设备 | — |
+| POST | `/api/v1/views/` | 创建监控视图 | — |
+| GET | `/api/v1/views/` | 列出视图 | — |
+| DELETE | `/api/v1/views/{id}/` | 删除视图 | — |
+| POST | `/api/v1/persons/` | 创建人员 | — |
+| POST | `/api/v1/persons/{id}/avatar/` | 上传人员头像 | — |
+| GET | `/api/v1/events/` | 事件日志（支持?view_id=） | — |
+| GET | `/api/v1/auth/me/` | 当前用户信息 | — |
+
+## 八、踩坑记录
+
+### 8.1 `db.commit()` 缺失 → fence API 数据无法持久化 ✅ (2026-07-12)
+
+**现象**: `POST /api/v1/fences/` 返回 `id=1` 成功，但 `GET /api/v1/fences/` 返回空数组。FenceEngine TTL 重载始终加载 0 条围栏。
+
+**根因**: `BaseRepo.create/update/delete` 只做 `db.flush()` 不 `db.commit()`。`get_db()` 构造的 Session（`autocommit=False`）关闭时只 `close()` 不 commit，未提交的事务回滚，数据消失。
+
+`view_task.py` 正确 —— 显式调了 `db.commit()`。`fence_task.py` 遗漏。
+
+**修复** (`fence_task.py`):
+- `create_fence`: `repo.create(...)` → `db.commit()`
+- `update_fence`: `repo.update(...)` → `db.commit()`
+- `delete_fence`: `repo.delete(...)` → `db.commit()`
+
+**同类风险**: `detection_task.py` 等其他 Service 可能同有遗漏，待排查。
+
+### 8.2 尾斜杠 307 重定向 → 丢失 CORS / Authorization 头 (2026-07-11/12)
+
+**现象 A（前端）**: 浏览器请求 `/api/v1/views`（无尾斜杠）→ FastAPI 307 重定向到 `/api/v1/views/` → 307 响应不含 `Access-Control-Allow-Origin` → 浏览器 CORS 报错
+
+**现象 B（API / 脚本）**: `GET /api/v1/fences` → 307 → 重定向后新请求不保留 Authorization header → 401 Not authenticated
+
+**根因**: Starlette 的尾斜杠重定向在 CORSMiddleware 之前处理，307 响应不经过 CORS 中间件。
+
+**修复（前端）**: `client.ts` 所有请求统一加尾斜杠 `/`（已由前端对齐员完成，@2026-07-11）
+
+**规避（后端脚本）**: 所有 API 调用都用尾斜杠路径：
+```
+✅ http://127.0.0.1:8002/api/v1/fences/       ← 带 /
+❌ http://127.0.0.1:8002/api/v1/fences        ← 无 /，触发 307
+```
+
+### 8.3 Server 重启后 Node 设备 ID 偏移
+
+**现象**: Server 重建 DB 后重启，Node 推送 RTMP 到 `..._video_0` 而 FrameReader 读取 `..._video_1`
+
+**根因**: Node 的 device_id 由 Server WSS 下发映射表决定。Server DB 清空后设备重新注册，但 Node 未同步收到更新。
+
+**规避**: Server 重建 DB 后需同步重启 Node。

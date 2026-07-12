@@ -38,7 +38,15 @@ def create_fence(
 
     **权限**: fence:manage
     """
-    return fence_task.create_fence(db, coords=body.coords)
+    return fence_task.create_fence(
+        db,
+        name=body.name,
+        view_id=body.view_id,
+        coords=body.coords,
+        dwell_time=body.dwell_time,
+        density=body.density,
+        leave_frames=body.leave_frames,
+    )
 
 
 @router.put(

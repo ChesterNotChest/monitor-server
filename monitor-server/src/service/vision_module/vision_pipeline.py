@@ -19,7 +19,8 @@ from src.constants import YOLOEntityType
 from src.service.vision_module.vision_frame_reader import FrameReader, FrameReaderState
 from src.service.vision_module.vision_yolo.detector import YoloDetector, Detection, YoloState
 from src.service.vision_module.vision_annotation import (
-    draw_detections, draw_action_regions, _face_labels, _fence_labels, _action_labels,
+    draw_detections, draw_action_regions, draw_fence_polygons,
+    _face_labels, _fence_labels, _action_labels,
 )
 from src.service.vision_module.vision_merger import (
     start_stream_merge, push_frame, stop_stream_merge,
@@ -42,6 +43,7 @@ class FrameContext:
     detections: list[Detection]      # YOLO 原始输出
     tracks: list[Track] | None = None  # ByteTrack 产出（B 模块填充）
     action_regions: dict[int, tuple[int, int, int, int]] | None = None  # SlowFast padded crop
+    fence_polygons: list[list[tuple[float, float]]] | None = None  # 围栏多边形
     view_id: int = 0
 
 
@@ -284,6 +286,15 @@ class AIPipeline:
             annotated = draw_detections(frame, detections)
             if ctx.action_regions:
                 annotated = draw_action_regions(annotated, ctx.action_regions)
+            # 围栏绘制
+            if ctx.fence_polygons is not None:
+                if ctx.fence_polygons:
+                    logger.info("[Fence] drawing %d polygon(s)", len(ctx.fence_polygons))
+                    annotated = draw_fence_polygons(annotated, ctx.fence_polygons)
+                elif _loop_frame_count <= 2:
+                    logger.info("[Fence] ctx.fence_polygons exists but is EMPTY")
+            elif _loop_frame_count <= 2:
+                logger.info("[Fence] ctx.fence_polygons is None (process_frame not setting it?)")
             _t4 = time.monotonic()
 
             # 推流 + 缓存用于断流时 frame hold

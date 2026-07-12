@@ -50,6 +50,8 @@ class FenceEngine:
     ) -> None:
         self.view_id = view_id
         self._fences: list[_FenceConfig] = []
+        self._fences_loaded_at: float = 0.0
+        self._fences_ttl: float = 5.0  # 5 秒重载一次围栏
         self._windows: defaultdict[tuple[int, int], deque[tuple[float, bool]]] = defaultdict(deque)
         self._states: defaultdict[tuple[int, int], FenceState] = defaultdict(lambda: FenceState.NOT_ENTERED)
         self._leave_counts: defaultdict[tuple[int, int], int] = defaultdict(int)
@@ -58,6 +60,22 @@ class FenceEngine:
             self._fences = [self._coerce_fence(fence) for fence in fences]
         elif db is not None:
             self.load_fences(db)
+
+    @property
+    def fence_polygons(self) -> list[list[tuple[float, float]]]:
+        """Return all fence polygon coordinates for drawing. TTL auto-reload."""
+        import time
+        import logging
+        _logger = logging.getLogger(__name__)
+        _now = time.monotonic()
+        if _now - self._fences_loaded_at >= self._fences_ttl:
+            from src.extensions import SessionLocal
+            with SessionLocal() as db:
+                self.load_fences(db)
+            self._fences_loaded_at = _now
+            _logger.info("[Fence] TTL reload: %d fence(s) loaded for view %d",
+                          len(self._fences), self.view_id)
+        return [fence.coords for fence in self._fences]
 
     def load_fences(self, db: Session) -> None:
         rows = db.scalars(
@@ -103,6 +121,14 @@ class FenceEngine:
         tracks: list[Track],
         frame_timestamp: float,
     ) -> list[FenceEvent]:
+        # 5 秒缓存：围栏配置低频变更，不必每帧查 DB
+        import time
+        _now = time.monotonic()
+        if _now - self._fences_loaded_at >= self._fences_ttl:
+            from src.extensions import SessionLocal
+            with SessionLocal() as db:
+                self.load_fences(db)
+            self._fences_loaded_at = _now
         events = self.check(tracks, frame_timestamp)
         if events:
             await event_bus.publish(
