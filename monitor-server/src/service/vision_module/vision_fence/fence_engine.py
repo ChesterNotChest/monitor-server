@@ -106,14 +106,16 @@ class FenceEngine:
                             entered=True,
                         ))
                 elif self._leave_counts[key] >= fence.leave_frames:
-                    self._states[key] = FenceState.NOT_ENTERED
-                    self._leave_counts[key] = 0
+                    self._drop_key(key)
                     events.append(FenceEvent(
                         fence_id=fence.id,
                         track_id=track.track_id,
                         result=FenceEventResult.ENTERED,
                         entered=False,
                     ))
+        # 清理已消失的 track（人走出画面）
+        active_ids = {t.track_id for t in tracks}
+        events.extend(self._cleanup_stale(active_ids, frame_timestamp))
         return events
 
     async def check_and_publish(
@@ -167,6 +169,51 @@ class FenceEngine:
         if not window:
             return 0.0
         return sum(1 for _, value in window if value) / len(window)
+
+    def _drop_key(self, key: tuple[int, int]) -> None:
+        """Delete all state for a (fence, track) pair — return to default silence."""
+        self._states.pop(key, None)
+        self._leave_counts.pop(key, None)
+        self._windows.pop(key, None)
+
+    def _cleanup_stale(
+        self,
+        active_ids: set[int],
+        frame_timestamp: float,
+    ) -> list[FenceEvent]:
+        """Generate leave events for tracks that disappeared from frame.
+
+        Uses the last window timestamp: if the track hasn't been seen for
+        longer than the fence's ``dwell_time``, it's considered gone.
+        """
+        events: list[FenceEvent] = []
+        for (fence_id, track_id), state in list(self._states.items()):
+            if track_id in active_ids:
+                continue
+            window = self._windows.get((fence_id, track_id))
+            if not window:
+                self._drop_key((fence_id, track_id))
+                continue
+            fence = self._find_fence(fence_id)
+            if fence is None:
+                self._drop_key((fence_id, track_id))
+                continue
+            if frame_timestamp - window[-1][0] > fence.dwell_time:
+                if state == FenceState.ENTERED:
+                    events.append(FenceEvent(
+                        fence_id=fence_id,
+                        track_id=track_id,
+                        result=FenceEventResult.ENTERED,
+                        entered=False,
+                    ))
+                self._drop_key((fence_id, track_id))
+        return events
+
+    def _find_fence(self, fence_id: int) -> _FenceConfig | None:
+        for f in self._fences:
+            if f.id == fence_id:
+                return f
+        return None
 
     def _coerce_fence(self, fence: ElectronicFence | _FenceConfig) -> _FenceConfig:
         if isinstance(fence, _FenceConfig):

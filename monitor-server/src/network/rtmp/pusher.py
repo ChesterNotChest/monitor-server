@@ -3,7 +3,9 @@
 from src.config import settings
 
 DEBUG_RTMP_HOST = "127.0.0.1"
-DEBUG_RTMP_PORT = 1936
+
+# 调试模式下 RTMP 端口从配置读取（与 SRS listen 端口一致，默认 1935）
+DEBUG_RTMP_PORT = settings.RTMP_PORT
 
 
 def _public_srs_host() -> str:
@@ -20,7 +22,7 @@ def _public_srs_http_port() -> int:
 
 def build_push_url(view_id: int) -> str:
     if settings.DEBUG_WEB_STREAM:
-        return f"rtmp://{DEBUG_RTMP_HOST}:{DEBUG_RTMP_PORT}/view/{view_id}"
+        return f"rtmp://{DEBUG_RTMP_HOST}:{DEBUG_RTMP_PORT}/live/{view_id}"
     return f"rtmp://{settings.SRS_HOST}:{settings.SRS_RTMP_PORT}/view/{view_id}"
 
 
@@ -39,5 +41,5 @@ def build_play_urls(view_id: int) -> dict[str, str | None]:
     return {
         "rtmp_url": f"rtmp://{public_host}:{public_rtmp_port}/view/{view_id}",
         "flv_url": f"http://{public_host}:{public_http_port}/view/{view_id}.flv",
-        "webrtc_url": f"http://{public_host}:{public_http_port}/rtc/v1/whep/?app=view&stream={view_id}",
+        "webrtc_url": f"http://{public_host}:1985/rtc/v1/whep/?app=view&stream={view_id}",
     }

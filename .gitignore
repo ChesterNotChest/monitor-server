@@ -3,8 +3,10 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 dist/
+objs/
 build/
 *.egg
+*.jpg
 
 # ===== 虚拟环境 / Conda =====
 .venv/
