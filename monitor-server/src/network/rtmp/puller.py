@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import time
@@ -9,8 +10,21 @@ import time
 from src.config import settings
 
 
+def _sanitize_stream_name(name: str) -> str:
+    """去除 device name 中的非 ASCII 字符，压缩空白为下划线。
+
+    RTMP URL 中的中文设备名会导致 ffmpeg 拉流阻塞。
+    此函数确保 stream key 仅含 ASCII 安全字符。
+    """
+    name = re.sub(r'[^\x20-\x7E]', '', name)       # 去除非 ASCII
+    name = re.sub(r'\s+', '_', name.strip())        # 空白 → _
+    name = re.sub(r'[^a-zA-Z0-9_.-]', '_', name)    # 特殊字符 → _
+    name = re.sub(r'_+', '_', name)                  # 合并连续下划线
+    return name.strip('_')
+
+
 def build_pull_url(device_name: str, device_type: str, device_id: int) -> str:
-    url_name = device_name.replace(" ", "_")
+    url_name = _sanitize_stream_name(device_name)
     stream_name = f"{url_name}_{device_type}_{device_id}"
     return f"rtmp://{settings.RTMP_HOST}:{settings.RTMP_PORT}/live/{stream_name}"
 

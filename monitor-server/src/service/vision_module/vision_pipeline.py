@@ -20,6 +20,7 @@ from src.service.vision_module.vision_frame_reader import FrameReader, FrameRead
 from src.service.vision_module.vision_yolo.detector import YoloDetector, Detection, YoloState
 from src.service.vision_module.vision_annotation import (
     draw_detections, draw_action_regions, draw_fence_polygons,
+    draw_sound_overlay,
     _face_labels, _fence_labels, _action_labels,
 )
 from src.service.vision_module.vision_merger import (
@@ -297,6 +298,9 @@ class AIPipeline:
             elif _loop_frame_count <= 2:
                 logger.info("[Fence] ctx.fence_polygons is None (process_frame not setting it?)")
             _t4 = time.monotonic()
+
+            # 音频事件叠加（左下角常驻）
+            annotated = draw_sound_overlay(annotated)
 
             # 推流 + 缓存用于断流时 frame hold
             self._latest_frame = annotated

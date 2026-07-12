@@ -228,5 +228,42 @@ def draw_fence_polygons(
     return annotated
 
 
+# ── 音频事件显示（左下角持久化） ──────────────
+
+_sound_label: str | None = None
+_sound_time: float = 0.0
+
+
+def set_sound_label(label: str | None) -> None:
+    """设置当前音频事件标签。label=None 则清除。"""
+    import time as _time
+    global _sound_label, _sound_time
+    _sound_label = label
+    _sound_time = _time.time() if label else 0.0
+
+
+def draw_sound_overlay(frame: np.ndarray) -> np.ndarray:
+    """在左下角绘制最近一次安全相关音频检测结果（持久化 + 经过时间）。
+
+    红底白字，显示格式: ``SOUND: Gunshot (3s ago)``。
+    """
+    import cv2 as _cv2
+    import time as _time
+    global _sound_label, _sound_time
+    if _sound_label is None:
+        return frame
+    elapsed = _time.time() - _sound_time if _sound_time > 0 else 0
+    text = f"SOUND: {_sound_label} ({elapsed:.0f}s ago)"
+    h, w = frame.shape[:2]
+    (tw, th), _ = _cv2.getTextSize(text, _cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    # 半透明背景
+    overlay = frame.copy()
+    _cv2.rectangle(overlay, (10, h - th - 16), (tw + 20, h - 4), (0, 0, 0), -1)
+    _cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, dst=frame)
+    _cv2.putText(frame, text, (16, h - 10),
+                 _cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+    return frame
+
+
 # late import after defining _bbox_color
 import cv2
