@@ -107,7 +107,7 @@ pipeline {
                             /var/jenkins_home/*) HOST_WORKSPACE="/home/liusu/jenkins/${HOST_WORKSPACE#/var/jenkins_home/}" ;;
                         esac
                         docker compose --project-directory "$HOST_WORKSPACE" -f "$HOST_WORKSPACE/$COMPOSE_FILE" ps
-                        curl --noproxy '*' -fsS "http://127.0.0.1:${HTTP_PORT}/health"
+                        docker exec monitor-nginx wget -qO- http://127.0.0.1/health
                         docker exec monitor-app python -c "from src.app import app; print([getattr(r, 'path', None) for r in app.routes])"
                     '''
                 }
