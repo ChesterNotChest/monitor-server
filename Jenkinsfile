@@ -51,11 +51,10 @@ pipeline {
                 withEnv(["MODEL_DIR=${params.MODEL_DIR}"]) {
                     sh '''
                         set -eu
-                        test -f "$MODEL_DIR/yolo/yolo11n.pt"
                         docker run --rm \
                           -v "$MODEL_DIR:/app/src/third-party:ro" \
                           ${DOCKER_IMAGE}:${BUILD_NUMBER} \
-                          python -m pytest src/tests/ --tb=short
+                          sh -c 'test -f /app/src/third-party/yolo/yolo11n.pt && python -m pytest src/tests/ --tb=short'
                     '''
                 }
             }
