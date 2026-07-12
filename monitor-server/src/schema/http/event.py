@@ -11,6 +11,7 @@ class EventResponse(BaseModel):
     id: int = Field(..., description="事件 ID")
     view_id: int = Field(..., description="关联监控视图 ID")
     exception_id: int = Field(..., description="关联异常规则 ID")
+    recording_id: int | None = Field(None, description="关联录制 ID（如有）")
     timestamp: datetime = Field(..., description="事件触发时间")
 
     model_config = {"from_attributes": True}

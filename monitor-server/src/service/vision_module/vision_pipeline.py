@@ -302,6 +302,10 @@ class AIPipeline:
             if self._merge_proc:
                 await push_frame(self._merge_proc, annotated)
 
+            # 录制：每帧推入环形缓冲区
+            from src.service import replay_task
+            replay_task.push_frame(view_id, annotated.tobytes())
+
             # 可观测性：每 5 秒打印一次帧率 + 分段耗时 + 端到端延迟
             _tn = time.monotonic()
             if _tn - _loop_last_log >= 5.0:

@@ -9,6 +9,7 @@ Debug 测试数据模块 —— 仅在 DEBUG_FLV_TRANSMIT=True 时启用。
 
 import logging
 import os
+import subprocess
 import threading
 import time
 from datetime import datetime, timezone
@@ -19,13 +20,13 @@ from src.extensions import SessionLocal, engine, Base
 logger = logging.getLogger(__name__)
 
 # 固定的测试数据 ID，避免 URL 变化
-TEST_NODE_ID = 9999
-TEST_VIDEO_DEVICE_ID = 9999
-TEST_AUDIO_DEVICE_ID = 9999
-TEST_VIEW_ID = 9999
-TEST_EXCEPTION_ID = 9999
-TEST_RECORDING_ID = 9999
-TEST_ALERT_ID = 9999
+TEST_NODE_ID = 1
+TEST_VIDEO_DEVICE_ID = 1
+TEST_AUDIO_DEVICE_ID = 1
+TEST_VIEW_ID = 1
+TEST_EXCEPTION_ID = 1
+TEST_RECORDING_ID = 1
+TEST_ALERT_ID = 1
 
 CASSETTE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "test_cassette")
 RECOVERY_INTERVAL = 60  # seconds
@@ -64,7 +65,20 @@ def create_test_data() -> bool:
         # Check if all test data already exists
         existing_view = db.get(MonitorView, TEST_VIEW_ID)
         if existing_view is not None:
-            logger.debug("[debug_data] 测试数据已存在，跳过创建")
+            # Seed log entries independently (always, not gated by view existence)
+            from src.models.log_entry import LogEntry
+            existing_logs = db.query(LogEntry).count()
+            if existing_logs == 0:
+                sample_logs = [
+                    LogEntry(log_type=1, severity=1, summary="[DEBUG] 系统启动完成", created_at=datetime.now(timezone.utc)),
+                    LogEntry(log_type=2, severity=2, summary="[DEBUG] 检测到测试异常: 非法入侵", view_id=TEST_VIEW_ID, event_id=TEST_ALERT_ID, created_at=datetime.now(timezone.utc)),
+                    LogEntry(log_type=3, severity=3, summary="[DEBUG] 告警已触发: 围栏闯入", view_id=TEST_VIEW_ID, event_id=TEST_ALERT_ID, created_at=datetime.now(timezone.utc)),
+                    LogEntry(log_type=1, severity=1, summary="[DEBUG] 用户 admin 登录系统", operator_id=1, created_at=datetime.now(timezone.utc)),
+                ]
+                for l in sample_logs:
+                    db.add(l)
+                db.commit()
+                logger.info("[debug_data] ✓ 测试日志已创建 (4 条)")
             return True
 
         # Node
@@ -131,7 +145,7 @@ def create_test_data() -> bool:
 
         # Alert group (required by exception, NOT NULL)
         from src.models.alert_group import AlertGroup
-        TEST_GROUP_ID = 9999
+        TEST_GROUP_ID = 1
         group = db.get(AlertGroup, TEST_GROUP_ID)
         if group is None:
             group = AlertGroup(
@@ -166,6 +180,19 @@ def create_test_data() -> bool:
             )
             db.add(alert)
             db.flush()
+
+        # Log entries — seed sample data for log center
+        from src.models.log_entry import LogEntry
+        existing_logs = db.query(LogEntry).count()
+        if existing_logs == 0:
+            sample_logs = [
+                LogEntry(log_type=1, severity=1, summary="[DEBUG] 系统启动完成", created_at=datetime.now(timezone.utc)),
+                LogEntry(log_type=2, severity=2, summary="[DEBUG] 检测到测试异常: 非法入侵", view_id=TEST_VIEW_ID, event_id=TEST_ALERT_ID, created_at=datetime.now(timezone.utc)),
+                LogEntry(log_type=3, severity=3, summary="[DEBUG] 告警已触发: 围栏闯入", view_id=TEST_VIEW_ID, event_id=TEST_ALERT_ID, created_at=datetime.now(timezone.utc)),
+                LogEntry(log_type=1, severity=1, summary="[DEBUG] 用户 admin 登录系统", operator_id=1, created_at=datetime.now(timezone.utc)),
+            ]
+            for l in sample_logs:
+                db.add(l)
 
         db.commit()
         logger.info("[debug_data] ✓ 测试数据链路已创建 (view=%s, exception=%s, alert=%s, flv=%s)",
@@ -204,6 +231,81 @@ def _recovery_loop():
             logger.warning("[debug_data] 恢复检查异常: %s", e)
 
 
+_synthetic_procs: list[subprocess.Popen] = []
+
+
+def _start_synthetic_streams():
+    """为 debug 设备启动合成测试流 → SRS。
+
+    用 ffmpeg testsrc 模拟摄像头、sine 模拟麦克风，
+    推到 SRS 的 /live/video_1 和 /live/audio_1。
+    """
+    import shutil
+    ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+    rtmp_base = f"rtmp://{settings.RTMP_HOST}:{settings.RTMP_PORT}/live"
+
+    # 合成视频流
+    video_cmd = [
+        ffmpeg, "-re",
+        "-f", "lavfi", "-i", "testsrc=duration=86400:size=640x480:rate=15",
+        "-f", "lavfi", "-i", "sine=frequency=440:duration=86400",
+        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "128k",
+        "-f", "flv",
+        f"{rtmp_base}/Debug_Test_Camera_video_{TEST_VIDEO_DEVICE_ID}",
+        "-y",
+    ]
+    try:
+        p = subprocess.Popen(video_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _synthetic_procs.append(p)
+        logger.info("[debug_data] ✓ 合成视频流已启动 → %s/live/Debug_Test_Camera_video_%s",
+                     rtmp_base, TEST_VIDEO_DEVICE_ID)
+    except FileNotFoundError:
+        logger.warning("[debug_data] ffmpeg 未找到，无法启动合成视频流")
+
+    # 合成音频流
+    audio_cmd = [
+        ffmpeg, "-re",
+        "-f", "lavfi", "-i", "sine=frequency=440:duration=86400",
+        "-c:a", "aac", "-b:a", "128k",
+        "-f", "flv",
+        f"{rtmp_base}/Debug_Test_Microphone_audio_{TEST_AUDIO_DEVICE_ID}",
+        "-y",
+    ]
+    try:
+        p = subprocess.Popen(audio_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _synthetic_procs.append(p)
+        logger.info("[debug_data] ✓ 合成音频流已启动 → %s/live/Debug_Test_Microphone_audio_%s",
+                     rtmp_base, TEST_AUDIO_DEVICE_ID)
+    except FileNotFoundError:
+        logger.warning("[debug_data] ffmpeg 未找到，无法启动合成音频流")
+
+    # 等待流就绪后启动视图合流
+    time.sleep(8)
+    _start_view_merge(ffmpeg, rtmp_base)
+
+
+def _start_view_merge(ffmpeg: str, rtmp_base: str):
+    """为测试视图启动 ffmpeg 合流（拉取合成流 → 合并 → 推送视图路径）。"""
+    view_push = f"rtmp://{settings.SRS_HOST}:{settings.SRS_RTMP_PORT}/live/{TEST_VIEW_ID}"
+    video_pull = f"{rtmp_base}/Debug_Test_Camera_video_{TEST_VIDEO_DEVICE_ID}"
+    audio_pull = f"{rtmp_base}/Debug_Test_Microphone_audio_{TEST_AUDIO_DEVICE_ID}"
+
+    merge_cmd = [
+        ffmpeg, "-re",
+        "-i", video_pull, "-i", audio_pull,
+        "-c:v", "copy", "-c:a", "aac",
+        "-f", "flv", view_push, "-y",
+    ]
+    try:
+        p = subprocess.Popen(merge_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _synthetic_procs.append(p)
+        logger.info("[debug_data] ✓ 视图合流已启动 → %s", view_push)
+    except FileNotFoundError:
+        logger.warning("[debug_data] ffmpeg 未找到，无法启动视图合流")
+
+
 def start_debug_data():
     """启动 debug 测试数据（若配置开启）。"""
     global _timer_started
@@ -221,3 +323,6 @@ def start_debug_data():
         t = threading.Thread(target=_recovery_loop, daemon=True, name="debug-data-recovery")
         t.start()
         logger.info("[debug_data] 自动恢复定时器已启动 (间隔 %ss)", RECOVERY_INTERVAL)
+
+    # 启动合成测试流（每次重启都启动，不依赖视图是否已存在）
+    _start_synthetic_streams()

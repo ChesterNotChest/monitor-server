@@ -8,6 +8,7 @@ from .detection_router import entity_router, action_router, sound_router, fence_
 from .device_router import router as device_router
 from .event import router as event_router, stats_router
 from .exception_router import router as exception_router
+from .face_recognition_router import router as face_recognition_router
 from .fence_router import router as fence_router
 from .log_router import router as log_router
 from .node_router import router as node_router
@@ -29,6 +30,7 @@ routers = [
     event_router,
     stats_router,
     exception_router,
+    face_recognition_router,
     fence_router,
     log_router,
     node_router,
