@@ -117,9 +117,9 @@ pipeline {
                 sh '''
                     set -eu
                     HOST_WORKSPACE=${WORKSPACE}
-                        case "$HOST_WORKSPACE" in
-                            /var/jenkins_home/*) HOST_WORKSPACE="/home/liusu/jenkins/${HOST_WORKSPACE#/var/jenkins_home/}" ;;
-                        esac
+                    case "$HOST_WORKSPACE" in
+                        /var/jenkins_home/*) HOST_WORKSPACE="/home/liusu/jenkins/${HOST_WORKSPACE#/var/jenkins_home/}" ;;
+                    esac
                     docker compose --project-directory "$HOST_WORKSPACE" -f "$HOST_WORKSPACE/$COMPOSE_FILE" exec -T app python -m src.seed_data
                 '''
             }

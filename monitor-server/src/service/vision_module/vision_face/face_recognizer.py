@@ -1,0 +1,246 @@
+"""Face recognition over ByteTrack person crops."""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass
+from enum import Enum, auto
+from pathlib import Path
+from typing import Iterable
+
+import numpy as np
+from sqlalchemy.orm import Session
+
+from src.config import settings
+from src.constants import FaceRecognitionResult
+from src.models.named_person import NamedPerson
+from src.repository.named_person_repo import NamedPersonRepo
+from src.service.vision_module.vision_event_bus import FACE, event_bus
+from src.service.vision_module.vision_types import Track
+
+logger = logging.getLogger(__name__)
+
+_MIN_FACE_CROP_SIZE = 50
+
+
+class FaceResultStatus(Enum):
+    NO_RESULT = auto()
+    STRANGER = auto()
+    NORMAL = auto()
+
+
+@dataclass
+class FaceResult:
+    track_id: int
+    person_name: str | None
+    result: FaceResultStatus
+
+    @property
+    def result_id(self) -> int:
+        return {
+            FaceResultStatus.NO_RESULT: FaceRecognitionResult.NO_RESULT,
+            FaceResultStatus.STRANGER: FaceRecognitionResult.STRANGER,
+            FaceResultStatus.NORMAL: FaceRecognitionResult.NORMAL,
+        }[self.result]
+
+
+class FaceRecognizer:
+    """Recognize known people from tracked person crops."""
+
+    def __init__(
+        self,
+        db: Session | None = None,
+        *,
+        known_people: Iterable[tuple[np.ndarray, str]] | None = None,
+        tolerance: float | None = None,
+        skip_frames: int | None = None,
+    ) -> None:
+        self.tolerance = settings.FACE_MATCH_TOLERANCE if tolerance is None else tolerance
+        self.skip_frames = max(1, settings.FACE_SKIP_FRAMES if skip_frames is None else skip_frames)
+        self._known_encodings: list[np.ndarray] = []
+        self._known_names: list[str] = []
+        self._last_results: dict[int, FaceResult] = {}
+        self._frame_counter = 0
+        self._face_lib = self._load_face_recognition()
+
+        if known_people is not None:
+            for encoding, name in known_people:
+                self._known_encodings.append(np.asarray(encoding, dtype=float))
+                self._known_names.append(name)
+        elif db is not None:
+            self.load_known_people(db)
+
+    def load_known_people(self, db: Session) -> None:
+        """Load NamedPerson 128D encodings into memory.
+
+        ``NamedPerson.feat_json_id`` is treated flexibly: it may contain a JSON
+        array directly or point to a JSON file containing the vector.
+        """
+
+        self._known_encodings.clear()
+        self._known_names.clear()
+        for person in NamedPersonRepo(db).all(limit=10_000):
+            encoding = self._extract_encoding(person)
+            if encoding is None:
+                continue
+            self._known_encodings.append(encoding)
+            self._known_names.append(person.name)
+
+    def recognize(self, frame: np.ndarray, tracks: list[Track]) -> list[FaceResult]:
+        self._frame_counter += 1
+
+        # 1. 已缓存的 track 直接返回（同一个人不重复识别）
+        uncached = [t for t in tracks if t.track_id not in self._last_results]
+
+        if not uncached:
+            return [self._last_results[t.track_id] for t in tracks]
+
+        # 2. 跳帧：非识别帧只返回已有缓存
+        if self._frame_counter % self.skip_frames != 1:
+            return [self._last_results[t.track_id] for t in tracks
+                    if t.track_id in self._last_results]
+
+        # 3. 识别帧 — 只处理未缓存的人
+        for track in uncached:
+            result = self._recognize_track(frame, track)
+            if result is not None and result.result != FaceResultStatus.NO_RESULT:
+                self._last_results[track.track_id] = result
+
+        return [self._last_results[t.track_id] for t in tracks
+                if t.track_id in self._last_results]
+
+    async def recognize_and_publish(
+        self,
+        frame: np.ndarray,
+        tracks: list[Track],
+        view_id: int,
+    ) -> list[FaceResult]:
+        results = self.recognize(frame, tracks)
+        if results:
+            await event_bus.publish(
+                FACE,
+                {
+                    "view_id": view_id,
+                    "faces": [
+                        {
+                            "track_id": result.track_id,
+                            "person_name": result.person_name,
+                            "result": result.result.name,
+                            "result_id": int(result.result_id),
+                        }
+                        for result in results
+                    ],
+                    "labels": self.get_face_labels(),
+                },
+            )
+        return results
+
+    def get_face_labels(self) -> dict[int, str]:
+        labels: dict[int, str] = {}
+        for track_id, result in self._last_results.items():
+            if result.result == FaceResultStatus.NORMAL and result.person_name:
+                labels[track_id] = result.person_name
+            elif result.result == FaceResultStatus.STRANGER:
+                labels[track_id] = "Stranger"
+        if labels:
+            logger.info("[Face] labels: %s", labels)
+        return labels
+
+    def _recognize_track(self, frame: np.ndarray, track: Track) -> FaceResult | None:
+        crop = _crop(frame, track.bbox)
+        if crop is None:
+            logger.info("[Face] track %d: crop failed", track.track_id)
+            return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
+        height, width = crop.shape[:2]
+        if width < _MIN_FACE_CROP_SIZE or height < _MIN_FACE_CROP_SIZE:
+            logger.info("[Face] track %d: crop too small %dx%d (min %d)",
+                         track.track_id, width, height, _MIN_FACE_CROP_SIZE)
+            return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
+
+        if self._face_lib is None:
+            logger.warning("[Face] track %d: face_lib not loaded", track.track_id)
+            return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
+
+        rgb_crop = np.ascontiguousarray(crop[:, :, ::-1])
+        try:
+            locations = self._face_lib.face_locations(rgb_crop)
+            if not locations:
+                logger.info("[Face] track %d: no face_locations found in %dx%d crop",
+                             track.track_id, width, height)
+                return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
+            encodings = self._face_encodings(rgb_crop, locations)
+            if not encodings:
+                logger.info("[Face] track %d: face found but encoding failed", track.track_id)
+                return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
+        except Exception:
+            logger.exception("Face recognition failed for track %s", track.track_id)
+            return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
+
+        if not self._known_encodings:
+            logger.info("[Face] track %d: STRANGER (no known people in DB)", track.track_id)
+            return FaceResult(track.track_id, None, FaceResultStatus.STRANGER)
+
+        encoding = encodings[0]
+        matches = self._face_lib.compare_faces(
+            self._known_encodings,
+            encoding,
+            tolerance=self.tolerance,
+        )
+        if not any(matches):
+            return FaceResult(track.track_id, None, FaceResultStatus.STRANGER)
+
+        match_index = matches.index(True)
+        return FaceResult(track.track_id, self._known_names[match_index], FaceResultStatus.NORMAL)
+
+    def _face_encodings(self, rgb_crop: np.ndarray, locations: list[tuple[int, int, int, int]]) -> list[np.ndarray]:
+        try:
+            return self._face_lib.face_encodings(rgb_crop, locations)
+        except TypeError as exc:
+            if "compute_face_descriptor" not in str(exc) and "incompatible function arguments" not in str(exc):
+                raise
+            logger.warning(
+                "face_recognition location-bound encoding is incompatible; retrying without locations"
+            )
+            return self._face_lib.face_encodings(rgb_crop)
+
+    def _extract_encoding(self, person: NamedPerson) -> np.ndarray | None:
+        raw = person.feat_json_id
+        if not raw:
+            return None
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            path = Path(raw)
+            if not path.exists():
+                return None
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                logger.exception("Failed to load face encoding for %s", person.name)
+                return None
+        try:
+            vector = np.asarray(payload, dtype=float)
+        except Exception:
+            return None
+        return vector if vector.shape == (128,) else None
+
+    def _load_face_recognition(self) -> object | None:
+        try:
+            import face_recognition  # type: ignore
+        except Exception:
+            logger.warning("face_recognition is not installed; face module returns NO_RESULT")
+            return None
+        return face_recognition
+
+
+def _crop(frame: np.ndarray, bbox: list[float]) -> np.ndarray | None:
+    height, width = frame.shape[:2]
+    x1, y1, x2, y2 = [int(round(value)) for value in bbox]
+    x1 = max(0, min(width, x1))
+    x2 = max(0, min(width, x2))
+    y1 = max(0, min(height, y1))
+    y2 = max(0, min(height, y2))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return frame[y1:y2, x1:x2]

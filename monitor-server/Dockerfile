@@ -18,6 +18,9 @@ RUN apt-get update \
 
 COPY requirements.txt .
 RUN python -m pip install --upgrade pip \
+    && pip install --user \
+        torch torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/cu124 \
     && pip install --user -r requirements.txt
 
 FROM python:3.12-slim
@@ -34,6 +37,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
+        ffmpeg \
         libgl1 \
         libglib2.0-0 \
         libsm6 \
