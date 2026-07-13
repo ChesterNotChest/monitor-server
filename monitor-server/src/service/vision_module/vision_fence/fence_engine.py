@@ -60,6 +60,7 @@ class FenceEngine:
 
         if fences is not None:
             self._fences = [self._coerce_fence(f) for f in fences]
+            self._fences_loaded_at = float("inf")
         elif db is not None:
             self.load_fences(db)
 
@@ -67,7 +68,7 @@ class FenceEngine:
     def fence_polygons(self) -> list[list[tuple[float, float]]]:
         import time
         now = time.monotonic()
-        if now - self._fences_loaded_at >= self._fences_ttl:
+        if self._fences_loaded_at != 999999.0 and now - self._fences_loaded_at >= self._fences_ttl:
             from src.extensions import SessionLocal
             with SessionLocal() as db:
                 self.load_fences(db)
@@ -150,7 +151,7 @@ class FenceEngine:
     async def check_and_publish(self, tracks: list[Track], frame_timestamp: float) -> list[FenceEvent]:
         import time
         now = time.monotonic()
-        if now - self._fences_loaded_at >= self._fences_ttl:
+        if self._fences_loaded_at != 999999.0 and now - self._fences_loaded_at >= self._fences_ttl:
             from src.extensions import SessionLocal
             with SessionLocal() as db:
                 self.load_fences(db)
