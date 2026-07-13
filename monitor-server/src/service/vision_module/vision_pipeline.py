@@ -376,6 +376,14 @@ class AIPipeline:
             # 标注叠加 — 一步到位：用 Track/Face 信息富化 Detection 标签，单遍绘制
             _enrich_detection_labels(detections, ctx.tracks, _face_labels,
                                          _fence_labels, _action_labels)
+
+            # 提取 ActiveSignals 快照供 AlertEngine 使用
+            from src.service.vision_module.vision_annotation import get_active_signals as _gas
+            _eids = frozenset(d.entity_type_id for d in detections if d.entity_type_id is not None)
+            _signals = _gas(entity_type_ids=_eids)
+            import src.service.vision_module.vision_annotation as _van
+            _van._ACTIVE_SIGNALS = _signals
+
             annotated = draw_detections(frame, detections)
             if ctx.action_regions:
                 annotated = draw_action_regions(annotated, ctx.action_regions)

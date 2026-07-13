@@ -43,7 +43,11 @@ class VideoAIProcessor:
         elif ctx.frame_id <= 3:
             _slog.info("[ProcFrame] fence_polygons is EMPTY (fence_engine._fences=%d)",
                         len(self.fence_engine._fences))
+
         if not tracks:
+            # 无 track 时清空动作 ID 缓存
+            import src.service.vision_module.vision_annotation as _van
+            _van._active_action_type_ids = frozenset()
             return
 
         await self.face_recognizer.recognize_and_publish(ctx.frame, tracks, ctx.view_id)
@@ -78,6 +82,14 @@ class VideoAIProcessor:
                     best[r.track_id] = (r.confidence, name)
             _al.update({tid: name for tid, (_, name) in best.items()})
             _logging.getLogger(__name__).info("[Direct] Action labels: %s", dict(_al))
+            # 同步写入整数 ID 缓存（引用替换，无锁安全）
+            import src.service.vision_module.vision_annotation as _van
+            _van._active_action_type_ids = frozenset(
+                r.action_type_id for r in action_results
+            )
+        else:
+            import src.service.vision_module.vision_annotation as _van
+            _van._active_action_type_ids = frozenset()
 
         fence_events = await self.fence_engine.check_and_publish(tracks, ctx.timestamp)
         if fence_events:

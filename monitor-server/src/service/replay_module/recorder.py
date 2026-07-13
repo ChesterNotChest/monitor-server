@@ -1,5 +1,6 @@
 """录制会话 —— 从 SRS 拉取 RTMP 流录制到本地 FLV 文件。"""
 
+import logging
 import os
 import subprocess
 import threading
@@ -9,6 +10,8 @@ from pathlib import Path
 
 from src.config import settings
 from src.service.replay_module.ring_buffer import FrameRingBuffer
+
+logger = logging.getLogger(__name__)
 
 
 class RecordingSession:
@@ -63,16 +66,29 @@ class RecordingSession:
 
         self._monitor_thread = threading.Thread(target=self._monitor, daemon=True)
         self._monitor_thread.start()
+        logger.info(
+            "[Replay] START view=%d rec=%d max_dur=%ds wind_down=%ds",
+            self.view_id, self.recording_id, self.max_duration, self.wind_down,
+        )
         return self.recording_id
 
     def _monitor(self):
         while not self._stop_event.wait(timeout=1.0):
             elapsed = _time.monotonic() - self._start_mono
             if elapsed >= self.max_duration:
+                logger.info(
+                    "[Replay] MAX_DUR stop view=%d rec=%d elapsed=%.0fs",
+                    self.view_id, self.recording_id, elapsed,
+                )
                 self._stop_ffmpeg()
                 break
             if self._alert_ended:
-                if _time.monotonic() - self._wind_down_start >= self.wind_down:
+                wind_elapsed = _time.monotonic() - self._wind_down_start
+                if wind_elapsed >= self.wind_down:
+                    logger.info(
+                        "[Replay] WIND_DOWN stop view=%d rec=%d total=%.0fs",
+                        self.view_id, self.recording_id, elapsed,
+                    )
                     self._stop_ffmpeg()
                     break
 
@@ -88,10 +104,20 @@ class RecordingSession:
                 try: self._ffmpeg_proc.kill()
                 except Exception: pass
 
-    def on_new_alert(self): self._alert_ended = False
+    def on_new_alert(self):
+        self._alert_ended = False
+        logger.info(
+            "[Replay] KEEP_ALIVE view=%d rec=%d",
+            self.view_id, self.recording_id,
+        )
+
     def on_alert_end(self):
         self._alert_ended = True
         self._wind_down_start = _time.monotonic()
+        logger.info(
+            "[Replay] WIND_DOWN view=%d rec=%d wait=%ds",
+            self.view_id, self.recording_id, self.wind_down,
+        )
 
     def is_stopped(self) -> bool: return self._stop_event.is_set()
 

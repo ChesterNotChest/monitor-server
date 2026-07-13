@@ -319,15 +319,23 @@ class YamnetRunner:
                 "score": score,
             })
         # 同时发布旧 SOUND_TYPE_MAP 格式（兼容现有 AlertEngine 规则）
+        matched_sound_ids: set[int] = set()
         for sound_type_val, class_id in SOUND_TYPE_MAP.items():
             if class_id < len(scores_np) and scores_np[class_id] > self._threshold:
                 had_alert = True
+                matched_sound_ids.add(sound_type_val + 1)  # YAMNetSoundType 枚举值 = index + 1
                 await event_bus.publish(SOUND, {
                     "type": SOUND,
                     "view_id": self._view_id,
                     "sound_type_ids": [sound_type_val],
                     "score": float(scores_np[class_id]),
                 })
+        # 同步写入全局声音 ID 缓存（引用替换，无锁安全）
+        if matched_sound_ids:
+            import time as _t
+            import src.service.vision_module.vision_annotation as _van
+            _van._active_sound_type_ids = _van._active_sound_type_ids.union(matched_sound_ids)
+            _van._active_sound_ids_updated_at = _t.time()
         return had_alert
 
     def _log_top_scores(self, waveform, window_count: int, rms: float = 0.0) -> None:
