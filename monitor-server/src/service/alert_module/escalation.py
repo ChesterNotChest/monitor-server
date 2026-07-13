@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from sqlalchemy import select
 
@@ -33,6 +34,29 @@ ESCALATION_ROLES = ["security_guard", "manager"]  # 上报链角色顺序
 
 _timers: dict[int, asyncio.Task] = {}  # alert_id → timer task
 _acked: set[int] = set()               # 已确认的 alert_id（跨协程通信）
+
+
+def _event_snapshot(event):
+    """Copy ORM event fields needed by async timers before its Session closes."""
+    exc = getattr(event, "exception", None)
+    exc_snapshot = None
+    if exc is not None:
+        severity = getattr(exc, "severity", None)
+        exc_snapshot = SimpleNamespace(
+            id=getattr(exc, "id", None),
+            group_id=getattr(exc, "group_id", None),
+            name=getattr(exc, "name", None),
+            severity=SimpleNamespace(name=getattr(severity, "name", str(severity))),
+        )
+
+    return SimpleNamespace(
+        id=event.id,
+        view_id=event.view_id,
+        exception_id=getattr(event, "exception_id", None),
+        status=getattr(event, "status", None),
+        timestamp=getattr(event, "timestamp", None),
+        exception=exc_snapshot,
+    )
 
 
 # ── 责任人查找 ───────────────────────────────────
@@ -186,7 +210,11 @@ async def start_escalation_from_id(event_id: int, view_id: int, view_name: str,
         from sqlalchemy.orm import selectinload
         from sqlalchemy import select as _sel
 
-        event = db.get(SituationEvent, event_id)
+        event = db.scalar(
+            _sel(SituationEvent)
+            .where(SituationEvent.id == event_id)
+            .options(selectinload(SituationEvent.exception))
+        )
         if not event:
             return
 
@@ -198,13 +226,14 @@ async def start_escalation_from_id(event_id: int, view_id: int, view_name: str,
                 .options(selectinload(AlertGroup.responses))
             )
 
-        await start_escalation(event, alert_group, view_name)
+        await start_escalation(_event_snapshot(event), alert_group, view_name)
     finally:
         db.close()
 
 
 async def start_escalation(event, alert_group, view_name: str) -> None:
     """启动逐级上报流程。"""
+    event = _event_snapshot(event) if not isinstance(event, SimpleNamespace) else event
     alert_id = event.id
     responders, role = _determine_responders(alert_group, event)
 
@@ -461,11 +490,15 @@ async def recover_timers() -> None:
     db = SessionLocal()
     try:
         from src.models.situation_event import SituationEvent
-        events = list(db.scalars(
-            select(SituationEvent).where(
-                SituationEvent.status.in_([STATUS_CREATED, STATUS_ESCALATED])
-            )
-        ).all())
+        from sqlalchemy.orm import selectinload
+        events = [
+            _event_snapshot(ev)
+            for ev in db.scalars(
+                select(SituationEvent)
+                .where(SituationEvent.status.in_([STATUS_CREATED, STATUS_ESCALATED]))
+                .options(selectinload(SituationEvent.exception))
+            ).all()
+        ]
     finally:
         db.close()
 
@@ -474,11 +507,9 @@ async def recover_timers() -> None:
         if alert_id in _acked or alert_id in _timers:
             continue
 
-        # 提前提取所有值（session 关闭后无法访问 relationship）
         ev_view_id = ev.view_id
         ev_status = ev.status
         ev_timestamp = ev.timestamp
-        exc_group_id = ev.exception.group_id if hasattr(ev, "exception") and ev.exception else None
 
         # 确定当前上报角色级别
         if ev_status == STATUS_CREATED:
