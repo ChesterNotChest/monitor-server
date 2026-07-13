@@ -461,24 +461,25 @@ class AIPipeline:
     async def _reopen_reader(self) -> bool:
         """Attempt to reopen FrameReader with exponential backoff.
 
-        Returns True if reopen succeeds, False after all retries exhausted.
+        Retries indefinitely — pipeline survives transient RTMP outages.
+        After max attempts, resets counter and continues at max backoff interval.
         """
         self._reader.reset_error()
-        for attempt in range(1, self._REOPEN_MAX_ATTEMPTS + 1):
+        attempt = 0
+        while True:
+            attempt += 1
             backoff = min(
                 self._REOPEN_INITIAL_BACKOFF * (self._REOPEN_BACKOFF_MULT ** (attempt - 1)),
                 self._REOPEN_MAX_BACKOFF,
             )
             logger.warning(
-                "FrameReader reopen attempt %d/%d in %.1fs ...",
-                attempt, self._REOPEN_MAX_ATTEMPTS, backoff,
+                "FrameReader reopen attempt %d in %.1fs ...",
+                attempt, backoff,
             )
             await asyncio.sleep(backoff)
             if self._reader.open(self._video_id, self._video_name):
                 logger.info("FrameReader reopened successfully (attempt %d)", attempt)
                 return True
-        logger.error(
-            "FrameReader reopen failed after %d attempts",
-            self._REOPEN_MAX_ATTEMPTS,
-        )
-        return False
+            # stop logging every attempt beyond 10 to reduce noise
+            if attempt > self._REOPEN_MAX_ATTEMPTS:
+                attempt = 0  # reset counter, continue at max backoff

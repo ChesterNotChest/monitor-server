@@ -38,6 +38,27 @@ def seed_admin():
             role="operator",
             is_active=True,
         )
+
+        # 创建演示安全员和负责人，形成上报链
+        guard = repo.create(
+            username="security_guard_1",
+            password_hash=hash_password("guard123"),
+            role="security_guard",
+            dingtalk_mobile="13800000001",
+            supervisor_id=None,  # 暂不设上级，使用 role 上报
+            is_active=True,
+        )
+        manager = repo.create(
+            username="manager_1",
+            password_hash=hash_password("manager123"),
+            role="manager",
+            dingtalk_mobile="13800000002",
+            supervisor_id=None,
+            is_active=True,
+        )
+        # 安全员 → 负责人 上报链
+        guard.supervisor_id = manager.id
+
         db.commit()
 
         print(f"[seed] 已创建管理员账户 admin，密码={password}")

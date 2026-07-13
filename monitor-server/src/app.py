@@ -113,6 +113,15 @@ async def print_urls():
     finally:
         _db.close()
 
+    # 逐级上报计时器恢复
+    try:
+        import asyncio as _asyncio2
+        from src.service.alert_module.escalation import recover_timers
+        _asyncio2.create_task(recover_timers())
+        logging.getLogger(__name__).info("[Recovery] Escalation timers scheduled")
+    except Exception as e:
+        logging.getLogger(__name__).warning("[Recovery] Escalation timer recovery skipped: %s", e)
+
 
 @app.on_event("shutdown")
 async def shutdown_cleanup():

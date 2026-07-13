@@ -24,6 +24,7 @@ from .face_recognition_result import FaceRecognitionResult
 from .recording import Recording
 from .log_entry import LogEntry
 from .user import User
+from .escalation_log import EscalationLog
 
 __all__ = [
     "Node",
@@ -49,4 +50,5 @@ __all__ = [
     "Recording",
     "LogEntry",
     "User",
+    "EscalationLog",
 ]

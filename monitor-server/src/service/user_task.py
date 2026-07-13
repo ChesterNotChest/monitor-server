@@ -11,7 +11,9 @@ def list_users(db: Session) -> list:
     return UserRepo(db).all()
 
 
-def create_user(db: Session, username: str, password: str, role: str) -> dict:
+def create_user(db: Session, username: str, password: str, role: str,
+                dingtalk_mobile: str | None = None,
+                supervisor_id: int | None = None) -> dict:
     """创建新用户。"""
     repo = UserRepo(db)
     existing = repo.by_username(username)
@@ -21,7 +23,14 @@ def create_user(db: Session, username: str, password: str, role: str) -> dict:
         username=username,
         password_hash=hash_password(password),
         role=role,
+        dingtalk_mobile=dingtalk_mobile,
+        supervisor_id=supervisor_id,
     )
+
+
+def update_user(db: Session, user_id: int, **kwargs):
+    """更新用户信息。"""
+    return UserRepo(db).update(user_id, **kwargs)
 
 
 def update_role(db: Session, user_id: int, role: str):
