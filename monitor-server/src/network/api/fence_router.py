@@ -46,6 +46,8 @@ def create_fence(
         dwell_time=body.dwell_time,
         density=body.density,
         leave_frames=body.leave_frames,
+        safe_distance=body.safe_distance,
+        entry_delay_seconds=body.entry_delay_seconds,
     )
 
 
@@ -72,6 +74,8 @@ def update_fence(
         dwell_time=body.dwell_time,
         density=body.density,
         leave_frames=body.leave_frames,
+        safe_distance=body.safe_distance,
+        entry_delay_seconds=body.entry_delay_seconds,
     )
     if result is None:
         raise HTTPException(status_code=404, detail="围栏不存在")

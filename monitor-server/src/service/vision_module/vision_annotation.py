@@ -120,11 +120,18 @@ def get_active_signals(
     if any(v == "Stranger" for v in _face_labels.values()):
         face_ids = frozenset({FaceRecognitionResult.STRANGER})
 
-    # Fence: 非空 → {1} (ENTERED)
+    # Fence: 解析 label 后缀提取结果类型
     from src.constants import FenceEventResult
-    fence_ids = frozenset()
-    if _fence_labels:
-        fence_ids = frozenset({FenceEventResult.ENTERED})
+    fence_ids_set: set[int] = set()
+    for label in _fence_labels.values():
+        if ":TOO_CLOSE" in label:
+            fence_ids_set.add(FenceEventResult.TOO_CLOSE)
+        elif ":IN" in label:
+            fence_ids_set.add(FenceEventResult.ENTERED)
+        else:
+            # 向后兼容旧格式 "Fence-{id}"
+            fence_ids_set.add(FenceEventResult.ENTERED)
+    fence_ids = frozenset(fence_ids_set)
 
     return ActiveSignals(
         entity_type_ids=entity_type_ids,
@@ -147,15 +154,22 @@ async def _on_face_event(payload: dict) -> None:
 
 
 async def _on_fence_event(payload: dict) -> None:
-    """订阅 FENCE topic，更新围栏标签映射。"""
+    """订阅 FENCE topic，更新围栏标签映射（支持 TOO_CLOSE）。"""
     global _fence_labels
     fences: list[dict] = payload.get("fences", [])
     logger.info("[FenceSub] called, fences=%s", len(fences))
-    if fences:
-        _fence_labels = {
-            f["track_id"]: f"Fence-{f.get('fence_id', '?')}"
-            for f in fences if "track_id" in f
-        }
+    for f in fences:
+        tid = f.get("track_id")
+        if tid is None:
+            continue
+        entered = f.get("entered", False)
+        result = f.get("result", "ENTERED")
+        fid = f.get("fence_id", "?")
+        if entered:
+            suffix = ":TOO_CLOSE" if result == "TOO_CLOSE" else ":IN"
+            _fence_labels[tid] = f"Fence-{fid}{suffix}"
+        else:
+            _fence_labels.pop(tid, None)
 
 
 async def _on_action_event(payload: dict) -> None:
@@ -238,6 +252,7 @@ def draw_part_b_overlay(
     action_labels: dict[int, str] | None = None,
     fence_labels: dict[int, str] | None = None,
     fence_polygons: list[list[tuple[float, float]]] | None = None,
+    fence_expanded_polygons: list[list[tuple[float, float]]] | None = None,
 ) -> np.ndarray:
     """Draw Part B tracking, face, action, and fence state on a frame."""
 
@@ -245,6 +260,12 @@ def draw_part_b_overlay(
     face_labels = face_labels or {}
     action_labels = action_labels or {}
     fence_labels = fence_labels or {}
+
+    if fence_expanded_polygons:
+        for polygon in fence_expanded_polygons:
+            points = np.array(polygon, dtype=np.int32)
+            if len(points) >= 3:
+                cv2.polylines(annotated, [points], isClosed=True, color=(80, 80, 255), thickness=1, lineType=cv2.LINE_AA)
 
     if fence_polygons:
         for polygon in fence_polygons:
@@ -311,8 +332,9 @@ _COLOR_FENCE = (0, 165, 255)  # 橙色 — 围栏边界
 def draw_fence_polygons(
     frame: np.ndarray,
     polygons: list[list[tuple[float, float]]],
+    expanded: list[list[tuple[float, float]]] | None = None,
 ) -> np.ndarray:
-    """在帧上绘制围栏多边形（橙色填充 + 边界线）。"""
+    """在帧上绘制围栏多边形（橙色填充 + 边界线）+ 安全距离扩展框（细红线）。"""
     import cv2
     annotated = frame.copy()
     overlay = annotated.copy()
@@ -321,6 +343,12 @@ def draw_fence_polygons(
         if len(pts) >= 3:
             cv2.fillPoly(overlay, [pts], _COLOR_FENCE)
     cv2.addWeighted(overlay, 0.2, annotated, 0.8, 0, dst=annotated)
+
+    if expanded:
+        for coords in expanded:
+            pts = np.array([(int(x), int(y)) for x, y in coords], dtype=np.int32)
+            if len(pts) >= 3:
+                cv2.polylines(annotated, [pts], isClosed=True, color=(80, 80, 255), thickness=1, lineType=cv2.LINE_AA)
     return annotated
 
 

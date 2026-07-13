@@ -108,6 +108,7 @@ _FACE_RESULT_NAMES = [
 
 _FENCE_EVENT_NAMES = [
     "entered",      # FenceEventResult.ENTERED = 1
+    "too_close",    # FenceEventResult.TOO_CLOSE = 2
 ]
 
 _DEFAULT_GROUP_NAME = "默认告警组"
@@ -192,5 +193,28 @@ def seed_alerts():
             f"group='{_DEFAULT_GROUP_NAME}', "
             f"exception='{_DEFAULT_EXCEPTION_NAME}'"
         )
+    finally:
+        db.close()
+
+
+def seed_fence_events():
+    """精确幂等：确保 FenceEventType 表同时存在 id=1 (ENTERED) 和 id=2 (TOO_CLOSE)。
+
+    与 seed_alerts() 独立——seed_alerts 仅在表全空时运行（已含 id=1,2），
+    此函数处理存量 DB 只有 id=1 的场景。
+    """
+    from src.models.fence_event_type import FenceEventType
+
+    db = SessionLocal()
+    try:
+        existing_ids = {r.id for r in db.query(FenceEventType).all()}
+        if 1 in existing_ids and 2 in existing_ids:
+            return
+        if 1 not in existing_ids:
+            db.add(FenceEventType(id=1, name="ENTERED"))
+        if 2 not in existing_ids:
+            db.add(FenceEventType(id=2, name="TOO_CLOSE"))
+        db.commit()
+        print("[seed] fence_event_types: id=1 ENTERED / id=2 TOO_CLOSE 已就绪")
     finally:
         db.close()

@@ -19,6 +19,8 @@ def create_fence(
     dwell_time: int = 10,
     density: float = 0.6,
     leave_frames: int = 5,
+    safe_distance: int = 0,
+    entry_delay_seconds: int = 0,
 ):
     fence = ElectronicFenceRepo(db).create(
         name=name,
@@ -27,6 +29,8 @@ def create_fence(
         dwell_time=dwell_time,
         density=density,
         leave_frames=leave_frames,
+        safe_distance=safe_distance,
+        entry_delay_seconds=entry_delay_seconds,
     )
     db.commit()
     return fence
@@ -42,6 +46,8 @@ def update_fence(
     dwell_time: int | None = None,
     density: float | None = None,
     leave_frames: int | None = None,
+    safe_distance: int | None = None,
+    entry_delay_seconds: int | None = None,
 ):
     kwargs = {}
     if name is not None:
@@ -56,6 +62,10 @@ def update_fence(
         kwargs["density"] = density
     if leave_frames is not None:
         kwargs["leave_frames"] = leave_frames
+    if safe_distance is not None:
+        kwargs["safe_distance"] = safe_distance
+    if entry_delay_seconds is not None:
+        kwargs["entry_delay_seconds"] = entry_delay_seconds
     fence = ElectronicFenceRepo(db).update(fence_id, **kwargs)
     return fence
 
