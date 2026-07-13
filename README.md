@@ -225,26 +225,164 @@ curl -X POST http://127.0.0.1:8000/api/v1/views/ \
 
 ---
 
-## Docker 部署
+## Docker / Jenkins CD 部署
 
-### 1. 准备模型权重
+生产部署由 Jenkins 构建 `monitor-server:${BUILD_NUMBER}`，再用 `docker compose up -d --remove-orphans` 长期运行。MySQL 是独立的长期容器，不放进 Jenkins 反复重建。
 
-```bash
-# 首次：下载模型权重到宿主机目录
-mkdir -p ./models
-cd monitor-server/src/third-party && python download_weights.py
-cp -r monitor-server/src/third-party/* ./models/
-```
+### 1. MySQL 容器
 
-### 2. 启动服务
+当前推荐的 MySQL 容器配置：
 
 ```bash
-docker-compose -f docker-compose.prod.yml up -d
+docker run -d \
+  --name monitor-mysql \
+  --restart unless-stopped \
+  --network servercicd_default \
+  -p 127.0.0.1:3676:3306 \
+  -v /home/liusu/mysql-data:/var/lib/mysql \
+  -e MYSQL_ROOT_PASSWORD='你的root密码' \
+  -e MYSQL_DATABASE=monitor \
+  -e MYSQL_USER=monitor \
+  -e MYSQL_PASSWORD='monitor_placeholder2026' \
+  mysql:8.4 \
+  --character-set-server=utf8mb4 \
+  --collation-server=utf8mb4_unicode_ci
 ```
 
-模型目录通过 `${MODEL_DIR:-./models}` 挂载到容器 `/app/src/third-party/`。权重文件只需下载一次，后续重启无需重新下载。
+端口只绑定宿主机回环地址，服务器本机可用 `127.0.0.1:3676` 连接；外部机器不能直接用服务器 IP 访问。`monitor-app` 容器通过 Docker 网络访问 `monitor-mysql:3306`。
 
-服务暴露在 `:80`（nginx → app:8000）。
+### 2. 模型挂载
+
+Jenkins 参数 `MODEL_DIR` 默认：
+
+```text
+/home/liusu/video/models
+```
+
+生产 compose 会把它只读挂载到容器内：
+
+```text
+/app/src/third-party
+```
+
+首次准备模型权重时可在宿主机上放到：
+
+```text
+/home/liusu/video/models/
+├── yolo/yolo11n.pt
+├── slowfast/SLOWFAST_8x8_R50.pkl
+├── slowfast/SLOWFAST_8x8_R50_DETECTION.pyth
+├── slowfast/kinetics_classnames.txt
+├── slowfast/ava_action_list_v2.1_for_activitynet_2018.pbtxt
+└── yamnet/yamnet_tfhub/
+```
+
+YOLO 至少需要：
+
+```text
+/home/liusu/video/models/yolo/yolo11n.pt
+```
+
+容器内对应路径：
+
+```text
+/app/src/third-party/yolo/yolo11n.pt
+```
+
+### 3. Jenkins 参数
+
+Jenkins 任务使用 `Build with Parameters`，生产部署时设置：
+
+```text
+DEPLOY_PROD=true
+HTTP_PORT=8081
+RTMP_PORT=1935
+STREAM_HTTP_PORT=8082
+SRS_API_PORT=1985
+SRS_RTC_PORT=8000
+SRS_CANDIDATE=10.126.59.25
+SRS_PUBLIC_HOST=10.126.59.25
+MODEL_DIR=/home/liusu/video/models
+DATABASE_URL=mysql+pymysql://monitor:monitor_placeholder2026@monitor-mysql:3306/monitor?charset=utf8mb4
+JWT_SECRET=换成生产随机长字符串
+RUN_SEED_DATA=false
+```
+
+首次需要写入业务枚举和告警规则时，可以临时设置 `RUN_SEED_DATA=true`。应用启动时会自动建表并创建默认管理员；`RUN_SEED_DATA` 只用于额外业务种子数据。
+
+### 4. 部署后验证
+
+```bash
+docker ps --filter name=monitor-mysql
+docker ps --filter name=monitor-app
+curl --noproxy '*' http://127.0.0.1:8081/health
+docker exec monitor-app find /app/src/third-party -maxdepth 3 -type f
+docker exec monitor-app ls -lah /app/face_images
+```
+
+`monitor-node` 联调配置示例：
+
+```env
+SERVER_BASE_URL=10.126.59.25
+WSS_SCHEME=ws
+WSS_PORT=8081
+RTMP_PORT=1935
+DEBUG_WSS=false
+RTMP_DEBUG=false
+SECRET_KEY=节点token
+```
+
+### 5. 完整链路验证
+
+Server CD 部署成功后，只验证 `/health` 还不够。完整视频链路应按下面顺序确认：
+
+```text
+Node --WSS 经 nginx--> monitor-server
+Node --RTMP 推 raw 流--> SRS live
+monitor-server --RTMP 拉 raw 流--> SRS live
+monitor-server --RTMP 推处理后流--> SRS view
+Web --HTTP/WebRTC 拉流--> SRS view
+```
+
+关键现象：
+
+```text
+WSS 路由：/ws 或 /api/v1/ws，经 monitor-nginx 的 8081 进入
+raw 输入流：rtmp://stream-server:1935/live/{device_name}_{video|audio}_{id}
+处理后输出：rtmp://stream-server:1935/view/{view_id}
+公网播放地址：http://10.126.59.25:8082/rtc/v1/whep/?app=view&stream={view_id}
+```
+
+部署后可看日志确认：
+
+```bash
+docker logs --tail=200 monitor-app
+```
+
+正常应出现：
+
+```text
+[WSS] Auth complete
+FrameReader connected
+AIPipeline started
+FFmpeg merge
+push FPS
+```
+
+如果出现下面这种日志，表示 OpenCV/FFmpeg 把 RTMP 拉流误打开成 listen 模式：
+
+```text
+Cannot open connection tcp://stream-server:1935?listen&listen_timeout=...
+FrameReader failed to open rtmp://stream-server:1935/live/...
+```
+
+这时检查代码或容器环境里的 `OPENCV_FFMPEG_CAPTURE_OPTIONS`，应使用：
+
+```text
+rw_timeout;5000000
+```
+
+不要使用 `timeout;5000000`。
 
 ---
 

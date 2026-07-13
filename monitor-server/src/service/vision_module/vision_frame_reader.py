@@ -7,9 +7,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from contextlib import contextmanager
 from enum import Enum, auto
+
+# Keep in sync with src.run for tests/imports that bypass the normal entrypoint.
+# Low-latency RTMP: disable ffmpeg buffering, tiny RTMP buffer, live mode.
+os.environ.setdefault(
+    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+    "rw_timeout;5000000|"
+    "fflags;nobuffer|"
+    "flags;low_delay|"
+    "analyzeduration;0|"
+    "probesize;32|"
+    "rtmp_live;live|"
+    "buffer_size;65536",
+)
 
 import cv2
 import numpy as np
@@ -21,9 +35,9 @@ logger = logging.getLogger(__name__)
 
 # ── 重连参数 ──────────────────────────────────
 _INITIAL_BACKOFF = 1.0
-_MAX_BACKOFF = 60.0
+_MAX_BACKOFF = 10.0
 _BACKOFF_MULTIPLIER = 2.0
-_MAX_CONSECUTIVE_FAILURES = 10
+_MAX_CONSECUTIVE_FAILURES = 999_999_999  # 永不放弃
 
 
 class FrameReaderState(Enum):
@@ -46,6 +60,7 @@ class FrameReader:
         self._consecutive_failures: int = 0
         self._frame_id: int = 0
         self._open_time: float = 0.0
+        self._stream_pos_ms: float = 0.0
 
     # ── Properties ──────────────────────────────
 
@@ -62,6 +77,12 @@ class FrameReader:
         """Reader 打开时的墙上时钟（Unix 秒），用于计算帧采集时刻。"""
         return self._open_time
 
+    @property
+    def stream_pos_ms(self) -> float:
+        """当前帧在流中的时间位置（毫秒），来自 cv2.CAP_PROP_POS_MSEC。
+        与墙钟对比可检测 RTMP 缓冲堆积深度。"""
+        return self._stream_pos_ms
+
     # ── Lifecycle ───────────────────────────────
 
     def open(self, video_id: int, video_name: str) -> bool:
@@ -72,8 +93,6 @@ class FrameReader:
         """
         url = build_pull_url(video_name, "video", video_id)
         logger.info("FrameReader connecting to %s", url)
-        import os
-        os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "timeout;5000000")
         self._cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
         if not self._cap.isOpened():
             logger.error("FrameReader failed to open %s", url)
@@ -120,11 +139,19 @@ class FrameReader:
         timestamp = time.time() - self._open_time
         return True, frame, timestamp, self._frame_id
 
+    def grab(self) -> bool:
+        """丢弃下一帧（不解码，仅抓取编码包）。比 read() 快，用于缓冲排空。"""
+        if self._cap is None:
+            return False
+        return self._cap.grab()
+
     def _read_internal(self) -> tuple[bool, np.ndarray | None]:
         """底层读取，直接取最新帧（不做跳帧窗口——RTMP read 本身已阻塞等帧）。"""
         if self._cap is None:
             return False, None
         ret, frame = self._cap.read()
+        if ret and self._cap is not None:
+            self._stream_pos_ms = self._cap.get(cv2.CAP_PROP_POS_MSEC)
         return ret, frame
 
     def _handle_read_failure(

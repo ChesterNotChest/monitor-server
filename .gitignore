@@ -62,3 +62,4 @@ monitor-server/src/third-party/*
 
 # ===== flv视频 =====
 *.flv
+condaenv.*.requirements.txt

@@ -20,23 +20,14 @@ from src.service.vision_module.vision_types import Track
 logger = logging.getLogger(__name__)
 
 # ── 配色方案 ──────────────────────────────────
-_COLOR_PERSON = (0, 255, 0)       # 绿色 — 人
-_COLOR_OBJECT = (0, 0, 255)       # 红色 — 物品/危险物
+_COLOR_NORMAL = (0, 255, 0)       # 绿色 — 正常
+_COLOR_IMPORTANT = (0, 215, 255)  # 黄色 — 关注
+_COLOR_DANGER = (0, 0, 255)       # 红色 — 危险
 _COLOR_TEXT = (255, 255, 255)     # 白色文字
 _COLOR_LABEL_BG = (0, 0, 0)       # 文字背景黑色
 
 _ENTITY_LABELS: dict[int, str] = {
     YOLOEntityType.PERSON: "Person",
-    YOLOEntityType.CAR: "Car",
-    YOLOEntityType.TRUCK: "Truck",
-    YOLOEntityType.BUS: "Bus",
-    YOLOEntityType.MOTORCYCLE: "Moto",
-    YOLOEntityType.BICYCLE: "Bike",
-    YOLOEntityType.DOG: "Dog",
-    YOLOEntityType.CAT: "Cat",
-    YOLOEntityType.BIRD: "Bird",
-    YOLOEntityType.BACKPACK: "Bag",
-    YOLOEntityType.SUITCASE: "Case",
     YOLOEntityType.KNIFE: "Knife",
 }
 
@@ -96,29 +87,36 @@ except RuntimeError:
     pass  # 无运行中的 event loop（如测试导入）
 
 
-def _bbox_color(entity_type_id: int | None) -> tuple[int, int, int]:
-    """实体类型 → 框颜色。PERSON 绿色，其余红色。"""
-    if entity_type_id == YOLOEntityType.PERSON:
-        return _COLOR_PERSON
-    return _COLOR_OBJECT
+def _alert_color(level: int) -> tuple[int, int, int]:
+    """alert_level → 框颜色。0=绿 1=黄 2=红。"""
+    if level >= 2:
+        return _COLOR_DANGER
+    if level == 1:
+        return _COLOR_IMPORTANT
+    return _COLOR_NORMAL
 
 
 def draw_detections(frame: np.ndarray, detections: list[Detection]) -> np.ndarray:
-    """在帧上绘制 YOLO 实体框和标签。返回新帧（不修改原帧）。"""
+    """在帧上绘制检测框和标签。
+
+    三级着色：danger(红) > important(黄) > normal(绿)。
+    label_suffix 为 None 的检测跳过（抑制的实体）。
+    """
     annotated = frame.copy()
+    drawn = 0
 
     for det in detections:
-        if det.entity_type_id is None:
+        if det.label_suffix is None:
             continue
+        drawn += 1
         x1, y1, x2, y2 = [int(v) for v in det.bbox]
-        color = _bbox_color(det.entity_type_id)
-        label = _ENTITY_LABELS.get(det.entity_type_id, f"#{det.entity_type_id}")
-        if det.label_suffix:
-            label = f"{label} {det.label_suffix}"
+        color = _alert_color(det.alert_level)
+        label = det.label_suffix
 
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
         _draw_label(annotated, label, x1, y1 - 10, color)
 
+    logger.info("[Draw] total=%d drawn=%d", len(detections), drawn)
     return annotated
 
 
@@ -226,6 +224,49 @@ def draw_fence_polygons(
             cv2.fillPoly(overlay, [pts], _COLOR_FENCE)
     cv2.addWeighted(overlay, 0.2, annotated, 0.8, 0, dst=annotated)
     return annotated
+
+
+# ── 音频事件显示（左下角持久化） ──────────────
+
+_sound_label: str | None = None
+_sound_time: float = 0.0
+
+
+def set_sound_label(label: str | None) -> None:
+    """设置当前音频事件标签。label=None 则清除。"""
+    import time as _time
+    global _sound_label, _sound_time
+    _sound_label = label
+    _sound_time = _time.time() if label else 0.0
+
+
+def draw_server_timestamp(frame: np.ndarray) -> np.ndarray:
+    """左上角叠加 Server 处理时间戳（黄色），与 Node 右下角 drawtext 对比 = 端到端延迟。"""
+    import cv2 as _cv2
+    import time as _time
+    ts = _time.strftime("%H:%M:%S")
+    (tw, th), _ = _cv2.getTextSize(ts, _cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    _cv2.rectangle(frame, (4, 4), (tw + 10, th + 10), (0, 0, 0), -1)
+    _cv2.putText(frame, ts, (8, th + 6), _cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+    return frame
+
+
+def draw_sound_overlay(frame: np.ndarray) -> np.ndarray:
+    """左下角音频检测标签（红字），格式 ``SOUND: Gunshot (3s ago)``。"""
+    import cv2 as _cv2
+    import time as _time
+    global _sound_label, _sound_time
+    if _sound_label is None:
+        return frame
+    elapsed = _time.time() - _sound_time if _sound_time > 0 else 0
+    text = f"SOUND: {_sound_label} ({elapsed:.0f}s ago)"
+    h, w = frame.shape[:2]
+    (tw, th), _ = _cv2.getTextSize(text, _cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    overlay = frame.copy()
+    _cv2.rectangle(overlay, (10, h - th - 16), (tw + 20, h - 4), (0, 0, 0), -1)
+    _cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, dst=frame)
+    _cv2.putText(frame, text, (16, h - 10), _cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+    return frame
 
 
 # late import after defining _bbox_color

@@ -72,7 +72,7 @@ def create_view(
         try:
             import asyncio
             import threading
-            from src.service.vision_task import start_pipeline
+            from src.service.vision_task import start_pipeline, wait_pipeline_stopped
 
             # 提前捕获字符串值——后台线程不能访问已关闭 session 的 ORM 对象
             _video_name = video.name
@@ -80,9 +80,8 @@ def create_view(
 
             async def _pipeline_forever(view_id: int, video_id: int, video_name: str,
                                         audio_id: int, audio_name: str) -> None:
-                await start_pipeline(view_id, video_id, video_name, audio_id, audio_name)
-                while True:
-                    await asyncio.sleep(3600)
+                if await start_pipeline(view_id, video_id, video_name, audio_id, audio_name):
+                    await wait_pipeline_stopped(view_id)
 
             def _launch() -> None:
                 asyncio.run(_pipeline_forever(view.id, video_id, _video_name,

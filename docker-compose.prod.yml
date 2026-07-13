@@ -11,7 +11,9 @@ services:
       APP_DEBUG: ${APP_DEBUG:-false}
       HOST: 0.0.0.0
       PORT: 8000
-      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/monitor.db}
+      FACE_IMAGE_DIR: /app/face_images
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       STREAM_SERVER_URL: ${STREAM_SERVER_URL:-}
       RTMP_HOST: stream-server
       RTMP_PORT: 1935
@@ -25,7 +27,8 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./media:/app/media
-      - ${MODEL_DIR:-./models}:/app/src/third-party:ro
+      - ./face_images:/app/face_images
+      - ${MODEL_DIR:-/home/liusu/video/models}:/app/src/third-party:ro
     expose:
       - "8000"
     restart: unless-stopped

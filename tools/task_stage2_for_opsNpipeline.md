@@ -65,33 +65,150 @@ obs:  r=0ms  y=16ms  hk=0ms  pipe=16ms  push=17fps  帧率对齐
 - [x] 4.2.1 `POST /api/v1/persons/` 创建人物 Chester
 - [x] 4.2.2 `POST /api/v1/persons/{id}/avatar` 上传头像 → 128D encoding 入库
 - [x] 4.2.3 重启管线 → Face: Chester (track 1 & 42)
-- [x] ⚠️ dlib 上传时 SIGSEGV（§8.4），离线提取 encoding 绕过
+- [x] ⚠️ dlib 上传时 SIGSEGV（§9.4），离线提取 encoding 绕过
 
-## 五、音频合流缺口
+## 五、视频延迟优化 🔴 当前优先
+
+Video-only 管线的端到端延迟需要压到可接受范围，**必须在音频合流之前完成**（合流会引入额外缓冲，叠在未修复的延迟上会让问题更难定位）。
+
+### 5.1 现象
+
+- VLC 播放 AI 标注流时主观延迟偏高
+- **"隔夜效应"**: 没改代码的情况下，第二天重新开机 → 延迟明显降低；长时间不关机 → 延迟逐渐升高
+- 怀疑根因：ffmpeg 缓冲随时间累积（TCP buffer creep + 内部 demuxer buffer + OpenCV VideoCapture buffer）
+
+### 5.2 管线缓冲点全景
+
+每个环节都是一个潜在的缓冲堆积点：
+
+```
+摄像头 dshow
+    │
+    ▼
+┌──────────────────────────────────────────────────────┐
+│ ① Node ffmpeg pull (dshow → RTMP 推流)               │
+│    dshow 内部缓冲 → ffmpeg demuxer → 编码器队列       │
+│    → RTMP 输出缓冲 → TCP send buffer                   │
+│    参数: -framerate 17 -fflags nobuffer -rtbufsize 4M │
+└──────────────────────────────────────────────────────┘
+    │  RTMP :1935/live/
+    ▼
+┌──────────────────────────────────────────────────────┐
+│ ② Server FrameReader (RTMP → OpenCV)                  │
+│    cv2.VideoCapture(CAP_FFMPEG) 拉流                  │
+│    仅设 OPENCV_FFMPEG_CAPTURE_OPTIONS="timeout;..."   │
+│    ⚠ 没有 nobuffer / rtbufsize / probesize 控制      │
+│    ffmpeg 内部 demuxer buffer ← 主要嫌疑              │
+│    TCP receive buffer ← OS 层，长时间运行会涨          │
+└──────────────────────────────────────────────────────┘
+    │  BGR24 frame
+    ▼
+┌──────────────────────────────────────────────────────┐
+│ ③ YOLO 推理 + 标注                                    │
+│    ~16ms 单帧，无显式队列                              │
+│    时钟门控维持 17fps 节奏                            │
+└──────────────────────────────────────────────────────┘
+    │  annotated frame (pipe:0)
+    ▼
+┌──────────────────────────────────────────────────────┐
+│ ④ Server ffmpeg push (rawvideo pipe → 编码 → RTMP)   │
+│    NVENC -zerolatency 1 -delay 0                      │
+│    RTMP 输出缓冲 → TCP send buffer                     │
+│    编码器内部 lookahead/reorder 队列                   │
+└──────────────────────────────────────────────────────┘
+    │  RTMP :1935/view/
+    ▼
+┌──────────────────────────────────────────────────────┐
+│ ⑤ VLC 播放缓冲                                        │
+│    默认 network-caching=1000ms                        │
+│    可在 VLC 偏好设置中调低                             │
+└──────────────────────────────────────────────────────┘
+```
+
+**主要嫌疑排序**（按影响大小）:
+1. **② FrameReader OpenCV/ffmpeg 缓冲** — 缺乏任何 buffer control flag，「隔夜效应」的最大嫌疑人
+2. **① Node ffmpeg 缓冲** — 已有 `nobuffer + rtbufsize 4M`，但 dshow 内部缓冲不可控
+3. **④ Push 编码器队列** — `-zerolatency 1 -delay 0` 已做，但 `-g 30` 可能引入 1 帧延迟
+4. **⑤ VLC** — 用户侧可控，不是服务端问题
+
+### 5.3 修复范式：感知 → 修复 → 验证（多轮迭代）
+
+```
+Round N:  [感知] 测全链路延迟 → [修复] 一个变量 → [验证] 对比 before/after → 下一个嫌疑
+```
+
+每轮只改一个变量，对比效果后再进入下一轮。如果某轮修复无效则回退。
+
+#### 5.3.1 感知工具（Round 1 必须先做）
+
+当前唯一的延迟信号是 `[obs] frame_age=XXms`（从 FrameReader `_open_time` 算的墙上时间差）。这个数字只反映 Server 内部的帧龄，**不反映 RTMP 缓冲堆积**。
+
+需要新增的观测点：
+
+- [ ] **5.3.1.1 FrameReader 帧时间戳 vs 墙上时间** — `frame_age = time.time() - frame_capture_time`。如果 frame_age 持续增长（比如从 50ms 涨到 2000ms），说明 Reader 的 RTMP 缓冲在堆积。当前已有 frame_age（`vision_pipeline.py` obs 行），但需要确认它测量的是真实帧龄还是自 Reader 打开后的偏移
+- [ ] **5.3.1.2 RTMP 源流 ffprobe 时间戳** — `ffprobe -show_packets rtmp://127.0.0.1:1935/live/...` 对比 `pts` 和 `pts_time`，看 SRS 侧的缓存深度
+- [ ] **5.3.1.3 Node 推流侧 latency 测量** — Node 的 obs 日志目前没有 frame_age 概念。建议加 Node 侧的采集时间戳
+- [ ] **5.3.1.4 端到端钟表测试** — 在摄像头前放一个显示秒数的手机/网页时钟，用 VLC 截图对比画面中的时间和真实时间，差值 = 端到端延迟。这是最直接的金标准
+
+#### 5.3.2 Round 1 修复候选：FrameReader 侧缓冲控制
+
+FrameReader (`vision_frame_reader.py:77`) 当前只用 `cv2.VideoCapture(url, cv2.CAP_FFMPEG)`，没有传任何 ffmpeg 参数。OpenCV 的 `cv2.CAP_FFMPEG` 后端支持通过环境变量或 `cv2.CAP_PROP` 传参，但最可靠的方式是：
+
+- [ ] **5.3.2.1 尝试 `cv2.CAP_PROP_BUFFERSIZE`** — `cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)` 限制 OpenCV 内部缓冲帧数（部分 OpenCV 版本支持）
+- [ ] **5.3.2.2 尝试 OPENCV_FFMPEG_CAPTURE_OPTIONS** — 当前已设 `timeout;5000000`，可以追加 RTMP/协议级参数如 `rtmp_live;live|buffer_size;1024`（需验证 OpenCV 是否真的传递给了 ffmpeg）  
+- [ ] **5.3.2.3 兜底：绕过 OpenCV，直接用 ffmpeg subprocess + named pipe** — 类似 push 侧的做法。`ffmpeg -fflags nobuffer -rtbufsize 1M -i rtmp://... -f rawvideo pipe:1` → Python 从 pipe 读帧。这是最彻底但工程量最大的方案，如果在 5.3.2.1/5.3.2.2 两轮都无效才启用
+
+#### 5.3.3 Round 2 修复候选：帧率对齐 + 跳帧策略
+
+- [ ] **5.3.3.1 确认三段帧率一致性** — 采集帧率 (dshow) = 推流帧率 (Node `-framerate`) = 处理帧率 (Server `FPS_TARGET`) = 推流帧率 (Server `-r`)。当前应该都是 17，用 `ffprobe` 分别验证各段实际 r_frame_rate
+- [ ] **5.3.3.2 如果存在帧率漂移** — 原理：Node 侧 dshow 实际输出 30fps 而 `-framerate 17` 让 ffmpeg 丢帧 → 丢帧逻辑可能不精确 → 时序抖动累积 → 缓冲。考虑在 Server push 侧用 `-vsync passthrough` 替代 `-vsync cfr` + `-copyts` 保留原始时间戳贯通全链路
+
+#### 5.3.4 Round 3 修复候选：push 侧微调
+
+- [ ] **5.3.4.1 减小编码器 GOP** — 当前 `-g 30`（约 1.8s 的 GOP）。改为 `-g 17`（约 1s）减少关键帧间隔，降低 VLC 重连延迟
+- [ ] **5.3.4.2 加 RTMP 输出缓冲控制** — push 侧 ffmpeg 命令追加 `-rtmp_buffer 100 -buffer_size 256k`（毫秒级缓冲）
+- [ ] **5.3.4.3 VLC 播放缓冲** — `network-caching=300`（默认 1000ms），在 VLC → 工具 → 偏好设置 → 输入/编解码器中调整
+
+### 5.4 验证标准
+
+每一轮修复后，用以下标准判断是否成功：
+
+| 指标 | 当前基线 | 目标 |
+|------|---------|------|
+| 端到端延迟（钟表法） | 待测 | <3s |
+| `frame_age` 稳态 | 待测 | <100ms 且不随时间增长 |
+| `frame_age` 漂移率 | 待测 | 运行 30min 后仍在 <300ms |
+| 隔夜效应 | 存在 | 消除（连续运行 1h 后重新推流，延迟不涨） |
+
+---
+
+## 六、音频合流缺口 ⏸️ 阻塞于 §五
 
 当前 AI 管线为 video-only。Audio 流需要合入最终流。
 
+**阻塞原因**: 音频合流（两阶段方案）会引入额外缓冲延迟。必须先在 §五 把 video-only 管线延迟压到目标范围，确立干净基线后再做合流。
+
 **问题**：pipe:0 + RTMP 音频双输入在同一个 ffmpeg 中死锁。纯 RTMP→RTMP 方式已验证可工作（两阶段方案），但中间流增加延迟。
 
-- [ ] 5.1 方案选择：SRS 合流（运维域）vs Server 侧两阶段合流（自己可控）
-- [ ] 5.2 若选 Server 侧：需要解决中间流延迟问题（anullsrc 占位 + 后续热切换真实音频？）
-- [ ] 5.3 无论选哪种，记下当前缺口便于后续接手
+- [ ] 6.1 方案选择：SRS 合流（运维域）vs Server 侧两阶段合流（自己可控）
+- [ ] 6.2 若选 Server 侧：需要解决中间流延迟问题（anullsrc 占位 + 后续热切换真实音频？）
+- [ ] 6.3 无论选哪种，记下当前缺口便于后续接手
 
-## 六、已知搁置项
+## 七、已知搁置项
 
 | 项目 | 状态 | 原因 |
 |------|------|------|
-| Node 累积延迟 | 修复中 | 采集 30fps→17fps + nobuffer + 4M；待验证 |
+| Node 累积延迟 | → §五 专项 | 已拆为独立任务：感知→修复→验证多轮迭代 |
 | Fence 围栏标注 | ✅ 已测 | 2026-07-12 验证：`db.commit()` 修复后 TTL 重载正常，橙色半透明围栏成功绘制到流上 |
 | 时间戳嵌入 | ✅ 减弱 | Node drawtext 始终在跑（`ffmpeg_dshow.py` line 90），延迟问题已通过 nobuffer+4M+GOP false+17fps 组合缓解，obs age=75ms 不影响。Server 侧 cv2.putText 方案未做 |
 | EventBus 订阅静默失败 | Workaround | `video_ai_processor.py` 直接更新全局 dict |
 | PyAV 替代 subprocess | 搁置 | 按需，当前 ffmpeg pipe 足够稳 |
 
-## 七、围栏 API 注入路径
+## 八、围栏 API 注入路径
 
 ### 7.1 围栏 CRUD
 
-所有操作需要 `fence:manage` 权限（`security_guard` / `operator` 角色）。**URL 已统一**: wwh 合并后所有端点统一尾斜杠 `/`，307 问题已根治（§8.2）。
+所有操作需要 `fence:manage` 权限（`security_guard` / `operator` 角色）。**URL 已统一**: wwh 合并后所有端点统一尾斜杠 `/`，307 问题已根治（§9.2）。
 
 ```powershell
 # 认证
@@ -212,7 +329,7 @@ FenceEngine.check() → FenceEvent
 | GET | `/api/v1/events` | 事件日志（?view_id=） | — |
 | GET | `/api/v1/alerts` | 告警列表 | alert:list |
 
-## 八、踩坑记录
+## 九、踩坑记录
 
 ### 8.1 `db.commit()` 缺失 → fence API 数据无法持久化 ✅ (2026-07-12)
 
