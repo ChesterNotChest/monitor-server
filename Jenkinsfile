@@ -18,6 +18,7 @@ pipeline {
         string(name: "MODEL_DIR", defaultValue: "/home/liusu/video/models", description: "Host directory mounted read-only to /app/src/third-party")
         string(name: "DATABASE_URL", defaultValue: "mysql+pymysql://monitor:monitor_placeholder2026@monitor-mysql:3306/monitor?charset=utf8mb4", description: "SQLAlchemy database URL used by the production app container")
         password(name: "JWT_SECRET", defaultValue: "change-me-in-jenkins-before-prod", description: "JWT signing secret for the production app")
+        password(name: "DINGTALK_WEBHOOK", defaultValue: "", description: "DingTalk robot webhook URL used by alert notifications")
         booleanParam(name: "RUN_SEED_DATA", defaultValue: false, description: "Run python -m src.seed_data after deployment")
     }
 
@@ -76,6 +77,7 @@ pipeline {
                     "MODEL_DIR=${params.MODEL_DIR}",
                     "DATABASE_URL=${params.DATABASE_URL}",
                     "JWT_SECRET=${params.JWT_SECRET}",
+                    "DINGTALK_WEBHOOK=${params.DINGTALK_WEBHOOK}",
                     "IMAGE_TAG=${BUILD_NUMBER}",
                 ]) {
                     sh '''

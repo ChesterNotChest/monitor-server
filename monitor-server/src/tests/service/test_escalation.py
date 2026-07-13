@@ -1,4 +1,6 @@
 """逐级上报引擎测试。"""
+from datetime import datetime, timezone
+from types import SimpleNamespace
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -13,6 +15,7 @@ from src.service.alert_module.escalation import (
     _determine_responders,
     _generate_ack_token,
     verify_ack_token,
+    recover_timers,
 )
 
 
@@ -67,3 +70,64 @@ class TestStatusConstants:
         assert ESCALATION_ROLES[0] == "security_guard"
         assert ESCALATION_ROLES[1] == "manager"
         assert len(ESCALATION_ROLES) == 2
+
+
+@pytest.mark.asyncio
+async def test_recover_timers_snapshots_event_before_session_close(monkeypatch):
+    from src.service.alert_module import escalation
+
+    escalation._timers.clear()
+    detached = {"closed": False}
+
+    class Severity:
+        name = "CRITICAL"
+
+    class ExceptionDef:
+        id = 7
+        group_id = 8
+        name = "critical-alert"
+        severity = Severity()
+
+    class Event:
+        id = 9
+        view_id = 10
+        exception_id = 7
+        status = STATUS_CREATED
+        timestamp = datetime.now(timezone.utc)
+
+        @property
+        def exception(self):
+            if detached["closed"]:
+                raise RuntimeError("detached relationship access")
+            return ExceptionDef()
+
+    class ScalarResult:
+        def all(self):
+            return [Event()]
+
+    class Session:
+        def scalars(self, _stmt):
+            return ScalarResult()
+
+        def close(self):
+            detached["closed"] = True
+
+    created = []
+
+    def fake_create_task(coro, name=None):
+        created.append((coro, name))
+        coro.close()
+        return SimpleNamespace(cancel=lambda: None)
+
+    monkeypatch.setattr("src.service.alert_module.escalation.SessionLocal", lambda: Session())
+    monkeypatch.setattr(
+        "src.service.alert_module.escalation._find_users_by_role",
+        lambda role: [SimpleNamespace(username="guard", dingtalk_mobile="13800000000")],
+    )
+    monkeypatch.setattr("src.service.alert_module.escalation.asyncio.create_task", fake_create_task)
+
+    await recover_timers()
+
+    assert len(created) == 1
+    assert created[0][1] == "esc-timer-9"
+    escalation._timers.clear()
