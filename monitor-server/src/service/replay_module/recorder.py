@@ -93,7 +93,7 @@ class RecordingSession:
                     break
 
     def _stop_ffmpeg(self):
-        """终止 ffmpeg 进程并设停止标志"""
+        """终止 ffmpeg 进程、设停止标志、写 Recording.end_time"""
         self._stop_event.set()
         if self._ffmpeg_proc:
             try: self._ffmpeg_proc.terminate()
@@ -103,6 +103,21 @@ class RecordingSession:
             except subprocess.TimeoutExpired:
                 try: self._ffmpeg_proc.kill()
                 except Exception: pass
+        # 回填 end_time（monitor 线程无 db 参数，自己开 session）
+        if self.recording_id:
+            try:
+                from src.extensions import SessionLocal
+                from src.repository.recording_repo import RecordingRepo
+                _db = SessionLocal()
+                try:
+                    rec = RecordingRepo(_db).get(self.recording_id)
+                    if rec and rec.end_time is None:
+                        rec.end_time = datetime.now(timezone.utc)
+                        _db.commit()
+                finally:
+                    _db.close()
+            except Exception:
+                pass
 
     def on_new_alert(self):
         self._alert_ended = False

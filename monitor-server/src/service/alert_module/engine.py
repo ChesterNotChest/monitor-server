@@ -26,6 +26,8 @@ class AlertEngine:
         # 冷却 key: (view_id, exc_id) — 只看异常种类，不看触发对象
         self._triggered: dict[tuple[int, int], float] = {}
         self._ongoing: dict[tuple[int, int], dict] = {}
+        self._last_emit: dict[tuple[int, int], str] = {}   # 节流: 上次输出的事件类型
+        self._last_signals: frozenset | None = None          # 节流: 上次的 signals 快照
         self._running = False
         self._task: asyncio.Task | None = None
 
@@ -59,10 +61,14 @@ class AlertEngine:
         af = set(sig.face_result_ids)
         afe = set(sig.fence_result_ids)
 
-        logger.info(
-            "[AlertEngine v=%d] signals E=%s A=%s S=%s F=%s FE=%s",
-            self._view_id, ae, aa, as_, af, afe,
-        )
+        # 节流: 只在信号变化时输出
+        _sig_key = frozenset({("E", frozenset(ae)), ("A", frozenset(aa)), ("S", frozenset(as_)), ("F", frozenset(af)), ("FE", frozenset(afe))})
+        if _sig_key != self._last_signals:
+            self._last_signals = _sig_key
+            logger.info(
+                "[AlertEngine v=%d] signals E=%s A=%s S=%s F=%s FE=%s",
+                self._view_id, ae, aa, as_, af, afe,
+            )
 
         if not any([ae, aa, as_, af, afe]):
             self._end_inactive(set())
@@ -84,49 +90,84 @@ class AlertEngine:
                 if key in self._triggered:
                     elapsed = now - self._triggered[key]
                     if elapsed < cd:
-                        self._triggered[key] = now
+                        # 录制已停止（MAX_DUR/wind_down）→ 强制 RESET，允许新录制
+                        from src.service import replay_task
+                        _sess = replay_task._sessions.get(self._view_id)
+                        if key in self._ongoing and _sess and _sess.is_stopped():
+                            self._ongoing.pop(key, None)
+                            self._triggered.pop(key, None)
+                            self._last_emit.pop(key, None)
+                            matched_now.discard(key)
+                            logger.info(
+                                "[AlertEngine v=%d] MAX_DUR RESET key=(%d,%d)",
+                                self._view_id, key[0], key[1],
+                            )
+                            continue
+
                         if key in self._ongoing:
                             self._keep_alive()
-                        logger.info(
-                            "[AlertEngine v=%d] cooldown HIT key=(%d,%d) elapsed=%.0fs remaining=%.0fs",
-                            self._view_id, key[0], key[1], elapsed, cd - elapsed,
-                        )
+                        # 状态变化时才输出
+                        if self._last_emit.get(key) != "cooldown":
+                            self._last_emit[key] = "cooldown"
+                            logger.info(
+                                "[AlertEngine v=%d] cooldown HIT key=(%d,%d) elapsed=%.0fs remaining=%.0fs",
+                                self._view_id, key[0], key[1], elapsed, cd - elapsed,
+                            )
                         continue
 
+                # cooldown 已过期 — 重置 timer
                 self._triggered[key] = now
-                logger.info(
-                    "[AlertEngine v=%d] TRIGGER key=(%d,%d) exc=%s",
-                    self._view_id, key[0], key[1], getattr(exc, "name", "?"),
-                )
 
                 if key not in self._ongoing:
-                    # 新告警 → 创建 SituationEvent + 启动录制 → 推送告警(含recording_id)
+                    # 真正的新触发
+                    self._last_emit[key] = "trigger"
+                    logger.info(
+                        "[AlertEngine v=%d] TRIGGER key=(%d,%d) exc=%s",
+                        self._view_id, key[0], key[1], getattr(exc, "name", "?"),
+                    )
+                    # 新告警 → 复用或新建录制 → 创建 SituationEvent → 推送
                     try:
+                        from src.service import replay_task
+                        # 检查是否有同 View 的活跃录制可复用
+                        _existing_session = replay_task._sessions.get(self._view_id)
+                        _active_rec = (
+                            _existing_session.recording_id
+                            if _existing_session and not _existing_session.is_stopped()
+                            else None
+                        )
+
                         from src.repository.situation_event_repo import SituationEventRepo
                         event = SituationEventRepo(db).create(
                             view_id=self._view_id, exception_id=exc.id,
                         )
                         db.commit()
 
-                        # 启动录制（立即创建Recording行，返回recording_id）
                         mr = getattr(exc, "max_recording_seconds", 10) or 10
                         wd = getattr(exc, "wind_down_seconds", 10) or 10
-                        rec_id = self._start_rec({
-                            "view_id": self._view_id,
-                            "exception_id": exc.id,
-                            "exception_name": getattr(exc, "name", None),
-                            "severity": getattr(exc, "severity", None).name
-                            if getattr(exc, "severity", None) else None,
-                        }, mr, wd)
+                        if _active_rec:
+                            rec_id = _active_rec
+                            self._keep_alive()
+                            logger.info(
+                                "[AlertEngine v=%d] Alert: exc=%d id=%d rec=%s (REUSE)",
+                                self._view_id, exc.id, event.id, rec_id,
+                            )
+                        else:
+                            rec_id = self._start_rec({
+                                "view_id": self._view_id,
+                                "exception_id": exc.id,
+                                "exception_name": getattr(exc, "name", None),
+                                "severity": getattr(exc, "severity", None).name
+                                if getattr(exc, "severity", None) else None,
+                            }, mr, wd)
+                            logger.info(
+                                "[AlertEngine v=%d] Alert: exc=%d id=%d rec=%s (NEW)",
+                                self._view_id, exc.id, event.id, rec_id,
+                            )
 
                         # 回填 recording_id
                         if rec_id:
                             event.recording_id = rec_id
                             db.commit()
-                        logger.info(
-                            "[AlertEngine v=%d] Alert: exc=%d id=%d rec=%s",
-                            self._view_id, exc.id, event.id, rec_id,
-                        )
 
                         # WSS 推送
                         from src.network.wss.alert_handler import alert_registry
@@ -149,11 +190,28 @@ class AlertEngine:
                     except Exception:
                         logger.exception("Failed to create alert")
                 else:
-                    self._keep_alive()
-                    logger.info(
-                        "[AlertEngine v=%d] keep_alive key=(%d,%d)",
-                        self._view_id, key[0], key[1],
-                    )
+                    # 检查录制是否已停止（MAX_DUR/wind_down）→ 重置状态允许新录制
+                    from src.service import replay_task
+                    _sess = replay_task._sessions.get(self._view_id)
+                    if _sess and _sess.is_stopped():
+                        if self._last_emit.get(key) != "maxdur_reset":
+                            self._last_emit[key] = "maxdur_reset"
+                            logger.info(
+                                "[AlertEngine v=%d] MAX_DUR RESET key=(%d,%d)",
+                                self._view_id, key[0], key[1],
+                            )
+                        self._ongoing.pop(key, None)
+                        self._triggered.pop(key, None)
+                        self._last_emit.pop(key, None)
+                        matched_now.discard(key)
+                    else:
+                        self._keep_alive()
+                        if self._last_emit.get(key) != "keepalive":
+                            self._last_emit[key] = "keepalive"
+                            logger.info(
+                                "[AlertEngine v=%d] keep_alive key=(%d,%d)",
+                                self._view_id, key[0], key[1],
+                            )
 
             self._end_inactive(matched_now)
         finally:
@@ -190,8 +248,12 @@ class AlertEngine:
         ended = set(self._ongoing.keys()) - matched
         for key in ended:
             self._ongoing.pop(key)
-            # 录制停止 → 重置冷却，下次可立即重新触发
             self._triggered.pop(key, None)
+            self._last_emit.pop(key, None)
+            logger.info(
+                "[AlertEngine v=%d] END key=(%d,%d) cooldown RESET",
+                self._view_id, key[0], key[1],
+            )
             logger.info(
                 "[AlertEngine v=%d] END key=(%d,%d) cooldown RESET",
                 self._view_id, key[0], key[1],
