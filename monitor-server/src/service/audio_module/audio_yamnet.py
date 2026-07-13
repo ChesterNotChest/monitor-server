@@ -276,14 +276,14 @@ class YamnetRunner:
         except ImportError:
             return False
 
-        dangers: list[tuple[float, str]] = []
+        dangers: list[tuple[float, str, int | None]] = []  # (score, label, audiose_id)
 
         # 1. 独立危险
         for aid, label in _DANGER_STANDALONE.items():
             if aid < len(scores_np):
                 s = float(scores_np[aid])
                 if s > DANGER_THRESHOLD:
-                    dangers.append((s, label))
+                    dangers.append((s, label, aid))
 
         # 2. 组合判定
         for group_a, group_b, combo_label in _COMBOS:
@@ -299,15 +299,16 @@ class YamnetRunner:
                 # 取两组最高分的均值作为组合得分
                 a_max = max(float(scores_np[aid]) for aid in group_a if aid < len(scores_np))
                 b_max = max(float(scores_np[aid]) for aid in group_b if aid < len(scores_np))
-                dangers.append(((a_max + b_max) / 2, combo_label))
+                dangers.append(((a_max + b_max) / 2, combo_label, None))
 
         # 3. 按分数降序，取 top-2（危险检测）
         dangers.sort(reverse=True)
-        label_parts = [f"{name} ({score:.2f})" for score, name in dangers[:2]]
+        label_parts = [f"{name} ({score:.2f})" for score, name, _ in dangers[:2]]
 
         # 同时收集 SOUND_TYPE_MAP 匹配（全部显示，方便调试）
         had_alert = False
-        for score, name in dangers:
+        matched_sound_ids: set[int] = set()
+        for score, name, aid in dangers:
             had_alert = True
             await event_bus.publish(SOUND, {
                 "type": SOUND,
@@ -315,7 +316,12 @@ class YamnetRunner:
                 "sound_name": name,
                 "score": score,
             })
-        matched_sound_ids: set[int] = set()
+            # 危险命中也写入 _active_sound_type_ids（AudioSetID → SoundType 反向查）
+            if aid is not None:
+                for st_val, st_aid in SOUND_TYPE_MAP.items():
+                    if st_aid == aid:
+                        matched_sound_ids.add(st_val + 1)
+                        break
         for sound_type_val, class_id in SOUND_TYPE_MAP.items():
             if class_id < len(scores_np) and scores_np[class_id] > self._threshold:
                 had_alert = True

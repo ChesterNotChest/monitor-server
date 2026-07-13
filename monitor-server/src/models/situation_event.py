@@ -33,5 +33,13 @@ class SituationEvent(Base):
     exception: Mapped["ExceptionDef"] = relationship("ExceptionDef")
     recording: Mapped["Recording | None"] = relationship("Recording")
 
+    @property
+    def exception_name(self) -> str | None:
+        return self.exception.name if self.exception else None
+
+    @property
+    def severity(self) -> str | None:
+        return self.exception.severity.name if self.exception and self.exception.severity else None
+
     def __repr__(self) -> str:
         return f"<SituationEvent {self.id} view={self.view_id} at {self.timestamp}>"
