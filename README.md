@@ -314,17 +314,18 @@ SRS_PUBLIC_HOST=10.126.59.25
 MODEL_DIR=/home/liusu/video/models
 DATABASE_URL=mysql+pymysql://monitor:monitor_placeholder2026@monitor-mysql:3306/monitor?charset=utf8mb4
 JWT_SECRET=换成生产随机长字符串
+DINGTALK_WEBHOOK=钉钉机器人Webhook，不要写进Git
 RUN_SEED_DATA=false
 ```
 
 首次需要写入业务枚举和告警规则时，可以临时设置 `RUN_SEED_DATA=true`。应用启动时会自动建表并创建默认管理员；`RUN_SEED_DATA` 只用于额外业务种子数据。
 
-应用每次启动都会幂等补齐告警相关枚举数据：`entity_types` 12 条、`action_types` 16 条、`sound_types` 15 条、`face_recognition_results` 3 条；`fence_event_types` 由独立启动 seed 保证 `ENTERED` / `TOO_CLOSE` 两条就绪。AI 管线产出的告警信号使用 `constants.py` 中的固定整数 ID，因此生产库不仅数量要一致，ID/name 也要与常量枚举一致。存量数据库如果已经只有一部分枚举，启动后会按 `name` 插入缺失项，不会清空表，也不会重排已有 ID 或破坏已有告警规则；如果历史库 ID 已错位，应先做一次枚举迁移再正式联调告警规则。
+应用每次启动都会幂等补齐告警相关枚举数据：`entity_types` 12 条、`action_types` 16 条、`sound_types` 15 条、`face_recognition_results` 3 条；`fence_event_types` 由独立启动 seed 保证 `ENTERED` / `TOO_CLOSE` 两条就绪。AI 管线产出的告警信号使用 `constants.py` 中的固定整数 ID，因此生产库不仅数量要一致，ID/name 也要与常量枚举一致。存量数据库如果已经只有一部分枚举，启动后会按 `name` 插入缺失项，不会清空表，也不会重排已有 ID 或破坏已有告警规则；如果历史库 ID 已错位，应先做一次枚举迁移再正式联调告警规则。启动 seed 还会创建 5 个默认 `response_actions`，并把 `SEND_NOTIFICATION` 绑定到默认告警组；钉钉真实 webhook 通过 `DINGTALK_WEBHOOK` 或 `DINGTALK_WEBHOOK_URL` 配置，不要提交到 Git。
 
 如果需要手动核对生产库枚举数量，可以在服务器执行：
 
 ```bash
-docker exec monitor-mysql mysql -umonitor -pmonitor_placeholder2026 monitor -e "SELECT 'entity_types' AS table_name, COUNT(*) AS count FROM entity_types UNION ALL SELECT 'action_types', COUNT(*) FROM action_types UNION ALL SELECT 'sound_types', COUNT(*) FROM sound_types UNION ALL SELECT 'face_recognition_results', COUNT(*) FROM face_recognition_results UNION ALL SELECT 'fence_event_types', COUNT(*) FROM fence_event_types;"
+docker exec monitor-mysql mysql -umonitor -pmonitor_placeholder2026 monitor -e "SELECT 'entity_types' AS table_name, COUNT(*) AS count FROM entity_types UNION ALL SELECT 'action_types', COUNT(*) FROM action_types UNION ALL SELECT 'sound_types', COUNT(*) FROM sound_types UNION ALL SELECT 'face_recognition_results', COUNT(*) FROM face_recognition_results UNION ALL SELECT 'fence_event_types', COUNT(*) FROM fence_event_types UNION ALL SELECT 'response_actions', COUNT(*) FROM response_actions UNION ALL SELECT 'alert_group_responses', COUNT(*) FROM alert_group_responses;"
 ```
 
 ### 4. 部署后验证

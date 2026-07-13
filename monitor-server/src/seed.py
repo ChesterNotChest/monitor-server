@@ -3,6 +3,7 @@
 密码写入项目目录下的 ``admin_password.txt``，生产部署前删除此文件。
 """
 
+import json
 import os
 import secrets
 import string
@@ -130,6 +131,13 @@ _FACE_RESULT_NAMES = [
 
 _DEFAULT_GROUP_NAME = "默认告警组"
 _DEFAULT_EXCEPTION_NAME = "人员出现"
+_DEFAULT_RESPONSE_ACTIONS = [
+    ("TRIGGER_RECORDING", None),
+    ("SEND_NOTIFICATION", "dingtalk_webhook"),
+    ("ACTIVATE_ALARM", None),
+    ("CALL_API", None),
+    ("SEND_EMAIL", None),
+]
 
 
 def seed_alerts():
@@ -144,6 +152,8 @@ def seed_alerts():
     from src.models.face_recognition_result import FaceRecognitionResult
     from src.models.alert_group import AlertGroup
     from src.models.exception import ExceptionDef, exception_entities
+    from src.models.response_action import ResponseAction, alert_group_responses
+    from src.config import settings
 
     db = SessionLocal()
     try:
@@ -171,6 +181,40 @@ def seed_alerts():
         # 存量库已有 ENTERED/TOO_CLOSE 时再插入 lowercase 重复语义数据。
 
         group = get_or_create_by_name(AlertGroup, _DEFAULT_GROUP_NAME)
+
+        responses = {}
+        webhook_url = settings.DINGTALK_WEBHOOK_URL or os.getenv("DINGTALK_WEBHOOK", "")
+        for name, channel in _DEFAULT_RESPONSE_ACTIONS:
+            response = get_or_create_by_name(ResponseAction, name)
+            if channel and not response.channel:
+                response.channel = channel
+            if name == "SEND_NOTIFICATION" and webhook_url and not response.config_json:
+                response.config_json = json.dumps({"webhook_url": webhook_url})
+            responses[name] = response
+
+        notification = responses.get("SEND_NOTIFICATION")
+        if notification is not None:
+            groups_to_bind = [group]
+            has_any_response_binding = db.execute(
+                alert_group_responses.select().limit(1)
+            ).first() is not None
+            if not has_any_response_binding:
+                groups_to_bind = db.query(AlertGroup).all()
+
+            for target_group in groups_to_bind:
+                linked = db.execute(
+                    alert_group_responses.select().where(
+                        alert_group_responses.c.group_id == target_group.id,
+                        alert_group_responses.c.response_id == notification.id,
+                    )
+                ).first()
+                if linked is None:
+                    db.execute(
+                        alert_group_responses.insert().values(
+                            group_id=target_group.id,
+                            response_id=notification.id,
+                        )
+                    )
 
         exc = db.query(ExceptionDef).filter(
             ExceptionDef.name == _DEFAULT_EXCEPTION_NAME
@@ -207,6 +251,7 @@ def seed_alerts():
             f"actions={len(_ACTION_NAMES)}, "
             f"sounds={len(_SOUND_NAMES)}, "
             f"face_results={len(_FACE_RESULT_NAMES)}, "
+            f"responses={len(_DEFAULT_RESPONSE_ACTIONS)}, "
             f"group='{_DEFAULT_GROUP_NAME}', "
             f"exception='{_DEFAULT_EXCEPTION_NAME}'"
         )

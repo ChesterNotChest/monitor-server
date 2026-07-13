@@ -410,7 +410,8 @@ async def _send_simple_notification(text: str, at_mobiles: list[str]) -> None:
         from .channel import NotificationPayload
         from .channel.dingtalk_webhook import DingTalkWebhookChannel
 
-        webhook_url = settings.DINGTALK_WEBHOOK_URL
+        import os
+        webhook_url = settings.DINGTALK_WEBHOOK_URL or os.getenv("DINGTALK_WEBHOOK", "")
         if not webhook_url:
             return
 

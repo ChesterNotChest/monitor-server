@@ -14,6 +14,8 @@ services:
       FACE_IMAGE_DIR: /app/face_images
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      DINGTALK_WEBHOOK: ${DINGTALK_WEBHOOK:-}
+      DINGTALK_WEBHOOK_URL: ${DINGTALK_WEBHOOK_URL:-}
       STREAM_SERVER_URL: ${STREAM_SERVER_URL:-}
       RTMP_HOST: stream-server
       RTMP_PORT: 1935

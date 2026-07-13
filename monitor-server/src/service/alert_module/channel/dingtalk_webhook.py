@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 
 import httpx
 
@@ -11,6 +12,11 @@ from .base import BaseChannel, NotificationPayload
 from src.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _default_webhook_url() -> str:
+    return settings.DINGTALK_WEBHOOK_URL or os.getenv("DINGTALK_WEBHOOK", "")
+
 
 # 速率限制：钉钉群机器人 20 条/分钟
 _TOKEN_BUCKET_MAX = 20
@@ -49,7 +55,7 @@ class DingTalkWebhookChannel(BaseChannel):
     """钉钉群自定义机器人 Webhook 通知。"""
 
     async def send(self, payload: NotificationPayload, config: dict) -> bool:
-        webhook_url = config.get("webhook_url", "") or settings.DINGTALK_WEBHOOK_URL
+        webhook_url = config.get("webhook_url", "") or _default_webhook_url()
         if not webhook_url:
             logger.warning("DingTalkWebhookChannel: no webhook_url in config or settings")
             return False
@@ -94,4 +100,4 @@ class DingTalkWebhookChannel(BaseChannel):
             return False
 
     def validate_config(self, config: dict) -> bool:
-        return bool(config.get("webhook_url") or settings.DINGTALK_WEBHOOK_URL)
+        return bool(config.get("webhook_url") or _default_webhook_url())
