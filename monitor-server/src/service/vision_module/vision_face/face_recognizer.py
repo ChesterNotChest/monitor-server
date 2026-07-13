@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
@@ -22,6 +23,17 @@ from src.service.vision_module.vision_types import Track
 logger = logging.getLogger(__name__)
 
 _MIN_FACE_CROP_SIZE = 50
+
+# ── 已知人脸库版本号（API 层写入 → 识别层读取，触发动态重载）──
+_face_db_version: int = 0
+# TTL 兜底重载间隔（秒）：即使无 API 通知，也定期重载以覆盖外部变更
+_FACE_DB_RELOAD_TTL: float = 30.0
+
+
+def notify_face_db_changed() -> None:
+    """命名人物 CRUD 完成后调用，标记已知人脸库已过期。"""
+    global _face_db_version
+    _face_db_version += 1
 
 
 class FaceResultStatus(Enum):
@@ -63,13 +75,19 @@ class FaceRecognizer:
         self._last_results: dict[int, FaceResult] = {}
         self._frame_counter = 0
         self._face_lib = self._load_face_recognition()
+        self._loaded_version: int = -1  # 强制首帧重载
+        self._last_load_time: float = 0.0
 
         if known_people is not None:
             for encoding, name in known_people:
                 self._known_encodings.append(np.asarray(encoding, dtype=float))
                 self._known_names.append(name)
+            self._loaded_version = _face_db_version
+            self._last_load_time = time.monotonic()
         elif db is not None:
             self.load_known_people(db)
+            self._loaded_version = _face_db_version
+            self._last_load_time = time.monotonic()
 
     def load_known_people(self, db: Session) -> None:
         """Load NamedPerson 128D encodings into memory.
@@ -87,8 +105,21 @@ class FaceRecognizer:
             self._known_encodings.append(encoding)
             self._known_names.append(person.name)
 
+    def _ensure_known_people(self) -> None:
+        """版本号变化或 TTL 过期时从 DB 重载已知人脸库。"""
+        global _face_db_version
+        now = time.monotonic()
+        if self._loaded_version == _face_db_version and (now - self._last_load_time) < _FACE_DB_RELOAD_TTL:
+            return
+        from src.extensions import SessionLocal
+        with SessionLocal() as db:
+            self.load_known_people(db)
+        self._loaded_version = _face_db_version
+        self._last_load_time = now
+
     def recognize(self, frame: np.ndarray, tracks: list[Track]) -> list[FaceResult]:
         self._frame_counter += 1
+        self._ensure_known_people()
 
         # 1. 已缓存的 track 直接返回（同一个人不重复识别）
         uncached = [t for t in tracks if t.track_id not in self._last_results]

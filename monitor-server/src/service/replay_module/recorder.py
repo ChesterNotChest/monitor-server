@@ -55,7 +55,9 @@ class RecordingSession:
         ]
 
         self._ffmpeg_proc = subprocess.Popen(ffmpeg_cmd,
-                                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        self._stderr_reader = threading.Thread(target=self._drain_stderr, daemon=True)
+        self._stderr_reader.start()
 
         recording = RecordingRepo(db).create(
             view_id=self.view_id, file_path=self.output_path,
@@ -71,6 +73,33 @@ class RecordingSession:
             self.view_id, self.recording_id, self.max_duration, self.wind_down,
         )
         return self.recording_id
+
+    def _drain_stderr(self) -> None:
+        """后台读取 ffmpeg stderr 避免管道缓冲区满。"""
+        if self._ffmpeg_proc and self._ffmpeg_proc.stderr:
+            try:
+                # 读到的内容暂不存，仅排空管道；退出时 _dump_stderr 会再读一次
+                while self._ffmpeg_proc.poll() is None:
+                    self._ffmpeg_proc.stderr.read1(8192)
+            except Exception:
+                pass
+
+    def _dump_stderr(self) -> None:
+        """从 stderr 管道读取最后一截内容用于诊断。"""
+        if self._ffmpeg_proc and self._ffmpeg_proc.stderr:
+            try:
+                # 先排空 read1 缓冲区，再 read 剩余
+                while True:
+                    chunk = self._ffmpeg_proc.stderr.read1(8192)
+                    if not chunk:
+                        break
+                remaining = self._ffmpeg_proc.stderr.read()
+                if remaining:
+                    lines = remaining.decode("utf-8", errors="replace").strip().splitlines()
+                    tail = lines[-1] if lines else remaining.decode("utf-8", errors="replace")[:500]
+                    logger.debug("[Replay] ffmpeg stderr tail: %s", tail)
+            except Exception:
+                pass
 
     def _monitor(self):
         while not self._stop_event.wait(timeout=1.0):
@@ -95,6 +124,7 @@ class RecordingSession:
     def _stop_ffmpeg(self):
         """终止 ffmpeg 进程、设停止标志、写 Recording.end_time"""
         self._stop_event.set()
+        self._dump_stderr()
         if self._ffmpeg_proc:
             try: self._ffmpeg_proc.terminate()
             except Exception: pass

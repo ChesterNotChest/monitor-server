@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from src.constants import API_PREFIX, DEFAULT_PAGE, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from src.extensions import get_db
+from src.service.vision_module.vision_face.face_recognizer import notify_face_db_changed
 from src.schema.http.named_person import (
     PersonCreate,
     PersonListResponse,
@@ -39,6 +40,7 @@ def create(body: PersonCreate, db: Session = Depends(get_db)):
     try:
         person = create_person(db, name=body.name)
         db.commit()
+        notify_face_db_changed()
         return _to_response(person)
     except PersonNameConflictError as e:
         db.rollback()
@@ -87,6 +89,7 @@ def update(id: int, body: PersonUpdate, db: Session = Depends(get_db)):
             db.rollback()
             raise HTTPException(status_code=404, detail="命名人物不存在")
         db.commit()
+        notify_face_db_changed()
         return _to_response(person)
     except PersonNameConflictError as e:
         db.rollback()
@@ -103,6 +106,7 @@ def delete(id: int, db: Session = Depends(get_db)):
     if not delete_person(db, id):
         raise HTTPException(status_code=404, detail="命名人物不存在")
     db.commit()
+    notify_face_db_changed()
 
 
 @router.post(
@@ -120,4 +124,5 @@ def upload(id: int, avatar: UploadFile = File(...), db: Session = Depends(get_db
         db.rollback()
         raise HTTPException(status_code=404, detail="命名人物不存在")
     db.commit()
+    notify_face_db_changed()
     return _to_response(person)
