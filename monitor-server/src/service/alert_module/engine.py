@@ -180,6 +180,29 @@ class AlertEngine:
                 "Alert triggered: view=%d exception=%d severity=%s id=%d",
                 self._view_id, exc.id, getattr(exc, "severity", None), event.id,
             )
+
+            # 设置初始状态
+            from src.service.alert_module.escalation import STATUS_CREATED
+            event.status = STATUS_CREATED
+            db.commit()
+
+            # ── 通知与上报 ──
+            severity = getattr(exc, "severity", None)
+            if severity and severity.name in ("CRITICAL", "EMERGENCY"):
+                # 提取 ID（session 关闭后 ORM 对象会失效）
+                event_id = event.id
+                event_view_id = event.view_id
+                group_id = exc.group_id
+                from src.repository.monitor_view_repo import MonitorViewRepo
+                _view = MonitorViewRepo(db).get(self._view_id)
+                view_name = _view.name if _view else f"View {self._view_id}"
+
+                # 用 _from_id 版本避免 DetachedInstanceError
+                from src.service.alert_module import escalation as _esc
+                asyncio.create_task(
+                    _esc.start_escalation_from_id(event_id, event_view_id, view_name, group_id),
+                    name=f"escalation-start-{event_id}",
+                )
         except Exception:
             logger.exception("Failed to create SituationEvent")
 

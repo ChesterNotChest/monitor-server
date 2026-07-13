@@ -10,6 +10,7 @@ class AlertResponse(BaseModel):
     exception_id: int = Field(..., description="关联异常规则 ID")
     recording_id: int | None = Field(None, description="关联录像 ID（如有）")
     timestamp: datetime = Field(..., description="告警触发时间")
+    status: str | None = Field(None, description="告警状态: created/acknowledged/escalated/handled/false_alarm")
 
     model_config = {"from_attributes": True}
 

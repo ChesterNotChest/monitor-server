@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, DateTime, func
+from sqlalchemy import ForeignKey, Integer, String, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import Base
@@ -20,6 +20,9 @@ class SituationEvent(Base):
     )
     recording_id: Mapped[int | None] = mapped_column(
         ForeignKey("recordings.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="created", index=True
     )
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     DEBUG_WEB_STREAM: bool = False
     DEBUG_FLV_TRANSMIT: bool = False
 
+    # --- 钉钉通知 ---
+    DINGTALK_WEBHOOK_URL: str = ""
+    ESCALATION_TIMEOUT_SECONDS: int = 60
+    ESCALATION_MAX_LEVELS: int = 2
+
     # --- JWT 认证 ---
     JWT_SECRET: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"

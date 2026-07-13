@@ -100,21 +100,29 @@ def seed_sound_types(db: Session) -> None:
 
 # ── 响应动作 ────────────────────────────────────
 
-RESPONSE_NAMES = [
-    "TRIGGER_RECORDING",
-    "SEND_NOTIFICATION",
-    "ACTIVATE_ALARM",
-    "CALL_API",
-    "SEND_EMAIL",
+RESPONSE_ACTIONS = [
+    ("TRIGGER_RECORDING", None, None),
+    ("SEND_NOTIFICATION", "dingtalk_webhook", None),  # config_json 从 .env DINGTALK_WEBHOOK_URL 读取
+    ("ACTIVATE_ALARM", None, None),
+    ("CALL_API", None, None),
+    ("SEND_EMAIL", None, None),
 ]
 
 
 def seed_response_actions(db: Session) -> dict[str, ResponseAction]:
     result = {}
-    for name in RESPONSE_NAMES:
-        result[name] = _upsert_enum(db, ResponseActionRepo, name)
+    for name, channel, config_json in RESPONSE_ACTIONS:
+        existing = db.scalar(select(ResponseAction).where(ResponseAction.name == name))
+        if existing:
+            if channel and not existing.channel:
+                existing.channel = channel
+            result[name] = existing
+        else:
+            result[name] = ResponseActionRepo(db).create(
+                name=name, channel=channel, config_json=config_json
+            )
     db.flush()
-    print(f"  response_actions: {len(RESPONSE_NAMES)} 条已就绪")
+    print(f"  response_actions: {len(RESPONSE_ACTIONS)} 条已就绪")
     return result
 
 
