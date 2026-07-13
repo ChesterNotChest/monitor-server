@@ -4,7 +4,12 @@ from pydantic import BaseModel, Field
 
 
 class FenceCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=128, description="电子围栏名称")
+    """创建电子围栏请求体。
+
+    Swagger 示例: {"name":"禁区","view_id":1,"coords":[[100,100],[500,100],[500,400],[100,400]]}
+    """
+
+    name: str = Field(..., min_length=1, max_length=128, description="围栏名称")
     view_id: int = Field(..., description="关联监控视图 ID")
     coords: list[list[float]] = Field(
         ..., min_length=4, max_length=4,

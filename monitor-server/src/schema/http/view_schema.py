@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ViewCreateRequest(BaseModel):
+    """创建监控视图请求体。示例: {"video_id":1,"audio_id":1}"""
+
     audio_id: int = Field(..., description="音频设备 ID")
     video_id: int = Field(..., description="视频设备 ID")
 
