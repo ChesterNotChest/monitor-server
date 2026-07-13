@@ -24,11 +24,12 @@ class TestMonitorViewRepo:
         assert view.id is not None
         assert view.cache_path == "/tmp/cache"
 
-    def test_create_video_only_view_rejected(self, db, devices):
+    def test_create_video_only_view_accepted(self, db, devices):
         node, video, _ = devices
         repo = MonitorViewRepo(db)
-        with pytest.raises(IntegrityError):
-            repo.create(video_id=video.id, audio_id=None)
+        view = repo.create(video_id=video.id, audio_id=None)
+        assert view is not None
+        assert view.audio_id is None
 
     def test_device_in_use(self, db, devices):
         node, video, audio = devices

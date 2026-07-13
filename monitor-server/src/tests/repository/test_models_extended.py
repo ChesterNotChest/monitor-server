@@ -80,12 +80,14 @@ class TestAudioDeviceModelChanges:
 class TestMonitorViewModelChanges:
     """14.1.6 MonitorView 模型变更测试。"""
 
-    def test_audio_id_not_nullable(self, db):
-        """MonitorView 插入时 audio_id=NULL → 验证 NOT NULL 约束拒绝。"""
+    def test_audio_id_nullable(self, db):
+        """MonitorView 允许 audio_id=NULL（video-only View）。"""
         node_repo = NodeRepo(db)
         node = node_repo.create(token="mv-model-1")
         video_repo = VideoDeviceRepo(db)
         vd = video_repo.create(name="mv-cam", node_id=node.id)
         view_repo = MonitorViewRepo(db)
-        with pytest.raises(IntegrityError):
-            view_repo.create(video_id=vd.id, audio_id=None)
+        view = view_repo.create(video_id=vd.id, audio_id=None)
+        assert view is not None
+        assert view.audio_id is None
+        assert view.video_id == vd.id

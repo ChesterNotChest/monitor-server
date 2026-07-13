@@ -51,15 +51,16 @@ class TestViewLifecycle:
         assert view_repo.device_in_use(video_id=video.id) is False
         assert view_repo.device_in_use(audio_id=audio.id) is False
 
-    def test_video_only_view_is_rejected(self, db):
-        """View 必须同时绑定视频与音频。"""
+    def test_video_only_view_is_accepted(self, db):
+        """View 允许仅绑定视频（audio_id 可为 NULL）。"""
         node = NodeRepo(db).create(token="video-only-node")
         video = VideoDeviceRepo(db).create(name="solo-cam", node_id=node.id)
         view_repo = MonitorViewRepo(db)
 
-        from sqlalchemy.exc import IntegrityError
-        with pytest.raises(IntegrityError):
-            view_repo.create(video_id=video.id, audio_id=None)
+        view = view_repo.create(video_id=video.id, audio_id=None)
+        assert view is not None
+        assert view.audio_id is None
+        assert view.video_id == video.id
 
 
 class TestExceptionAssociationIntegration:
