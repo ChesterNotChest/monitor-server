@@ -21,14 +21,21 @@
 ## MODIFIED Requirements
 
 ### Requirement: SEED 枚举数据全量对齐
-系统 SHALL 在 `seed_alerts()` 中全量写入 `constants.py` 定义的枚举值到数据库枚举表：
+系统 SHALL 在启动 seed 中幂等补齐 `constants.py` 定义的枚举值到数据库枚举表：
 
-- `EntityType`: 全部 12 个 `YOLOEntityType` 值（当前只写入 4 个）
-- `ActionType`: 全部 16 个 `SlowFastActionType` 值（当前只写入 3 个）
-- `SoundType`: 全部 15 个 `YAMNetSoundType` 值（当前只写入 3 个）
-- `face_recognition_results`: 3 个 `FaceRecognitionResult` 值（新增）
-- `fence_event_types`: 1 个 `FenceEventResult` 值（新增）
+- `EntityType`: 全部 12 个 `YOLOEntityType` 值
+- `ActionType`: 全部 16 个 `SlowFastActionType` 值
+- `SoundType`: 全部 15 个 `YAMNetSoundType` 值
+- `face_recognition_results`: 3 个 `FaceRecognitionResult` 值
+- `fence_event_types`: 2 个 `FenceEventResult` 值，由 `seed_fence_events()` 保证 `ENTERED` / `TOO_CLOSE` 就绪
 
-#### Scenario: 种子数据覆盖全部枚举
+补齐 SHALL 以 `constants.py` 的固定整数枚举为准，最终数据库 ID/name SHALL 与 AI 管线产出的整数信号一致。对于历史存量库，系统 SHOULD 先迁移错位枚举，再补齐缺失项，避免告警规则匹配到错误类型。
+
+#### Scenario: 首次启动覆盖全部枚举
 - **WHEN** 系统首次启动且枚举表为空
-- **THEN** EntityType 有 12 行，ActionType 有 16 行，SoundType 有 15 行，face_recognition_results 有 3 行，fence_event_types 有 1 行
+- **THEN** EntityType 有 12 行，ActionType 有 16 行，SoundType 有 15 行，face_recognition_results 有 3 行，fence_event_types 有 2 行
+
+#### Scenario: 存量库只包含部分旧枚举
+- **WHEN** `entity_types`、`action_types`、`sound_types` 已有部分记录且 `face_recognition_results` 为空
+- **THEN** seed SHALL 只插入缺失枚举，使 EntityType 达到 12 行、ActionType 达到 16 行、SoundType 达到 15 行、face_recognition_results 达到 3 行
+- **AND** 最终 ID/name 与 `constants.py` 对齐，已有业务规则在迁移后仍引用相同语义的枚举
