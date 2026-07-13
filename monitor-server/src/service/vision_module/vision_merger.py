@@ -112,7 +112,7 @@ async def start_stream_merge(
         "-f", "flv", push_url,
     ]
 
-    logger.info("FFmpeg merge: %s", " ".join(cmd))
+    logger.info("[MERGE] FFmpeg cmd: %s", " ".join(cmd))
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -130,19 +130,37 @@ async def start_stream_merge(
 
 
 async def _read_stderr(proc: asyncio.subprocess.Process, view_id: int) -> None:
-    """后台读取 ffmpeg stderr 并记录日志。"""
+    """后台读取 ffmpeg stderr 并记录日志。首 30 行 INFO 级别以便诊断连接问题。"""
     if proc.stderr is None:
         return
+    line_count = 0
     try:
         while True:
             line = await proc.stderr.readline()
             if not line:
                 break
             text = line.decode("utf-8", errors="replace").rstrip()
-            if text:
-                logger.debug("[ffmpeg-%d] %s", view_id, text)
+            if not text:
+                continue
+            line_count += 1
+            # 前 30 行或含错误关键词的用 INFO，其余 DEBUG
+            is_important = (
+                line_count <= 30
+                or "error" in text.lower()
+                or "failed" in text.lower()
+                or "connection" in text.lower()
+                or "refused" in text.lower()
+                or "timeout" in text.lower()
+                or "connected" in text.lower()
+                or "speed" in text.lower()
+                or "bitrate" in text.lower()
+            )
+            if is_important:
+                logger.info("[ffmpeg-%d:L%d] %s", view_id, line_count, text)
+            else:
+                logger.debug("[ffmpeg-%d:L%d] %s", view_id, line_count, text)
     except Exception:
-        logger.debug("ffmpeg stderr reader stopped for view_id=%d", view_id)
+        logger.debug("ffmpeg stderr reader stopped for view_id=%d (L%d lines)", view_id, line_count)
 
 
 # ── 可观测性 ──────────────────────────────────
