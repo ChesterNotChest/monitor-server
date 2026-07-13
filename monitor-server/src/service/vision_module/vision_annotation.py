@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+import cv2
 import numpy as np
 
 from src.constants import YOLOEntityType
@@ -227,6 +228,3 @@ def draw_fence_polygons(
     cv2.addWeighted(overlay, 0.2, annotated, 0.8, 0, dst=annotated)
     return annotated
 
-
-# late import after defining _bbox_color
-import cv2
