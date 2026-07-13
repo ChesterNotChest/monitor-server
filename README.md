@@ -427,6 +427,15 @@ POST /api/v1/auth/login  →  {access_token, user}
 
 所有受保护端点需在请求头携带 `Authorization: Bearer <access_token>`。
 
+### 系统日志覆盖范围
+
+日志中心会写入两类主要记录：
+
+- 告警日志：AI 告警触发后写入 `ALERT` 类型日志，关联 `view_id` / `event_id` / `recording_id`。
+- 操作日志：登录成功，以及登录用户成功调用 `POST` / `PUT` / `PATCH` / `DELETE` API 时写入 `OPERATION` 类型日志，记录操作人、方法、路径、状态码和目标资源。
+
+失败的 4xx/5xx 写请求不会按成功操作记录，避免日志页被校验失败或权限失败刷屏。日志写入失败不会影响原业务接口响应。
+
 ---
 
 ## AI 模型参考

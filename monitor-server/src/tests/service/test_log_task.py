@@ -2,7 +2,7 @@
 
 import json
 
-from src.constants import LogType, SeverityLevel
+from src.constants import LogType, Role, SeverityLevel
 from src.repository.alert_group_repo import AlertGroupRepo
 from src.repository.audio_device_repo import AudioDeviceRepo
 from src.repository.exception_def_repo import ExceptionDefRepo
@@ -10,6 +10,7 @@ from src.repository.log_entry_repo import LogEntryRepo
 from src.repository.monitor_view_repo import MonitorViewRepo
 from src.repository.node_repo import NodeRepo
 from src.repository.situation_event_repo import SituationEventRepo
+from src.repository.user_repo import UserRepo
 from src.repository.video_device_repo import VideoDeviceRepo
 from src.service import log_task
 
@@ -47,3 +48,32 @@ def test_record_alert_event_creates_log_entry(db):
     assert details["action"] == "triggered"
     assert details["exception_name"] == "人员出现"
     assert details["recording_id"] == 123
+
+def test_record_operation_creates_operation_log(db):
+    user = UserRepo(db).create(
+        username="operation-log-user",
+        password_hash="hash",
+        role=Role.OPERATOR,
+    )
+
+    entry = log_task.record_operation(
+        db,
+        operator_id=user.id,
+        action="delete",
+        target_type="views",
+        target_id=3,
+        summary="用户操作：删除 views #3",
+        details={"method": "DELETE", "path": "/api/v1/views/3/"},
+    )
+    db.flush()
+
+    assert entry.log_type == int(LogType.OPERATION)
+    assert entry.operator_id == user.id
+    assert entry.summary == "用户操作：删除 views #3"
+
+    details = json.loads(entry.details_json)
+    assert details["action"] == "delete"
+    assert details["target_type"] == "views"
+    assert details["target_id"] == "3"
+    assert details["method"] == "DELETE"
+

@@ -54,3 +54,31 @@ def record_alert_event(db: Session, *, event, exception_def, recording_id: int |
         summary=summary,
         details_json=json.dumps(details, ensure_ascii=False),
     )
+
+def record_operation(
+    db: Session,
+    *,
+    operator_id: int | None,
+    action: str,
+    target_type: str,
+    summary: str,
+    target_id: str | int | None = None,
+    details: dict | None = None,
+):
+    """记录用户操作日志，供 Web 日志中心展示。"""
+    payload = {
+        "action": action,
+        "target_type": target_type,
+    }
+    if target_id is not None:
+        payload["target_id"] = str(target_id)
+    if details:
+        payload.update(details)
+
+    return LogEntryRepo(db).create(
+        log_type=int(LogType.OPERATION),
+        operator_id=operator_id,
+        summary=summary[:256],
+        details_json=json.dumps(payload, ensure_ascii=False),
+    )
+
