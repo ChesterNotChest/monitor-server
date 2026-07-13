@@ -51,14 +51,11 @@ def create_user(
         except ValueError:
             pass
     try:
-
-=======
         result = user_task.create_user(db, username, password, role,
                                      dingtalk_mobile=dingtalk_mobile,
                                      supervisor_id=sup_id)
         db.commit()
         return result
-
     except ValueError as e:
         raise HTTPException(409, str(e))
 
@@ -98,10 +95,7 @@ def update_user(
 
 
 @router.put(
-
-=======
     "/{user_id}/role/",
-
     response_model=UserResponse,
     responses={400: {"description": "无效角色"}, 404: {"description": "用户不存在"}},
 )
