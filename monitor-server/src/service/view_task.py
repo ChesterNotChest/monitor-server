@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy.orm import Session
 
 from src.schema.http.view_schema import ViewResponse
+
+logger = logging.getLogger(__name__)
 
 
 def create_view(
@@ -87,6 +91,7 @@ def create_view(
                 asyncio.run(_pipeline_forever(view.id, video_id, _video_name,
                                               audio_id, _audio_name))
 
+            loop = None
             try:
                 loop = asyncio.get_running_loop()
                 loop.create_task(start_pipeline(view.id, video_id, _video_name,
@@ -94,9 +99,19 @@ def create_view(
             except RuntimeError:
                 threading.Thread(target=_launch, daemon=True).start()
 
-            # AI 管线已启动 — 终止原始合流，避免两路 ffmpeg 竞争同一 SRS 流
+            # AI 管线已启动 — 等 pipeline 首帧就绪后再终止原始合流
             if raw_merge_proc is not None and raw_merge_proc.poll() is None:
-                raw_merge_proc.terminate()
+                _view_id = view.id
+                async def _kill_merge_when_ready() -> None:
+                    from src.service.vision_task import wait_pipeline_ready
+                    ready = await wait_pipeline_ready(_view_id, timeout=30.0)
+                    logger.info("[View %d] pipeline ready=%s, killing raw merge", _view_id, ready)
+                    if raw_merge_proc.poll() is None:
+                        raw_merge_proc.terminate()
+                if loop is not None:
+                    loop.create_task(_kill_merge_when_ready())
+                else:
+                    threading.Thread(target=lambda: asyncio.run(_kill_merge_when_ready()), daemon=True).start()
         except ImportError:
             pass  # AI 不可用，原始合流保底
 

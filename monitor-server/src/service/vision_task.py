@@ -20,6 +20,18 @@ logger = logging.getLogger(__name__)
 _active_pipelines: dict[int, AIPipeline] = {}
 _alert_engines: dict[int, AlertEngine] = {}
 _yamnet_runners: dict[int, YamnetRunner] = {}
+
+
+async def wait_pipeline_ready(view_id: int, timeout: float = 30.0) -> bool:
+    """等待 AI pipeline 首帧推流就绪，超时返回 False。"""
+    pipeline = _active_pipelines.get(view_id)
+    if pipeline is None:
+        return False
+    try:
+        await asyncio.wait_for(pipeline.pipeline_ready.wait(), timeout=timeout)
+        return True
+    except asyncio.TimeoutError:
+        return False
 _pipeline_loops: dict[int, asyncio.AbstractEventLoop] = {}
 _pipeline_stop_events: dict[int, asyncio.Event] = {}
 _recording_subscribed: bool = False
