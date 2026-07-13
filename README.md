@@ -321,7 +321,7 @@ RUN_SEED_DATA=false
 
 首次需要写入业务枚举和告警规则时，可以临时设置 `RUN_SEED_DATA=true`。应用启动时会自动建表并创建默认管理员；`RUN_SEED_DATA` 只用于额外业务种子数据。
 
-应用每次启动都会幂等补齐告警相关枚举数据：`entity_types` 12 条、`action_types` 16 条、`sound_types` 15 条、`face_recognition_results` 3 条；`fence_event_types` 由独立启动 seed 保证 `ENTERED` / `TOO_CLOSE` 两条就绪。AI 管线产出的告警信号使用 `constants.py` 中的固定整数 ID，因此生产库不仅数量要一致，ID/name 也要与常量枚举一致。存量数据库如果已经只有一部分枚举，启动后会按 `name` 插入缺失项，不会清空表，也不会重排已有 ID 或破坏已有告警规则；如果历史库 ID 已错位，应先做一次枚举迁移再正式联调告警规则。启动 seed 还会创建 5 个默认 `response_actions`，并把 `SEND_NOTIFICATION` 绑定到默认告警组；钉钉真实 webhook 通过 `DINGTALK_WEBHOOK` 或 `DINGTALK_WEBHOOK_URL` 配置，不要提交到 Git。
+应用每次启动都会幂等补齐告警相关枚举数据：`entity_types` 12 条、`action_types` 16 条、`sound_types` 15 条、`face_recognition_results` 4 条；`fence_event_types` 由独立启动 seed 保证 `ENTERED` / `TOO_CLOSE` 两条就绪。AI 管线产出的告警信号使用 `constants.py` 中的固定整数 ID，因此生产库不仅数量要一致，ID/name 也要与常量枚举一致。存量数据库如果已经只有一部分枚举，启动后会按 `name` 插入缺失项，不会清空表，也不会重排已有 ID 或破坏已有告警规则；如果历史库 ID 已错位，应先做一次枚举迁移再正式联调告警规则。启动 seed 还会创建 5 个默认 `response_actions`，并把 `SEND_NOTIFICATION` 绑定到默认告警组；钉钉真实 webhook 通过 `DINGTALK_WEBHOOK` 或 `DINGTALK_WEBHOOK_URL` 配置，不要提交到 Git。
 
 如果需要手动核对生产库枚举数量，可以在服务器执行：
 
@@ -468,8 +468,9 @@ POST /api/v1/auth/login  →  {access_token, user}
 | SlowFast (AVA) | R-50 | pytorchvideo 内置 | 人物级动作检测：抽烟/打电话/喝水等 60 类 |
 | YAMNet | torchaudio 内置 | 随 `torchaudio>=2.1.0` 安装 | AudioSet 521 类音频分类 |
 | OpenCV | ≥4.10 | `pip install opencv-python-headless>=4.10` | 帧解码 / 预处理 / 标注叠加 |
+| MiniFASNet (uniface) | ≥3.7.0 | `pip install uniface>=3.7.0 onnxruntime>=1.27` | 假脸活体检测（照片/屏幕翻拍识别） |
 
-> **注意**：`dlib` 通过 conda-forge 预编译安装（Windows 无需 CMake）。`setuptools` 需 <70 版本（`face_recognition_models` 依赖 `pkg_resources`）。CD 部署时 `src/third-party/` 挂载为宿主机路径，权重文件一次下载、容器重启不丢失。
+> **注意**：`dlib` 通过 conda-forge 预编译安装（Windows 无需 CMake）。`setuptools` 需 <70 版本（`face_recognition_models` 依赖 `pkg_resources`）。`uniface` 为可选依赖——未安装时假脸检测自动降级跳过，不影响其他功能。CD 部署时 `src/third-party/` 挂载为宿主机路径，权重文件一次下载、容器重启不丢失。
 
 ---
 

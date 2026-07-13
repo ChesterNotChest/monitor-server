@@ -127,3 +127,23 @@ YAMNet 覆盖率为 15/15（100%）。
 
 - **WHEN** 画面中出现人脸，128D 特征向量与 NamedPerson 库均不匹配
 - **THEN** 系统标记该面部为"未录入人员"，产生告警
+
+### Requirement: MiniFASNet 假脸活体检测
+
+系统 SHALL 使用 MiniFASNet（via uniface ONNX）作为假脸活体检测模型。`uniface` 为可选依赖——未安装时假脸检测自动降级跳过，不影响人脸识别主流程。
+
+假脸检测 SHALL 在 face_encodings 之前执行；确认为假脸（SPOOF）的 track SHALL 跳过昂贵的人脸编码和 SlowFast 动作检测。
+
+假脸结果 SHALL 以 `FaceRecognitionResult.SPOOF = 4` 上报，红色框标注 `Face: Spoof`，可被异常规则引用。
+
+假脸 track 与已命名人物 SHALL 同享缓存持久化策略——ByteTrack 短暂丢失时不立即清除。
+
+#### Scenario: 检测照片/屏幕翻拍攻击
+
+- **WHEN** 画面中出现人脸，MiniFASNet 判定为假脸（`is_real=False`）
+- **THEN** 系统标记该面部为"假脸"，红框标注，跳过人脸编码和动作检测
+
+#### Scenario: uniface 未安装时优雅降级
+
+- **WHEN** 环境中未安装 `uniface` 包
+- **THEN** 假脸检测静默禁用，`_check_spoof()` 始终返回 False，人脸识别正常运作
