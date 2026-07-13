@@ -9,10 +9,13 @@ from src.schema.http.view_schema import ViewResponse
 
 def create_view(
     db: Session,
-    audio_id: int,
+    audio_id: int | None,
     video_id: int,
 ) -> ViewResponse | None:
-    """Create a monitor View and persist its lifecycle changes."""
+    """Create a monitor View and persist its lifecycle changes.
+
+    audio_id may be None for video-only views (no YAMNet audio classification).
+    """
 
     from src.network.rtmp.pusher import build_play_urls
     from src.repository.audio_device_repo import AudioDeviceRepo
@@ -27,15 +30,19 @@ def create_view(
         view_repo = MonitorViewRepo(db)
 
         video = video_repo.get(video_id)
-        audio = audio_repo.get(audio_id)
-        if video is None or audio is None:
+        if video is None:
+            db.rollback()
+            return None
+
+        audio = audio_repo.get(audio_id) if audio_id is not None else None
+        if audio_id is not None and audio is None:
             db.rollback()
             return None
 
         warnings: list[str] = []
         if not check_and_start_stream(db, "video", video_id):
             warnings.append(f"Video device {video_id} stream already in use or unavailable")
-        if not check_and_start_stream(db, "audio", audio_id):
+        if audio_id is not None and not check_and_start_stream(db, "audio", audio_id):
             warnings.append(f"Audio device {audio_id} stream already in use or unavailable")
 
         view = view_repo.create(audio_id=audio_id, video_id=video_id)
@@ -54,15 +61,22 @@ def create_view(
         from src.network.rtmp.pusher import build_push_url
 
         video_url = build_pull_url(video.name, "video", video_id)
-        audio_url = build_pull_url(audio.name, "audio", audio_id)
         push_url = build_push_url(view.id)
 
-        cmd = [
-            "ffmpeg", "-i", video_url, "-i", audio_url,
-            "-c:v", "copy", "-c:a", "aac", "-f", "flv", push_url,
-            "-y",
-        ]
         raw_merge_proc = None
+        if audio is not None:
+            audio_url = build_pull_url(audio.name, "audio", audio_id)
+            cmd = [
+                "ffmpeg", "-i", video_url, "-i", audio_url,
+                "-c:v", "copy", "-c:a", "aac", "-f", "flv", push_url,
+                "-y",
+            ]
+        else:
+            cmd = [
+                "ffmpeg", "-i", video_url,
+                "-c:v", "copy", "-f", "flv", push_url,
+                "-y",
+            ]
         try:
             raw_merge_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except FileNotFoundError:
@@ -76,21 +90,26 @@ def create_view(
 
             # 提前捕获字符串值——后台线程不能访问已关闭 session 的 ORM 对象
             _video_name = video.name
-            _audio_name = audio.name
+            _audio_name = audio.name if audio else ""
+            _stream_url = video.stream_url
 
             async def _pipeline_forever(view_id: int, video_id: int, video_name: str,
-                                        audio_id: int, audio_name: str) -> None:
-                if await start_pipeline(view_id, video_id, video_name, audio_id, audio_name):
+                                        audio_id: int | None, audio_name: str,
+                                        stream_url: str | None = None) -> None:
+                if await start_pipeline(view_id, video_id, video_name, audio_id, audio_name,
+                                        stream_url=stream_url):
                     await wait_pipeline_stopped(view_id)
 
             def _launch() -> None:
                 asyncio.run(_pipeline_forever(view.id, video_id, _video_name,
-                                              audio_id, _audio_name))
+                                              audio_id, _audio_name,
+                                              stream_url=_stream_url))
 
             try:
                 loop = asyncio.get_running_loop()
                 loop.create_task(start_pipeline(view.id, video_id, _video_name,
-                                                audio_id, _audio_name))
+                                                audio_id, _audio_name,
+                                                stream_url=_stream_url))
             except RuntimeError:
                 threading.Thread(target=_launch, daemon=True).start()
 
@@ -152,7 +171,8 @@ def delete_view(db: Session, view_id: int) -> bool:
         view_repo.delete(view_id)
         stop_merge(view_id)
         check_and_stop_stream(db, "video", video_id)
-        check_and_stop_stream(db, "audio", audio_id)
+        if audio_id is not None:
+            check_and_stop_stream(db, "audio", audio_id)
 
         db.commit()
 

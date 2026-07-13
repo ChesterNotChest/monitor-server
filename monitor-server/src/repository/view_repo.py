@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from src.models import MonitorView
 
 
-def create(db: Session, audio_id: int, video_id: int) -> MonitorView:
+def create(db: Session, audio_id: int | None, video_id: int) -> MonitorView:
     view = MonitorView(audio_id=audio_id, video_id=video_id)
     db.add(view)
     db.commit()

@@ -50,7 +50,8 @@ async def _on_recording(payload: dict) -> None:
 
 async def start_pipeline(view_id: int, video_id: int, video_name: str,
                          audio_id: int | None = None,
-                         audio_name: str = "") -> bool:
+                         audio_name: str = "",
+                         stream_url: str | None = None) -> bool:
     """启动指定 View 的 AI 推理管线（视觉 + 告警引擎 + 可选音频分类）。
 
     Returns:
@@ -70,7 +71,7 @@ async def start_pipeline(view_id: int, video_id: int, video_name: str,
 
     # 1. 启动视觉管线 (Part A)
     pipeline = AIPipeline()
-    if not await pipeline.start(view_id, video_id, video_name, audio_id, audio_name):
+    if not await pipeline.start(view_id, video_id, video_name, audio_id, audio_name, stream_url=stream_url):
         return False
     _active_pipelines[view_id] = pipeline
     _pipeline_loops[view_id] = owner_loop

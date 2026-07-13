@@ -55,7 +55,7 @@ async def print_urls():
 
     import logging
     from src.extensions import engine, Base
-    from src.seed import seed_admin, seed_alerts
+    from src.seed import seed_admin, seed_alerts, seed_virtual_node
 
     # 确保数据库表存在（非测试环境可能未建表）
     Base.metadata.create_all(bind=engine)
@@ -69,6 +69,11 @@ async def print_urls():
         seed_alerts()
     except Exception as e:
         logging.getLogger(__name__).warning("seed_alerts failed: %s", e)
+
+    try:
+        seed_virtual_node()
+    except Exception as e:
+        logging.getLogger(__name__).warning("seed_virtual_node failed: %s", e)
 
     # 恢复已有 View 的 AI 管线（Server 重启后自动续接）
     from src.extensions import SessionLocal
@@ -87,15 +92,18 @@ async def print_urls():
                 _vid = _v.video_id
                 _aid = _v.audio_id
                 _vname = _v.video_device.name
-                _aname = _v.audio_device.name
+                _aname = _v.audio_device.name if _v.audio_device else ""
+                _stream_url = _v.video_device.stream_url if _v.video_device else None
                 _view_id = _v.id
                 if _view_id in _active_pipelines:
                     _logger.info("[Recovery] View %d: SKIP (already active)", _view_id)
                     _skipped += 1
                     continue
-                def _launch(vid=_view_id, vname=_vname, aname=_aname):
+                def _launch(vid=_view_id, vname=_vname, aname=_aname,
+                           aid=_aid, s_url=_stream_url):
                     async def _forever():
-                        await _start_pipeline(vid, _vid, vname, _aid, aname)
+                        await _start_pipeline(vid, _vid, vname, aid, aname,
+                                             stream_url=s_url)
                         while True:
                             await _asyncio.sleep(3600)
                     _asyncio.create_task(_forever())

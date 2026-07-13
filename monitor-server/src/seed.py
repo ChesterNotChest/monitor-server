@@ -114,6 +114,28 @@ _DEFAULT_GROUP_NAME = "默认告警组"
 _DEFAULT_EXCEPTION_NAME = "人员出现"
 
 
+def seed_virtual_node():
+    """如果 nodes 表无虚拟 Node，创建常驻虚拟 Node（is_connected=False）。
+
+    虚拟 Node 不接受 WSS 连接，专门承载外部 RTMP 流设备。
+    通过预留 token 识别，重复调用不重复插入（idempotent）。
+    """
+    from src.constants import VIRTUAL_NODE_TOKEN
+    from src.models.node import Node
+
+    db = SessionLocal()
+    try:
+        existing = db.query(Node).filter(Node.token == VIRTUAL_NODE_TOKEN).first()
+        if existing is not None:
+            return
+        node = Node(token=VIRTUAL_NODE_TOKEN, is_connected=False)
+        db.add(node)
+        db.commit()
+        print("[seed] 已创建虚拟 Node (is_connected=False)")
+    finally:
+        db.close()
+
+
 def seed_alerts():
     """如果告警相关表为空，预置基础种子数据。
 

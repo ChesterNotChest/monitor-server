@@ -219,6 +219,7 @@ class AIPipeline:
         self._task: asyncio.Task | None = None
         self._video_id: int = 0
         self._video_name: str = ""
+        self._stream_url: str | None = None
 
     # ── Hook registration ─────────────────────
 
@@ -234,7 +235,8 @@ class AIPipeline:
 
     async def start(self, view_id: int, video_id: int, video_name: str,
                     audio_id: int | None = None,
-                    audio_name: str = "") -> bool:
+                    audio_name: str = "",
+                    stream_url: str | None = None) -> bool:
         """启动 AI 管线。
 
         Args:
@@ -242,6 +244,7 @@ class AIPipeline:
             video_id: VideoDevice 数据库 ID。
             video_name: VideoDevice 名称（用于 RTMP 拉流命名）。
             audio_id: AudioDevice 数据库 ID（可选）。
+            stream_url: 自定义 RTMP 流地址（优先于 build_pull_url）。
 
         Returns:
             True if pipeline started successfully.
@@ -253,13 +256,14 @@ class AIPipeline:
         # 保存拉流参数——断流重连时需要
         self._video_id = video_id
         self._video_name = video_name
+        self._stream_url = stream_url
 
         # 1. 加载 YOLO
         if not self._yolo.load():
             return False
 
         # 2. 打开帧读取器（失败不阻止——_run_loop 会重试）
-        self._reader.open(video_id, video_name)
+        self._reader.open(video_id, video_name, stream_url=stream_url)
 
         # 3. 启动 FFmpeg 合流
         #    用 YOLO 输入尺寸作为视频尺寸（大多数视频是 640x480 或类似）
@@ -473,7 +477,8 @@ class AIPipeline:
                 attempt, self._REOPEN_MAX_ATTEMPTS, backoff,
             )
             await asyncio.sleep(backoff)
-            if self._reader.open(self._video_id, self._video_name):
+            if self._reader.open(self._video_id, self._video_name,
+                                stream_url=self._stream_url):
                 logger.info("FrameReader reopened successfully (attempt %d)", attempt)
                 return True
         logger.error(

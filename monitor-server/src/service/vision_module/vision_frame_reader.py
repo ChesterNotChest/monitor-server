@@ -85,13 +85,22 @@ class FrameReader:
 
     # ── Lifecycle ───────────────────────────────
 
-    def open(self, video_id: int, video_name: str) -> bool:
+    def open(self, video_id: int, video_name: str,
+             stream_url: str | None = None) -> bool:
         """建立 RTMP 连接并初始化帧率控制。
+
+        Args:
+            video_id: VideoDevice 数据库 ID
+            video_name: VideoDevice 名称
+            stream_url: 自定义 RTMP 流地址（优先于 build_pull_url）
 
         Returns:
             True if connected successfully.
         """
-        url = build_pull_url(video_name, "video", video_id)
+        if stream_url:
+            url = stream_url
+        else:
+            url = build_pull_url(video_name, "video", video_id)
         logger.info("FrameReader connecting to %s", url)
         self._cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
         if not self._cap.isOpened():

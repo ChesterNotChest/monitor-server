@@ -12,6 +12,7 @@ class VideoDeviceResponse(BaseModel):
     name: str = Field(..., description="视频设备名称")
     node_id: int = Field(..., description="所属计算节点 ID")
     streaming: bool = Field(..., description="是否正在推流")
+    stream_url: str | None = Field(None, description="自定义 RTMP 流地址")
 
 
 class AudioDeviceResponse(BaseModel):
@@ -28,6 +29,7 @@ class NodeResponse(BaseModel):
 
     id: int = Field(..., description="计算节点 ID")
     is_connected: bool = Field(..., description="节点是否在线")
+    is_virtual: bool = Field(False, description="是否为虚拟节点（承载外部流）")
     last_seen: datetime | None = Field(None, description="最后在线时间")
 
 

@@ -16,8 +16,8 @@ class MonitorView(Base):
     video_id: Mapped[int] = mapped_column(
         ForeignKey("video_devices.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    audio_id: Mapped[int] = mapped_column(
-        ForeignKey("audio_devices.id", ondelete="RESTRICT"), nullable=False, index=True
+    audio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("audio_devices.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     cache_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

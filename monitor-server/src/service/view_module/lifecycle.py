@@ -61,7 +61,11 @@ def get_ref_count(db: Session, device_type: str, device_id: int) -> int:
 
 
 def check_and_start_stream(db: Session, device_type: str, device_id: int) -> bool:
-    """Start raw device streaming when this is the first View reference."""
+    """Start raw device streaming when this is the first View reference.
+
+    For devices with ``stream_url`` (custom RTMP on virtual Node), skip
+    WSS command since the Node is never connected.
+    """
 
     if get_ref_count(db, device_type, device_id) > 0:
         return False
@@ -74,8 +78,11 @@ def check_and_start_stream(db: Session, device_type: str, device_id: int) -> boo
     if device is None:
         return False
 
-    if not _send_update_stream_command(device.node_id, device_type, device_id, True):
-        return False
+    # 自定义流设备（虚拟 Node）跳过 WSS 命令
+    stream_url = getattr(device, "stream_url", None)
+    if not stream_url:
+        if not _send_update_stream_command(device.node_id, device_type, device_id, True):
+            return False
 
     if device_type == "video":
         VideoDeviceRepo(db).update_streaming(device_id, True)
@@ -86,7 +93,11 @@ def check_and_start_stream(db: Session, device_type: str, device_id: int) -> boo
 
 
 def check_and_stop_stream(db: Session, device_type: str, device_id: int) -> bool:
-    """Stop raw device streaming when no View references remain."""
+    """Stop raw device streaming when no View references remain.
+
+    For devices with ``stream_url`` (custom RTMP on virtual Node), skip
+    WSS command.
+    """
 
     if get_ref_count(db, device_type, device_id) > 0:
         return False
@@ -99,8 +110,11 @@ def check_and_stop_stream(db: Session, device_type: str, device_id: int) -> bool
     if device is None:
         return False
 
-    if not _send_update_stream_command(device.node_id, device_type, device_id, False):
-        return False
+    # 自定义流设备（虚拟 Node）跳过 WSS 命令
+    stream_url = getattr(device, "stream_url", None)
+    if not stream_url:
+        if not _send_update_stream_command(device.node_id, device_type, device_id, False):
+            return False
 
     if device_type == "video":
         VideoDeviceRepo(db).update_streaming(device_id, False)

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ViewCreateRequest(BaseModel):
     """创建监控视图请求体。示例: {"video_id":1,"audio_id":1}"""
 
-    audio_id: int = Field(..., description="音频设备 ID")
+    audio_id: int | None = Field(None, description="音频设备 ID（可选，不传则无音频）")
     video_id: int = Field(..., description="视频设备 ID")
 
 
@@ -17,7 +17,7 @@ class ViewResponse(BaseModel):
 
     id: int = Field(..., description="监控视图 ID")
     name: str | None = Field(None, description="视图名称")
-    audio_id: int = Field(..., description="关联音频设备 ID")
+    audio_id: int | None = Field(None, description="关联音频设备 ID")
     video_id: int = Field(..., description="关联视频设备 ID")
     cache_path: str | None = Field(None, description="合流缓存文件路径")
     created_at: datetime | None = Field(None, description="视图创建时间")
