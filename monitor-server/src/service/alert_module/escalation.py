@@ -433,7 +433,7 @@ def _build_ack_url(alert_id: int) -> str:
 
 def _generate_ack_token(alert_id: int) -> str:
     """生成短期确认 token（JWT，过期时间 = escalation_timeout）。"""
-    import jwt as _jwt
+    from jose import jwt as _jwt
     import time as _time
     payload = {
         "alert_id": alert_id,
@@ -445,7 +445,7 @@ def _generate_ack_token(alert_id: int) -> str:
 
 def verify_ack_token(alert_id: int, token: str) -> bool:
     """验证确认 token。"""
-    import jwt as _jwt
+    from jose import jwt as _jwt
     try:
         payload = _jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
         return payload.get("alert_id") == alert_id and payload.get("action") == "acknowledge"
