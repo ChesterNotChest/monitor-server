@@ -138,6 +138,18 @@ class FaceRecognizer:
             if result is not None and result.result != FaceResultStatus.NO_RESULT:
                 self._last_results[track.track_id] = result
 
+        # 4. LRU 清理 — 删除已离开画面的 track，超过上限时淘汰最旧条目
+        active_ids = {t.track_id for t in tracks}
+        stale = [tid for tid in self._last_results if tid not in active_ids]
+        for tid in stale:
+            self._last_results.pop(tid, None)
+        # 上限保护（防止异常场景下累积）
+        _MAX_LAST = 512
+        if len(self._last_results) > _MAX_LAST:
+            overflow = sorted(self._last_results.keys())[:len(self._last_results) - _MAX_LAST]
+            for tid in overflow:
+                self._last_results.pop(tid, None)
+
         return [self._last_results[t.track_id] for t in tracks
                 if t.track_id in self._last_results]
 

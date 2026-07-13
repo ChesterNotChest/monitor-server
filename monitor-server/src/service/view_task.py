@@ -48,37 +48,16 @@ def create_view(
         db.commit()
         db.refresh(view)
 
-        # 等待 Node 推流就绪（收到 UPDATE_STREAM 后 ffmpeg 需要几秒启动）
+        # 等待 Node 推流就绪
         import time
         time.sleep(5)
 
-        # 1) 始终启动纯 ffmpeg 合流（保底，不依赖 AI）
-        import subprocess
-        from src.network.rtmp.puller import build_pull_url
-        from src.network.rtmp.pusher import build_push_url
-
-        video_url = build_pull_url(video.name, "video", video_id)
-        audio_url = build_pull_url(audio.name, "audio", audio_id)
-        push_url = build_push_url(view.id)
-
-        cmd = [
-            "ffmpeg", "-i", video_url, "-i", audio_url,
-            "-c:v", "copy", "-c:a", "aac", "-f", "flv", push_url,
-            "-y",
-        ]
-        raw_merge_proc = None
-        try:
-            raw_merge_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except FileNotFoundError:
-            warnings.append("ffmpeg not found — cannot start view merge")
-
-        # 2) 如果 AI 依赖可用，启动 AI 推理管线并替换原始合流
+        # 启动 AI 推理管线
         try:
             import asyncio
             import threading
             from src.service.vision_task import start_pipeline, wait_pipeline_stopped
 
-            # 提前捕获字符串值——后台线程不能访问已关闭 session 的 ORM 对象
             _video_name = video.name
             _audio_name = audio.name
 
@@ -91,29 +70,14 @@ def create_view(
                 asyncio.run(_pipeline_forever(view.id, video_id, _video_name,
                                               audio_id, _audio_name))
 
-            loop = None
             try:
                 loop = asyncio.get_running_loop()
                 loop.create_task(start_pipeline(view.id, video_id, _video_name,
                                                 audio_id, _audio_name))
             except RuntimeError:
                 threading.Thread(target=_launch, daemon=True).start()
-
-            # AI 管线已启动 — 等 pipeline 首帧就绪后再终止原始合流
-            if raw_merge_proc is not None and raw_merge_proc.poll() is None:
-                _view_id = view.id
-                async def _kill_merge_when_ready() -> None:
-                    from src.service.vision_task import wait_pipeline_ready
-                    ready = await wait_pipeline_ready(_view_id, timeout=30.0)
-                    logger.info("[View %d] pipeline ready=%s, killing raw merge", _view_id, ready)
-                    if raw_merge_proc.poll() is None:
-                        raw_merge_proc.terminate()
-                if loop is not None:
-                    loop.create_task(_kill_merge_when_ready())
-                else:
-                    threading.Thread(target=lambda: asyncio.run(_kill_merge_when_ready()), daemon=True).start()
         except ImportError:
-            pass  # AI 不可用，原始合流保底
+            warnings.append("AI pipeline unavailable — view will have no stream")
 
         return ViewResponse(
             id=view.id,
