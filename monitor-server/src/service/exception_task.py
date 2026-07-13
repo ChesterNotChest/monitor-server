@@ -1,9 +1,11 @@
 """异常定义管理服务。"""
 
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from src.repository.exception_def_repo import ExceptionDefRepo
 from src.models.exception import exception_entities, exception_actions, exception_sounds
+from src.models.situation_event import SituationEvent
 
 
 def list_exceptions(db: Session):
@@ -43,6 +45,8 @@ def update_exception(db: Session, exc_id: int, **kwargs):
 
 
 def delete_exception(db: Session, exc_id: int) -> bool:
+    # 先删除关联的告警事件记录，再删除异常定义
+    db.execute(delete(SituationEvent).where(SituationEvent.exception_id == exc_id))
     ok = ExceptionDefRepo(db).delete(exc_id)
     db.commit()
     return ok
