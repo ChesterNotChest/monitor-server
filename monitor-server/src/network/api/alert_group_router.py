@@ -32,7 +32,9 @@ def create_group(body: AlertGroupCreate, db: Session = Depends(get_db), _user=_p
 
     **权限**: alert_group:manage
     """
-    return alert_group_task.create_alert_group(db, name=body.name)
+    result = alert_group_task.create_alert_group(db, name=body.name)
+    db.commit()
+    return result
 
 
 @router.put(
@@ -47,6 +49,7 @@ def update_group(group_id: int, body: AlertGroupCreate, db: Session = Depends(ge
     """
     r = alert_group_task.update_alert_group(db, group_id, name=body.name)
     if r is None: raise HTTPException(404)
+    db.commit()
     return r
 
 
@@ -62,3 +65,4 @@ def delete_group(group_id: int, db: Session = Depends(get_db), _user=_perm):
     """
     if not alert_group_task.delete_alert_group(db, group_id):
         raise HTTPException(404)
+    db.commit()

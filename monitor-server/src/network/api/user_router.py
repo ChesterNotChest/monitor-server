@@ -43,7 +43,9 @@ def create_user(
     if role not in [r.value for r in Role]:
         raise HTTPException(400, f"无效角色: {role}")
     try:
-        return user_task.create_user(db, username, password, role)
+        result = user_task.create_user(db, username, password, role)
+        db.commit()
+        return result
     except ValueError as e:
         raise HTTPException(409, str(e))
 
@@ -63,6 +65,7 @@ def update_role(user_id: int, role: str, db: Session = Depends(get_db), _user=_p
     result = user_task.update_role(db, user_id, role)
     if result is None:
         raise HTTPException(404, "用户不存在")
+    db.commit()
     return result
 
 
@@ -78,4 +81,5 @@ def deactivate_user(user_id: int, db: Session = Depends(get_db), _user=_perm):
     """
     if not user_task.deactivate_user(db, user_id):
         raise HTTPException(404, "用户不存在")
+    db.commit()
     return OkResponse()

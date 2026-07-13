@@ -40,6 +40,7 @@ def mark_handled(
     """
     if not alert_task.mark_handled(db, alert_id, user.id):
         raise HTTPException(status_code=404, detail="告警不存在")
+    db.commit()
     return OkResponse()
 
 
@@ -59,4 +60,5 @@ def mark_false_alarm(
     """
     if not alert_task.mark_false_alarm(db, alert_id, user.id):
         raise HTTPException(status_code=404, detail="告警不存在")
+    db.commit()
     return OkResponse()
