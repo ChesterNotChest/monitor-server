@@ -16,6 +16,7 @@ pipeline {
         string(name: "SRS_CANDIDATE", defaultValue: "10.126.59.25", description: "Public IP or domain returned by SRS for WebRTC")
         string(name: "SRS_PUBLIC_HOST", defaultValue: "10.126.59.25", description: "Public IP or domain returned to Web clients for SRS playback")
         string(name: "MODEL_DIR", defaultValue: "/home/liusu/video/models", description: "Host directory mounted read-only to /app/src/third-party")
+        string(name: "YOLO_DEVICE", defaultValue: "0", description: "YOLO device: cpu or GPU index, e.g. 0")
         string(name: "DATABASE_URL", defaultValue: "mysql+pymysql://monitor:monitor_placeholder2026@monitor-mysql:3306/monitor?charset=utf8mb4", description: "SQLAlchemy database URL used by the production app container")
         password(name: "JWT_SECRET", defaultValue: "change-me-in-jenkins-before-prod", description: "JWT signing secret for the production app")
         password(name: "DINGTALK_WEBHOOK", defaultValue: "", description: "DingTalk robot webhook URL used by alert notifications")
@@ -75,6 +76,7 @@ pipeline {
                     "SRS_CANDIDATE=${params.SRS_CANDIDATE}",
                     "SRS_PUBLIC_HOST=${params.SRS_PUBLIC_HOST}",
                     "MODEL_DIR=${params.MODEL_DIR}",
+                    "YOLO_DEVICE=${params.YOLO_DEVICE}",
                     "DATABASE_URL=${params.DATABASE_URL}",
                     "JWT_SECRET=${params.JWT_SECRET}",
                     "DINGTALK_WEBHOOK=${params.DINGTALK_WEBHOOK}",
@@ -111,6 +113,7 @@ pipeline {
                         docker compose --project-directory "$HOST_WORKSPACE" -f "$HOST_WORKSPACE/$COMPOSE_FILE" ps
                         docker exec monitor-nginx wget -qO- http://127.0.0.1/health
                         docker exec monitor-app python -c "from src.app import app; print([getattr(r, 'path', None) for r in app.routes])"
+                        docker exec monitor-app python -c "import torch; from src.config import settings; print('YOLO_DEVICE=', settings.YOLO_DEVICE); print('cuda_available=', torch.cuda.is_available()); print('cuda_device_count=', torch.cuda.device_count())"
                     '''
                 }
             }

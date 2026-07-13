@@ -312,6 +312,7 @@ SRS_RTC_PORT=8000
 SRS_CANDIDATE=10.126.59.25
 SRS_PUBLIC_HOST=10.126.59.25
 MODEL_DIR=/home/liusu/video/models
+YOLO_DEVICE=0
 DATABASE_URL=mysql+pymysql://monitor:monitor_placeholder2026@monitor-mysql:3306/monitor?charset=utf8mb4
 JWT_SECRET=换成生产随机长字符串
 DINGTALK_WEBHOOK=钉钉机器人Webhook，不要写进Git
@@ -328,7 +329,11 @@ RUN_SEED_DATA=false
 docker exec monitor-mysql mysql -umonitor -pmonitor_placeholder2026 monitor -e "SELECT 'entity_types' AS table_name, COUNT(*) AS count FROM entity_types UNION ALL SELECT 'action_types', COUNT(*) FROM action_types UNION ALL SELECT 'sound_types', COUNT(*) FROM sound_types UNION ALL SELECT 'face_recognition_results', COUNT(*) FROM face_recognition_results UNION ALL SELECT 'fence_event_types', COUNT(*) FROM fence_event_types UNION ALL SELECT 'response_actions', COUNT(*) FROM response_actions UNION ALL SELECT 'alert_group_responses', COUNT(*) FROM alert_group_responses;"
 ```
 
-### 4. 部署后验证
+### 4. 生产 GPU 推理要求
+
+`YOLO_DEVICE=0` 表示使用第 0 张 GPU。CD 部署会把该参数传入 `monitor-app`，并通过 compose 的 `gpus: all` 让容器访问宿主机 NVIDIA GPU。部署机需要已安装 NVIDIA 驱动和 NVIDIA Container Toolkit；如果部署后 `torch.cuda.is_available()` 为 `False`，说明容器没有拿到 GPU，需要先修 Docker/NVIDIA runtime。
+
+### 5. 部署后验证
 
 ```bash
 docker ps --filter name=monitor-mysql
@@ -336,6 +341,7 @@ docker ps --filter name=monitor-app
 curl --noproxy '*' http://127.0.0.1:8081/health
 docker exec monitor-app find /app/src/third-party -maxdepth 3 -type f
 docker exec monitor-app ls -lah /app/face_images
+docker exec monitor-app python -c "import torch; from src.config import settings; print(settings.YOLO_DEVICE, torch.cuda.is_available(), torch.cuda.device_count())"
 ```
 
 `monitor-node` 联调配置示例：
@@ -350,7 +356,7 @@ RTMP_DEBUG=false
 SECRET_KEY=节点token
 ```
 
-### 5. 完整链路验证
+### 6. 完整链路验证
 
 Server CD 部署成功后，只验证 `/health` 还不够。完整视频链路应按下面顺序确认：
 

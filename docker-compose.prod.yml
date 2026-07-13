@@ -17,6 +17,7 @@ services:
       DINGTALK_WEBHOOK: ${DINGTALK_WEBHOOK:-}
       DINGTALK_WEBHOOK_URL: ${DINGTALK_WEBHOOK_URL:-}
       STREAM_SERVER_URL: ${STREAM_SERVER_URL:-}
+      YOLO_DEVICE: ${YOLO_DEVICE:-0}
       RTMP_HOST: stream-server
       RTMP_PORT: 1935
       SRS_HOST: stream-server
@@ -33,6 +34,7 @@ services:
       - ${MODEL_DIR:-/home/liusu/video/models}:/app/src/third-party:ro
     expose:
       - "8000"
+    gpus: all
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
