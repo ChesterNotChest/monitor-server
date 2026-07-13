@@ -29,7 +29,7 @@ def _to_response(person) -> PersonResponse:
 
 
 @router.post(
-    "",
+    "/",
     response_model=PersonResponse,
     status_code=201,
     responses={409: {"description": "名称已存在"}},
@@ -45,7 +45,7 @@ def create(body: PersonCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail=str(e))
 
 
-@router.get("", response_model=PersonListResponse)
+@router.get("/", response_model=PersonListResponse)
 def list_all(
     db: Session = Depends(get_db),
     page: int = Query(DEFAULT_PAGE, ge=1),
@@ -62,7 +62,7 @@ def list_all(
 
 
 @router.get(
-    "/{id}",
+    "/{id}/",
     response_model=PersonResponse,
     responses={404: {"description": "命名人物不存在"}},
 )
@@ -75,7 +75,7 @@ def get_one(id: int, db: Session = Depends(get_db)):
 
 
 @router.put(
-    "/{id}",
+    "/{id}/",
     response_model=PersonResponse,
     responses={404: {"description": "命名人物不存在"}, 409: {"description": "名称已存在"}},
 )
@@ -94,7 +94,7 @@ def update(id: int, body: PersonUpdate, db: Session = Depends(get_db)):
 
 
 @router.delete(
-    "/{id}",
+    "/{id}/",
     status_code=204,
     responses={404: {"description": "命名人物不存在"}},
 )
@@ -106,7 +106,7 @@ def delete(id: int, db: Session = Depends(get_db)):
 
 
 @router.post(
-    "/{id}/avatar",
+    "/{id}/avatar/",
     response_model=PersonResponse,
     responses={404: {"description": "命名人物不存在"}, 422: {"description": "文件格式不支持"}},
 )

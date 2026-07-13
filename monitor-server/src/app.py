@@ -112,7 +112,27 @@ async def print_urls():
 @app.on_event("shutdown")
 async def shutdown_cleanup():
     """服务关闭时终止所有 FFmpeg 子进程。"""
+    import logging
+    logging.getLogger(__name__).info("[SHUTDOWN] Server shutdown initiated")
     cleanup_all()
+    logging.getLogger(__name__).info("[SHUTDOWN] cleanup complete")
+
+
+# 注册信号处理 — 记录崩溃原因
+import signal as _signal
+
+def _on_signal(signum, frame):
+    import logging
+    sig_name = _signal.Signals(signum).name if hasattr(_signal, "Signals") else f"signal-{signum}"
+    logging.getLogger(__name__).warning("[CRASH] Received %s — shutting down", sig_name)
+    import sys
+    sys.exit(128 + signum)
+
+try:
+    _signal.signal(_signal.SIGINT, _on_signal)    # Ctrl+C
+    _signal.signal(_signal.SIGTERM, _on_signal)   # kill
+except Exception:
+    pass  # 非主线程时 signal 不可用
 
 
 # ---- 注册子路由 ----

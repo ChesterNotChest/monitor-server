@@ -13,7 +13,7 @@ from src.service import alert_task
 router = APIRouter(prefix="/alerts", tags=["告警"])
 
 
-@router.get("", response_model=AlertListResponse)
+@router.get("/", response_model=AlertListResponse)
 def list_alerts(
     page: int = Query(DEFAULT_PAGE, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
@@ -25,7 +25,7 @@ def list_alerts(
 
 
 @router.put(
-    "/{alert_id}/handle",
+    "/{alert_id}/handle/",
     response_model=OkResponse,
     responses={404: {"description": "告警不存在"}},
 )
@@ -40,11 +40,12 @@ def mark_handled(
     """
     if not alert_task.mark_handled(db, alert_id, user.id):
         raise HTTPException(status_code=404, detail="告警不存在")
+    db.commit()
     return OkResponse()
 
 
 @router.put(
-    "/{alert_id}/false-alarm",
+    "/{alert_id}/false-alarm/",
     response_model=OkResponse,
     responses={404: {"description": "告警不存在"}},
 )
@@ -59,4 +60,5 @@ def mark_false_alarm(
     """
     if not alert_task.mark_false_alarm(db, alert_id, user.id):
         raise HTTPException(status_code=404, detail="告警不存在")
+    db.commit()
     return OkResponse()

@@ -25,7 +25,7 @@ def list_nodes(db: Session = Depends(get_db)):
 
 
 @router.get(
-    "/{node_id}/videos",
+    "/{node_id}/videos/",
     response_model=VideoDeviceListResponse,
     responses={404: {"description": "Node 不存在"}},
 )
@@ -36,7 +36,7 @@ def list_videos(node_id: int, db: Session = Depends(get_db)):
 
 
 @router.get(
-    "/{node_id}/audios",
+    "/{node_id}/audios/",
     response_model=AudioDeviceListResponse,
     responses={404: {"description": "Node 不存在"}},
 )

@@ -18,28 +18,28 @@ router = APIRouter(prefix="/reports", tags=["报表"])
 _perm = Depends(require_permission("report:view"))
 
 
-@router.get("/weekly", response_model=ReportResponse)
+@router.get("/weekly/", response_model=ReportResponse)
 def weekly_report(db: Session = Depends(get_db), _user=_perm):
     """Get weekly aggregate report."""
 
     return report_task.get_weekly_report(db)
 
 
-@router.get("/monthly", response_model=ReportResponse)
+@router.get("/monthly/", response_model=ReportResponse)
 def monthly_report(db: Session = Depends(get_db), _user=_perm):
     """Get monthly aggregate report."""
 
     return report_task.get_monthly_report(db)
 
 
-@router.get("/daily", response_model=DailyReportResponse)
+@router.get("/daily/", response_model=DailyReportResponse)
 def daily_report(date: date | None = None, db: Session = Depends(get_db), _user=_perm):
     """Get AI-generated daily monitoring report."""
 
     return report_task.get_daily_report(db, date)
 
 
-@router.post("/daily/deepseek", response_model=DailyReportResponse)
+@router.post("/daily/deepseek/", response_model=DailyReportResponse)
 def deepseek_daily_report(
     body: DeepSeekDailyReportRequest,
     db: Session = Depends(get_db),

@@ -13,7 +13,7 @@ router = APIRouter(prefix="/logs", tags=["系统日志"])
 _perm = Depends(require_permission("log:view"))
 
 
-@router.get("", response_model=LogListResponse)
+@router.get("/", response_model=LogListResponse)
 def list_logs(
     page: int = Query(DEFAULT_PAGE, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
@@ -28,7 +28,7 @@ def list_logs(
 
 
 @router.get(
-    "/{log_id}",
+    "/{log_id}/",
     response_model=LogEntry,
     responses={404: {"description": "日志不存在"}},
 )

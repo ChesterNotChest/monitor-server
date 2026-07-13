@@ -32,7 +32,7 @@ def _to_response(obj) -> EventResponse:
 
 
 @router.get(
-    "",
+    "/",
     response_model=EventListResponse,
     responses={404: {"description": "无匹配事件"}},
 )
@@ -57,7 +57,7 @@ def list_all(
 
 
 @router.get(
-    "/{id}",
+    "/{id}/",
     response_model=EventResponse,
     responses={404: {"description": "事件不存在"}},
 )
@@ -74,7 +74,7 @@ def get_one(id: int, db: Session = Depends(get_db)):
 stats_router = APIRouter(prefix="/events/stats", tags=["事件日志"])
 
 
-@stats_router.get("/by-exception", response_model=list[ExceptionStatsItem])
+@stats_router.get("/by-exception/", response_model=list[ExceptionStatsItem])
 def by_exception(
     db: Session = Depends(get_db),
     start: datetime | None = Query(None),
@@ -86,7 +86,7 @@ def by_exception(
 
 
 @stats_router.get(
-    "/trend",
+    "/trend/",
     response_model=list[TrendItem],
     responses={422: {"description": "无效的 granularity 参数（应为 hour/day/month）"}},
 )

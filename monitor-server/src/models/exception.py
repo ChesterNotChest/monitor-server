@@ -85,5 +85,17 @@ class ExceptionDef(Base):
         "SoundType", secondary=exception_sounds, lazy="selectin"
     )
 
+    @property
+    def entity_ids(self) -> list[int]:
+        return [e.id for e in self.entities] if self.entities else []
+
+    @property
+    def action_ids(self) -> list[int]:
+        return [a.id for a in self.actions] if self.actions else []
+
+    @property
+    def sound_ids(self) -> list[int]:
+        return [s.id for s in self.sounds] if self.sounds else []
+
     def __repr__(self) -> str:
         return f"<ExceptionDef {self.id} severity={self.severity.name}>"

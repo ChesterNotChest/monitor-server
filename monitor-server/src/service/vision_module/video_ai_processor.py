@@ -43,7 +43,11 @@ class VideoAIProcessor:
         elif ctx.frame_id <= 3:
             _slog.info("[ProcFrame] fence_polygons is EMPTY (fence_engine._fences=%d)",
                         len(self.fence_engine._fences))
+
         if not tracks:
+            # 无 track 时清空动作 ID 缓存
+            import src.service.vision_module.vision_annotation as _van
+            _van._active_action_type_ids = frozenset()
             return
 
         await self.face_recognizer.recognize_and_publish(ctx.frame, tracks, ctx.view_id)
@@ -54,9 +58,11 @@ class VideoAIProcessor:
             _face_labels as _fl, _action_labels as _al, _fence_labels as _fel,
         )
         face_labels = self.face_recognizer.get_face_labels()
-        if face_labels:
-            _logging.getLogger(__name__).info("[Direct] Face labels: %s", face_labels)
+        _prev_fl = dict(_fl)
         _fl.update(face_labels)  # 增量更新，不清空已有标签
+        # 只在标签变化时输出
+        if _fl != _prev_fl and face_labels:
+            _logging.getLogger(__name__).info("[Direct] Face labels: %s", face_labels)
 
         # SlowFast: enqueue + publish ACTION events (non-blocking)
         ctx.action_regions = {}
@@ -67,17 +73,32 @@ class VideoAIProcessor:
             ctx.action_regions[track.track_id] = bbox
             crop = _crop_padded(ctx.frame, track, pad=0.3)
             if crop is not None:
-                self.slowfast_runner.enqueue_and_publish(track.track_id, crop, ctx.view_id)
+                self.slowfast_runner.enqueue(track.track_id, crop)  # 同步，只入队不 publish
         action_results = self.slowfast_runner.collect_results()
         if action_results:
-            # 同 track 多模型竞争 → 取最高置信度；不清空已有标签（增量更新）
-            best: dict[int, tuple[float, str]] = {}
+            # 置信度阈值: 低于此值的动作不进标签（Kinetics/AVA 噪声 ~0.50）
+            _MIN_CONF = 0.55
+            # 同 track 多模型/多类合并 — 全部保留，管道分隔
+            all_names: dict[int, set[str]] = {}
             for r in action_results:
-                name = _action_type_name(r)
-                if r.track_id not in best or r.confidence > best[r.track_id][0]:
-                    best[r.track_id] = (r.confidence, name)
-            _al.update({tid: name for tid, (_, name) in best.items()})
-            _logging.getLogger(__name__).info("[Direct] Action labels: %s", dict(_al))
+                if r.confidence >= _MIN_CONF:
+                    all_names.setdefault(r.track_id, set()).add(_action_type_name(r))
+            _prev_al = dict(_al)
+            _al.update({tid: "|".join(sorted(names)) for tid, names in all_names.items()})
+            if _al != _prev_al:
+                # 摘要: 每种动作的 track 数量
+                summary: dict[str, int] = {}
+                for v in _al.values():
+                    for name in v.split("|"):
+                        summary[name] = summary.get(name, 0) + 1
+                _logging.getLogger(__name__).info("[Direct] Action summary: %s", summary)
+            # 同步写入整数 ID 缓存（跨帧保留+TTL，引用替换无锁安全）
+            import time as _t
+            import src.service.vision_module.vision_annotation as _van
+            _van._active_action_type_ids = frozenset(
+                r.action_type_id for r in action_results if r.confidence >= _MIN_CONF
+            )
+            _van._active_action_ids_updated_at = _t.time()
 
         fence_events = await self.fence_engine.check_and_publish(tracks, ctx.timestamp)
         if fence_events:

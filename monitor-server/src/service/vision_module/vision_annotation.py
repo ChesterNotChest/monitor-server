@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import time as _time
 
 import numpy as np
 
@@ -36,6 +37,102 @@ _ENTITY_LABELS: dict[int, str] = {
 _face_labels: dict[int, str] = {}
 _fence_labels: dict[int, str] = {}
 _action_labels: dict[int, str] = {}
+
+# ── ActiveSignals — Pipeline 每帧提取的枚举信号快照 ──
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ActiveSignals:
+    """一帧内所有 AI 检测的整数 ID 集合 — AlertEngine 告警匹配的单一数据源。
+
+    全部为存在性集合 — 只关心"画面里有没有"，不关心中"哪个 track 引起的"。
+    引用替换（非 mutate）确保无锁线程安全。
+    """
+    entity_type_ids: frozenset[int] = field(default_factory=frozenset)
+    action_type_ids: frozenset[int] = field(default_factory=frozenset)
+    sound_type_ids: frozenset[int] = field(default_factory=frozenset)
+    face_result_ids: frozenset[int] = field(default_factory=frozenset)
+    fence_result_ids: frozenset[int] = field(default_factory=frozenset)
+
+    EMPTY: "ActiveSignals" = field(init=False, repr=False, default=None)
+
+    @classmethod
+    def empty(cls) -> "ActiveSignals":
+        if cls.EMPTY is None:
+            cls.EMPTY = cls()
+        return cls.EMPTY
+
+
+ActiveSignals.EMPTY = ActiveSignals()
+
+# 检查"无信号"
+_ACTIVE_SIGNALS = ActiveSignals.empty()
+
+# 全局 ID 缓存 — 引用替换策略（GIL 下 set 引用赋值原子，无需显式锁）
+_active_action_type_ids: frozenset[int] = frozenset()
+_active_action_ids_updated_at: float = 0.0
+_active_sound_type_ids: frozenset[int] = frozenset()
+_active_sound_ids_updated_at: float = 0.0
+
+# 信号 TTL（秒）—— 与 AlertEngine ALERT_EVENT_TTL 对齐
+_SIGNAL_TTL: float = 5.0
+
+
+def get_active_signals(
+    entity_type_ids: frozenset[int] | None = None,
+) -> ActiveSignals:
+    """从全局缓存提取当前帧的枚举信号快照。
+
+    - entity_type_ids: 调用方从当前帧 detections 提取后传入
+    - action_type_ids: 读取 _active_action_type_ids（跨帧+TTL, SlowFast 结果按批产出）
+    - sound_type_ids: 读取 _active_sound_type_ids（跨帧+TTL, YAMNet 持续产出）
+    - face_result_ids: 从 _face_labels 推导 Stranger 存在性
+    - fence_result_ids: 从 _fence_labels 推导 ENTERED 存在性
+
+    所有字段使用 frozenset——引用替换保证无锁线程安全。
+    """
+    if entity_type_ids is None:
+        entity_type_ids = frozenset()
+
+    # 动作 TTL 检查（SlowFast 推理是批处理，结果跨帧保持）
+    action_ids: frozenset[int]
+    if _active_action_ids_updated_at > 0 and (
+        _time.time() - _active_action_ids_updated_at < _SIGNAL_TTL
+    ):
+        action_ids = _active_action_type_ids
+    else:
+        action_ids = frozenset()
+
+    # 声音 TTL 检查
+    sound_ids: frozenset[int]
+    if _active_sound_ids_updated_at > 0 and (
+        _time.time() - _active_sound_ids_updated_at < _SIGNAL_TTL
+    ):
+        sound_ids = _active_sound_type_ids
+    else:
+        sound_ids = frozenset()
+
+    # Face: 只要有 "Stranger" → face_result_ids = {2}
+    from src.constants import FaceRecognitionResult
+    face_ids = frozenset()
+    if any(v == "Stranger" for v in _face_labels.values()):
+        face_ids = frozenset({FaceRecognitionResult.STRANGER})
+
+    # Fence: 非空 → {1} (ENTERED)
+    from src.constants import FenceEventResult
+    fence_ids = frozenset()
+    if _fence_labels:
+        fence_ids = frozenset({FenceEventResult.ENTERED})
+
+    return ActiveSignals(
+        entity_type_ids=entity_type_ids,
+        action_type_ids=action_ids,
+        sound_type_ids=sound_ids,
+        face_result_ids=face_ids,
+        fence_result_ids=fence_ids,
+    )
 
 
 async def _on_face_event(payload: dict) -> None:
