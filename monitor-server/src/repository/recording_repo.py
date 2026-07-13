@@ -15,7 +15,7 @@ class RecordingRepo(BaseRepo[Recording]):
         """原生 SQL INSERT + SELECT 绕过 ORM mapper 配置。
         避免 partial import 时 ExceptionDef → FaceRecognitionResult
         字符串引用无法解析。"""
-        self.db.execute(
+        result = self.db.execute(
             text("""
                 INSERT INTO recordings (view_id, file_path, start_time, end_time)
                 VALUES (:view_id, :file_path, :start_time, :end_time)
@@ -30,7 +30,8 @@ class RecordingRepo(BaseRepo[Recording]):
         self.db.commit()
 
         row = self.db.execute(
-            text("SELECT * FROM recordings WHERE id = last_insert_rowid()")
+            text("SELECT * FROM recordings WHERE id = :id"),
+            {"id": result.lastrowid},
         )
         return Recording(**row.mappings().one())
 
