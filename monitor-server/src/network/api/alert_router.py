@@ -1,4 +1,4 @@
-﻿"""告警 API 路由。"""
+"""告警 API 路由。"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -14,65 +14,62 @@ router = APIRouter(prefix="/alerts", tags=["告警"])
 
 
 @router.post("/debug-test", response_model=OkResponse)
+@router.post("/debug-test/", response_model=OkResponse, include_in_schema=False)
 async def debug_trigger_alert(db: Session = Depends(get_db)):
-    """DEBUG: 手动创建一个测试告警并触发钉钉通知。
-
-    用数据库中第一条 CRITICAL 或 EMERGENCY 异常规则创建告警，
-    测试完整的通知 → 上报链路。
-    """
+    """DEBUG: 发送一条钉钉测试消息，不依赖已有 View 或高危异常规则。"""
+    import json
     from sqlalchemy import select
-    from src.constants import SeverityLevel
-    from src.models.exception import ExceptionDef
-    from src.models.monitor_view import MonitorView
 
-    exc = db.scalar(
-        select(ExceptionDef).where(
-            ExceptionDef.severity.in_([SeverityLevel.CRITICAL, SeverityLevel.EMERGENCY])
-        ).limit(1)
+    from src.models.response_action import ResponseAction
+    from src.models.user import User
+    from src.service.alert_module.channel import NotificationPayload
+    from src.service.alert_module.channel.dingtalk_webhook import DingTalkWebhookChannel
+
+    actions = list(db.scalars(
+        select(ResponseAction).where(ResponseAction.channel == "dingtalk_webhook")
+    ).all())
+    if not actions:
+        raise HTTPException(400, "没有配置 dingtalk_webhook 响应动作")
+
+    at_mobiles = list(db.scalars(
+        select(User.dingtalk_mobile).where(
+            User.is_active == True,
+            User.dingtalk_mobile.is_not(None),
+            User.dingtalk_mobile != "",
+        )
+    ).all())
+
+    payload = NotificationPayload(
+        title="告警通知 - DEBUG",
+        text=(
+            "## 告警通知 - DEBUG\n\n"
+            "这是一条 monitor-server 钉钉连通性测试消息。\n\n"
+            "如果能看到此消息，说明 webhook 与响应动作配置可用。"
+        ),
+        at_mobiles=at_mobiles,
+        alert_id=0,
+        severity="DEBUG",
+        exception_name="debug-test",
     )
-    if exc is None:
-        raise HTTPException(400, "数据库中没有 CRITICAL/EMERGENCY 异常规则，请先运行 seed_data")
 
-    view = db.scalar(select(MonitorView).limit(1))
-    if view is None:
-        raise HTTPException(400, "数据库中没有任何 View，请先创建视图")
+    channel = DingTalkWebhookChannel()
+    saw_valid_config = False
+    for action in actions:
+        config = {}
+        if action.config_json:
+            try:
+                config = json.loads(action.config_json)
+            except json.JSONDecodeError:
+                continue
+        if not channel.validate_config(config):
+            continue
+        saw_valid_config = True
+        if await channel.send(payload, config):
+            return OkResponse()
 
-    # 创建告警
-    from src.repository.situation_event_repo import SituationEventRepo
-    from src.service.alert_module.escalation import STATUS_CREATED
-    event = SituationEventRepo(db).create(view_id=view.id, exception_id=exc.id)
-    event.status = STATUS_CREATED
-    db.commit()
-    db.refresh(event)
-
-    event_id = event.id
-    event_view_id = event.view_id
-    view_name = view.name or f"View {view.id}"
-    group_id = exc.group_id
-
-    # eager load
-    from src.models.alert_group import AlertGroup
-    from sqlalchemy.orm import selectinload
-    resp_channels: list[str] = []
-    if group_id:
-        ag = db.scalar(
-            select(AlertGroup)
-            .where(AlertGroup.id == group_id)
-            .options(selectinload(AlertGroup.responses))
-        )
-        if ag and ag.responses:
-            resp_channels = [r.channel for r in ag.responses if r.channel]
-
-    # 触发通知（async endpoint 里直接用 create_task，计时器不会被销毁）
-    if "dingtalk_webhook" in resp_channels:
-        from src.service.alert_module import escalation as _esc
-        import asyncio
-        asyncio.create_task(
-            _esc.start_escalation_from_id(event_id, event_view_id, view_name, group_id),
-            name=f"debug-escalation-{event_id}",
-        )
-
-    return OkResponse()
+    if not saw_valid_config:
+        raise HTTPException(400, "钉钉 webhook 未配置")
+    raise HTTPException(502, "钉钉消息发送失败，请查看后端日志中的 DingTalk errcode")
 
 
 
