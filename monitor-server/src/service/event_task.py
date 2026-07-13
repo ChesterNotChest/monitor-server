@@ -92,15 +92,18 @@ def stats_trend(
 
     granularity: "hour" | "day" | "month"（默认 "day"）
     """
-    # SQLite strftime 格式
     fmt_map = {
         "hour": "%Y-%m-%dT%H",
         "day": "%Y-%m-%d",
         "month": "%Y-%m",
     }
     fmt = fmt_map.get(granularity, "%Y-%m-%d")
+    dialect = db.get_bind().dialect.name if db.get_bind() is not None else ""
 
-    period_expr = func.strftime(fmt, SituationEvent.timestamp).label("period")
+    if dialect == "mysql":
+        period_expr = func.date_format(SituationEvent.timestamp, fmt).label("period")
+    else:
+        period_expr = func.strftime(fmt, SituationEvent.timestamp).label("period")
     count_expr = func.count(SituationEvent.id).label("count")
 
     query = select(period_expr, count_expr)
@@ -110,7 +113,7 @@ def stats_trend(
     if end is not None:
         query = query.where(SituationEvent.timestamp <= end)
 
-    query = query.group_by("period").order_by("period")
+    query = query.group_by(period_expr).order_by(period_expr)
 
     rows = db.execute(query).all()
     return [{"period": row.period, "count": row.count} for row in rows]

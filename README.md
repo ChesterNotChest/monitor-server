@@ -384,6 +384,17 @@ rw_timeout;5000000
 
 不要使用 `timeout;5000000`。
 
+
+### 6. 生产排障与兼容规则
+
+当前生产数据库是 MySQL，不能使用只在 SQLite 中存在的函数。涉及生产接口时遵守下面规则：
+
+- 事件趋势统计按时间分组时，SQLite 使用 `strftime()`，MySQL 使用 `date_format()`。如果 `/api/v1/events/stats/trend` 返回 500 并出现 `FUNCTION monitor.strftime does not exist`，说明代码误用了 SQLite 函数。
+- 录制记录插入后取新 ID 时使用 SQLAlchemy 执行结果的 `result.lastrowid`，不要使用 SQLite 专属的 `last_insert_rowid()`。如果日志出现 `FUNCTION monitor.last_insert_rowid does not exist`，会影响告警触发录像。
+- FastAPI 对尾斜杠不匹配会返回 307。经 nginx 暴露到 `:8081` 时，重定向 Location 可能丢端口，浏览器表现为 CORS 或 `Failed to fetch`。Web 端路径需和 Server 路由完全一致：设备列表使用 `/nodes/`；删除单个 View 使用 `/views/{id}`，不要写成 `/views/{id}/`。
+- 在服务器本机用 curl 测试接口时，环境里可能设置了 `HTTP_PROXY`，要加 `--noproxy '*'`，例如 `curl --noproxy '*' http://127.0.0.1:8081/health`。
+- 临时 `docker cp` 到运行容器的热修只用于现场验证；最终必须提交源码、推送远端，并重新跑 Jenkins CD，否则下一次部署会被镜像覆盖。
+
 ---
 
 ## 认证
