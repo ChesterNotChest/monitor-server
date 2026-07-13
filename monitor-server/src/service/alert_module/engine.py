@@ -112,6 +112,17 @@ class AlertEngine:
                             db.commit()
                         logger.info("Alert: view=%d exc=%d id=%d track=%d rec=%s", self._view_id, exc.id, event.id, tid, rec_id)
 
+                        # 写入 Web 日志中心（不影响告警主流程）
+                        try:
+                            from src.service import log_task
+                            log_task.record_alert_event(
+                                db, event=event, exception_def=exc, recording_id=rec_id
+                            )
+                            db.commit()
+                        except Exception:
+                            db.rollback()
+                            logger.exception("Failed to record alert log")
+
                         # WSS 推送（recording_id 已就绪，前端立即可回放）
                         from src.network.wss.alert_handler import alert_registry
                         try:

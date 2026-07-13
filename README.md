@@ -251,6 +251,15 @@ docker run -d \
 
 端口只绑定宿主机回环地址，服务器本机可用 `127.0.0.1:3676` 连接；外部机器不能直接用服务器 IP 访问。`monitor-app` 容器通过 Docker 网络访问 `monitor-mysql:3306`。
 
+已有生产库升级到支持真实人脸特征 JSON 时，需要把 `named_persons.feat_json_id` 从短字符串改为 `TEXT`。新库会按模型自动建成 `TEXT`；旧库执行一次：
+
+```bash
+docker exec monitor-mysql mysql -umonitor -pmonitor_placeholder2026 monitor \
+  -e "ALTER TABLE named_persons MODIFY feat_json_id TEXT NULL;"
+```
+
+如果未执行该升级，上传包含可识别人脸的头像时可能出现 `Data too long for column 'feat_json_id'`，接口表现为 `POST /api/v1/persons/{id}/avatar/` 返回 500。
+
 ### 2. 模型挂载
 
 Jenkins 参数 `MODEL_DIR` 默认：
