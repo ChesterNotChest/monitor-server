@@ -17,7 +17,7 @@ class ExceptionCreate(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=128, description="异常规则名称")
     severity: int = Field(..., ge=1, le=4, description="严重级别：1=INFO 2=WARNING 3=CRITICAL 4=EMERGENCY")
-    group_id: int | None = Field(None, description="告警分组 ID（必填，关联 alert_groups 表）")
+    group_id: int = Field(..., description="告警分组 ID（必填，关联 alert_groups 表）")
     entity_ids: list[int] = Field(default_factory=list, description="实体类型 ID 列表。满足其中一个即匹配（OR）。例: [1]=Person, [12]=Knife")
     action_ids: list[int] = Field(default_factory=list, description="行为类型 ID 列表。满足其中一个即匹配（OR）。例: [4]=Fighting, [13]=Smoking")
     sound_ids: list[int] = Field(default_factory=list, description="声音类型 ID 列表。满足其中一个即匹配（OR）。例: [1]=Gunshot, [2]=Scream")
