@@ -58,7 +58,8 @@ class Detection:
     class_id: int            # 原始 COCO class_id
     confidence: float        # 置信度 0-1
     entity_type_id: int | None  # 映射后的 EntityType id，非关注类为 None
-    label_suffix: str | None = None  # 附加标签（Track ID / Face / Action / Fence）
+    label_suffix: str | None = None  # 附加标签（PID / Face / Fence / Action）
+    alert_level: int = 0     # 0=normal(绿) 1=important(黄) 2=danger(红)
 
 
 class YoloDetector:
@@ -78,8 +79,14 @@ class YoloDetector:
     def load(self) -> bool:
         """加载 YOLO 模型。"""
         model_path = Path(settings.YOLO_MODEL_PATH)
+        # cwd 可能不在 monitor-server/ 目录（如从项目根运行测试），
+        # 尝试相对 config.py 所在目录解析
         if not model_path.exists():
-            logger.error("YOLO model not found: %s", model_path)
+            _alt = Path(__file__).resolve().parents[4] / settings.YOLO_MODEL_PATH
+            if _alt.exists():
+                model_path = _alt
+        if not model_path.exists():
+            logger.error("YOLO model not found: %s (cwd=%s)", model_path, os.getcwd())
             self._state = YoloState.ERROR
             return False
         try:
@@ -149,5 +156,10 @@ class YoloDetector:
             for d in detections if d.entity_type_id is not None
         ]
         if entities:
-            await event_bus.publish(ENTITY, {"view_id": view_id, "entities": entities})
+            entity_type_ids = [e["entity_type_id"] for e in entities]
+            await event_bus.publish(ENTITY, {
+                "view_id": view_id,
+                "entities": entities,
+                "entity_type_ids": entity_type_ids,
+            })
         return detections

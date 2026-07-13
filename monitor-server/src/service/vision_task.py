@@ -30,10 +30,18 @@ async def _on_recording(payload: dict) -> None:
     view_id = payload.get("view_id")
     if view_id is None:
         return
+    action = payload.get("action", "keep_alive")
+    max_dur = payload.get("max_recording_seconds", 120)
+    alert_details = payload.get("alert_details")
     from src.extensions import SessionLocal
     db = SessionLocal()
     try:
-        replay_task.alert_triggered(view_id, db)
+        replay_task.alert_triggered(
+            view_id, db, action=action,
+            max_recording_seconds=payload.get("max_recording_seconds", 120),
+            wind_down_seconds=payload.get("wind_down_seconds", 30),
+            alert_details=alert_details,
+        )
     except Exception:
         logger.exception("Recording subscriber failed for view_id=%d", view_id)
     finally:

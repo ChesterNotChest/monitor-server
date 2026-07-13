@@ -59,4 +59,7 @@ monitor-server/Ultralytics/
 monitor-server/src/third-party/*
 !monitor-server/src/third-party/.gitkeep
 !monitor-server/src/third-party/download_weights.py
+
+# ===== flv视频 =====
+*.flv
 condaenv.*.requirements.txt

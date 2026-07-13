@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     STREAM_READY_INTERVAL: float = 1.0
 
     # --- AI 推理管线 ---
-    FPS_TARGET: int = 20
+    FPS_TARGET: int = 15
     YOLO_DEVICE: str = "cpu"
     YOLO_CONFIDENCE: float = 0.5
     YOLO_MODEL_PATH: str = "src/third-party/yolo/yolo11n.pt"

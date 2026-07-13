@@ -26,8 +26,8 @@ _KINETICS_ALPHA = 4
 _KINETICS_MEAN = np.array([0.45, 0.45, 0.45], dtype=np.float32)
 _KINETICS_STD = np.array([0.225, 0.225, 0.225], dtype=np.float32)
 _AVA_CROP_SIZE = 224
-_AVA_DEFAULT_THRESHOLD = 0.75
-_AVA_MAX_RESULTS = 3
+_AVA_DEFAULT_THRESHOLD = 0.3
+_AVA_MAX_RESULTS = 5
 
 _ACTION_KEYWORDS: tuple[tuple[SlowFastActionType, tuple[str, ...]], ...] = (
     (SlowFastActionType.WALKING, ("walking", "walk")),
