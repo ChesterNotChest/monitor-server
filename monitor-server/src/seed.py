@@ -127,6 +127,7 @@ _FACE_RESULT_NAMES = [
     "no_result",    # FaceRecognitionResult.NO_RESULT = 1
     "stranger",     # FaceRecognitionResult.STRANGER = 2
     "normal",       # FaceRecognitionResult.NORMAL = 3
+    "spoof",        # FaceRecognitionResult.SPOOF = 4
 ]
 
 _DEFAULT_GROUP_NAME = "默认告警组"

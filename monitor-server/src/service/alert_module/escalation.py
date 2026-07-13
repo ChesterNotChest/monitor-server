@@ -527,7 +527,7 @@ async def recover_timers() -> None:
             finally:
                 db2.close()
 
-        elapsed = (datetime.now(timezone.utc) - ev_timestamp).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - ev_timestamp.replace(tzinfo=timezone.utc)).total_seconds()
 
         if level < len(ESCALATION_ROLES):
             role = ESCALATION_ROLES[level]

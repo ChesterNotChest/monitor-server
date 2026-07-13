@@ -119,6 +119,7 @@ class FaceRecognitionResult(enum.IntEnum):
     NO_RESULT = 1   # 画面中未检测到人脸
     STRANGER = 2    # 检测到人脸但不在录入人员库中
     NORMAL = 3      # 检测到人脸且匹配已录入人员
+    SPOOF = 4       # 疑似假脸（照片/屏幕）
 
 
 class FenceEventResult(enum.IntEnum):

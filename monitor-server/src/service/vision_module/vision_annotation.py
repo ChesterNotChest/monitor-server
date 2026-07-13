@@ -114,11 +114,15 @@ def get_active_signals(
     else:
         sound_ids = frozenset()
 
-    # Face: 只要有 "Stranger" → face_result_ids = {2}
+    # Face: Stranger/Spoof → 对应的 face_result_ids
     from src.constants import FaceRecognitionResult
-    face_ids = frozenset()
-    if any(v == "Stranger" for v in _face_labels.values()):
-        face_ids = frozenset({FaceRecognitionResult.STRANGER})
+    face_ids_set: set[int] = set()
+    for v in _face_labels.values():
+        if v == "Stranger":
+            face_ids_set.add(FaceRecognitionResult.STRANGER)
+        elif v == "Spoof":
+            face_ids_set.add(FaceRecognitionResult.SPOOF)
+    face_ids = frozenset(face_ids_set)
 
     # Fence: 解析 label 后缀提取结果类型
     from src.constants import FenceEventResult

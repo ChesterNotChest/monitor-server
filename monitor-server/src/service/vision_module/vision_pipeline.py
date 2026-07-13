@@ -145,10 +145,15 @@ def _enrich_detection_labels(
         tid = best_track.track_id
         parts: list[tuple[int, str]] = []  # (level, text), 0=info 1=important 2=danger
 
-        # Face — 陌生人黄框，已知人绿框
+        # Face — 假脸红框，陌生人黄框，已知人绿框
         face = face_labels.get(tid)
         if face:
-            level = 1 if face == "Stranger" else 0
+            if face == "Spoof":
+                level = 2
+            elif face == "Stranger":
+                level = 1
+            else:
+                level = 0
             parts.append((level, f"Face: {face}"))
             det.alert_level = max(det.alert_level, level)
 
