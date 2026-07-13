@@ -66,8 +66,14 @@ class VideoAIProcessor:
             _logging.getLogger(__name__).info("[Direct] Face labels: %s", face_labels)
 
         # SlowFast: enqueue + publish ACTION events (non-blocking)
+        # 跳过过小的人框 — 远距离无法可靠做动作/人脸识别
+        _MIN_BOX_AREA = 6400  # ~80×80
         ctx.action_regions = {}
         for track in tracks:
+            x1, y1, x2, y2 = track.bbox
+            box_w, box_h = x2 - x1, y2 - y1
+            if box_w * box_h < _MIN_BOX_AREA:
+                continue  # 人太小 → 不跑动作检测
             bbox = _padded_bbox(track.bbox, ctx.frame.shape[1], ctx.frame.shape[0], pad=0.3)
             if bbox is None:
                 continue

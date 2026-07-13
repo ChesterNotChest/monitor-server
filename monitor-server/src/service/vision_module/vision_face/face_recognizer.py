@@ -22,7 +22,7 @@ from src.service.vision_module.vision_types import Track
 
 logger = logging.getLogger(__name__)
 
-_MIN_FACE_CROP_SIZE = 50
+_MIN_FACE_CROP_SIZE = 80  # 太小的人脸编码不可靠，跳过减少误报
 
 # ── 已知人脸库版本号（API 层写入 → 识别层读取，触发动态重载）──
 _face_db_version: int = 0
@@ -73,6 +73,7 @@ class FaceRecognizer:
         self._known_encodings: list[np.ndarray] = []
         self._known_names: list[str] = []
         self._last_results: dict[int, FaceResult] = {}
+        self._named_confirm: dict[int, int] = {}  # track → 连续 NAMED 帧数（防误识别）
         self._frame_counter = 0
         self._face_lib = self._load_face_recognition()
         self._loaded_version: int = -1  # 强制首帧重载
@@ -132,18 +133,38 @@ class FaceRecognizer:
             return [self._last_results[t.track_id] for t in tracks
                     if t.track_id in self._last_results]
 
-        # 3. 识别帧 — 只处理未缓存的人
+        # 3. 识别帧 — 未缓存的人做识别（每帧上限防突发拥堵）
+        _MAX_FACES_PER_FRAME = 2
+        _processed = 0
         for track in uncached:
+            if _processed >= _MAX_FACES_PER_FRAME:
+                break  # 剩余新人排队到后续识别帧
             result = self._recognize_track(frame, track)
-            if result is not None and result.result != FaceResultStatus.NO_RESULT:
+            _processed += 1
+            if result is None or result.result == FaceResultStatus.NO_RESULT:
+                self._named_confirm.pop(track.track_id, None)  # 没检测到脸 → 重置
+                continue
+            if result.person_name:
+                c = self._named_confirm.get(track.track_id, 0) + 1
+                self._named_confirm[track.track_id] = c
+                if c >= 2:
+                    self._last_results[track.track_id] = result
+                    self._named_confirm.pop(track.track_id, None)
+            else:
+                # STRANGER: 直接录入，重置 NAMED 确认计数
                 self._last_results[track.track_id] = result
+                self._named_confirm.pop(track.track_id, None)
 
-        # 4. LRU 清理 — 删除已离开画面的 track，超过上限时淘汰最旧条目
+        # 4. LRU 清理 — STRANGER/未识别立即清，NAMED 保留（防止 ByteTrack 闪断导致翻牌）
         active_ids = {t.track_id for t in tracks}
         stale = [tid for tid in self._last_results if tid not in active_ids]
         for tid in stale:
-            self._last_results.pop(tid, None)
-        # 上限保护（防止异常场景下累积）
+            result = self._last_results.get(tid)
+            if result is None or not result.person_name:
+                self._last_results.pop(tid, None)   # Stranger → 立即清理
+                self._named_confirm.pop(tid, None)
+            # NAMED tracks stay cached even when briefly absent
+        # 上限保护
         _MAX_LAST = 512
         if len(self._last_results) > _MAX_LAST:
             overflow = sorted(self._last_results.keys())[:len(self._last_results) - _MAX_LAST]
