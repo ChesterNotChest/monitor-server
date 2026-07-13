@@ -66,10 +66,12 @@ class VideoAIProcessor:
             _logging.getLogger(__name__).info("[Direct] Face labels: %s", face_labels)
 
         # SlowFast: enqueue + publish ACTION events (non-blocking)
-        # 跳过过小的人框 — 远距离无法可靠做动作/人脸识别
         _MIN_BOX_AREA = 6400  # ~80×80
         ctx.action_regions = {}
         for track in tracks:
+            # 跳过 SPOOF（假脸不做动作检测）
+            if face_labels.get(track.track_id) == "Spoof":
+                continue
             x1, y1, x2, y2 = track.bbox
             box_w, box_h = x2 - x1, y2 - y1
             if box_w * box_h < _MIN_BOX_AREA:
