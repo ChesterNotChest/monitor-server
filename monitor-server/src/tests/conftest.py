@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.extensions import Base
 from src.config import settings
+import src.models  # noqa: F401 - register all SQLAlchemy models before create_all
 
 
 @pytest.fixture(scope="session")
