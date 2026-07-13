@@ -218,6 +218,7 @@ class AIPipeline:
         self._push_interval: float = 1.0 / max(settings.FPS_TARGET, 1)
         self._running = False
         self._task: asyncio.Task | None = None
+        self.pipeline_ready = asyncio.Event()  # 首帧推流后 set，供 view_task 判断合流 kill 时机
         self._video_id: int = 0
         self._video_name: str = ""
 
@@ -322,7 +323,7 @@ class AIPipeline:
                     break
                 _drain_count += 1
             if _drain_count:
-                logger.info("[drain] dropped %d frames", _drain_count)
+                logger.debug("[drain] dropped %d frames", _drain_count)
             self._next_frame_due = time.monotonic() + self._push_interval
 
             _loop_frame_count += 1
@@ -356,6 +357,7 @@ class AIPipeline:
                     logger.error("Failed to start stream merge — stopping pipeline")
                     break
                 merge_started = True
+                self.pipeline_ready.set()
 
             # YOLO 检测
             try:
