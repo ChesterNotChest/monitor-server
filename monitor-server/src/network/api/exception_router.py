@@ -1,6 +1,7 @@
 """异常定义 API 路由 —— 负责人+运维员。"""
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.extensions import get_db
@@ -32,7 +33,10 @@ def create_exception(body: ExceptionCreate, db: Session = Depends(get_db), _user
 
     **权限**: exception:manage
     """
-    return exception_task.create_exception(db, **body.model_dump(exclude_none=True))
+    try:
+        return exception_task.create_exception(db, **body.model_dump(exclude_none=True))
+    except IntegrityError as e:
+        raise HTTPException(400, f"数据完整性错误: {e}")
 
 
 @router.put(
@@ -45,7 +49,10 @@ def update_exception(exc_id: int, body: ExceptionCreate, db: Session = Depends(g
 
     **权限**: exception:manage
     """
-    r = exception_task.update_exception(db, exc_id, **body.model_dump(exclude_none=True))
+    try:
+        r = exception_task.update_exception(db, exc_id, **body.model_dump(exclude_none=True))
+    except IntegrityError as e:
+        raise HTTPException(400, f"数据完整性错误: {e}")
     if r is None: raise HTTPException(404)
     return r
 
@@ -60,5 +67,8 @@ def delete_exception(exc_id: int, db: Session = Depends(get_db), _user=_perm):
 
     **权限**: exception:manage
     """
-    if not exception_task.delete_exception(db, exc_id):
-        raise HTTPException(404)
+    try:
+        if not exception_task.delete_exception(db, exc_id):
+            raise HTTPException(404)
+    except IntegrityError:
+        raise HTTPException(400, "该异常已有告警事件关联，无法删除。请先处理相关告警事件")

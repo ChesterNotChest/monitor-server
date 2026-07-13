@@ -98,7 +98,7 @@ wwh 合并后路由路径已尽量统一，但各 router 定义仍有差异。**
 
 | 端点 | 正确 URL |
 |------|---------|
-| 登录 | `POST /api/v1/auth/login` |
+| 登录 | `POST /api/v1/auth/login/` |
 | 创建设备 | `POST /api/v1/views/` |
 | 删除设备 | `DELETE /api/v1/views/{id}` |
 | 围栏 CRUD | 均带 `/`：`GET/POST /api/v1/fences/`、`PUT/DELETE /api/v1/fences/{id}/` |
@@ -110,11 +110,11 @@ wwh 合并后路由路径已尽量统一，但各 router 定义仍有差异。**
 ```bash
 cd monitor-server                                 # 从项目根目录进入
 
-# 读取密码（直接取第 3 行，避免正则编码问题）
-$PWD = (Get-Content admin_password.txt)[2] -replace '密码: ', ''
+# 读取密码（与 seed_admin() 同源：.env 中 ADMIN_DEFAULT_PASSWORD）
+$PWD = ((Get-Content .env | Select-String 'ADMIN_DEFAULT_PASSWORD=(.+)').Matches.Groups[1].Value).Trim()
 
 # 登录
-$TOKEN = (Invoke-RestMethod -Uri "http://127.0.0.1:8002/api/v1/auth/login" -Method POST `
+$TOKEN = (Invoke-RestMethod -Uri "http://127.0.0.1:8002/api/v1/auth/login/" -Method POST `
   -ContentType "application/json" `
   -Body "{`"username`":`"admin`",`"password`":`"$PWD`"}").access_token
 

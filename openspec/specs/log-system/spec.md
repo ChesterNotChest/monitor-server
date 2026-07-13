@@ -22,12 +22,22 @@
 - **THEN** 系统写入 DEVICE 类型日志，details_json 包含 device_type/device_id/event
 
 #### Scenario: 记录用户操作日志
-- **WHEN** 管理员删除一个命名人物
-- **THEN** 系统写入 OPERATION 类型日志，details_json 包含 action/target_type/target_id/target_name，operator_id 指向操作人
+- **WHEN** 登录用户成功调用 `POST` / `PUT` / `PATCH` / `DELETE` API
+- **THEN** 系统写入 OPERATION 类型日志，operator_id 指向操作人
+- **AND** details_json 包含 action、target_type、target_id（如可从路径识别）、method、path、status_code、username、role
+
+#### Scenario: 记录登录日志
+- **WHEN** 用户登录成功
+- **THEN** 系统写入 OPERATION 类型日志，details_json 包含 action=login、username、role
 
 #### Scenario: 记录告警处置日志
 - **WHEN** 安全员确认一个告警事件
 - **THEN** 系统写入 ALERT 类型日志，details_json 包含 action/event_id/comment，operator_id 指向处置人
+
+#### Scenario: 记录告警触发日志
+- **WHEN** AlertEngine 创建新的 SituationEvent
+- **THEN** 系统写入 ALERT 类型日志，关联 view_id 和 event_id
+- **AND** details_json 包含 action=triggered、exception_id、exception_name、severity 和 recording_id
 
 ### Requirement: 日志只读查询
 系统 SHALL 提供日志的只读查询 API，不开放创建/修改/删除端点。

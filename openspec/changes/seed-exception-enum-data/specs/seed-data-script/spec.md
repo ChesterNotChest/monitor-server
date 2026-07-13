@@ -21,10 +21,12 @@
 #### Scenario: 插入 ResponseAction
 - **WHEN** 执行种子脚本
 - **THEN** response_actions 表包含 5 条记录（触发录制 / 发送通知 / 激活警报 / 调用 API / 发送邮件）
+- **AND** `SEND_NOTIFICATION` 的 `channel` 为 `dingtalk_webhook`，其 webhook 从 `DINGTALK_WEBHOOK` 或 `DINGTALK_WEBHOOK_URL` 环境变量读取
 
 #### Scenario: 插入 AlertGroup 并绑定 ResponseAction
 - **WHEN** 执行种子脚本
 - **THEN** alert_groups 表包含 4 条记录（信息 / 警告 / 严重 / 紧急），各分组已绑定对应响应动作
+- **AND** 默认告警组 SHALL 至少绑定 `SEND_NOTIFICATION`，避免告警触发后没有通知响应动作
 
 ### Requirement: 异常规则种子数据
 系统 SHALL 预置 8 条参考异常规则及其 AI 检测类型绑定。

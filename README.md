@@ -251,6 +251,15 @@ docker run -d \
 
 端口只绑定宿主机回环地址，服务器本机可用 `127.0.0.1:3676` 连接；外部机器不能直接用服务器 IP 访问。`monitor-app` 容器通过 Docker 网络访问 `monitor-mysql:3306`。
 
+已有生产库升级到支持真实人脸特征 JSON 时，需要把 `named_persons.feat_json_id` 从短字符串改为 `TEXT`。新库会按模型自动建成 `TEXT`；旧库执行一次：
+
+```bash
+docker exec monitor-mysql mysql -umonitor -pmonitor_placeholder2026 monitor \
+  -e "ALTER TABLE named_persons MODIFY feat_json_id TEXT NULL;"
+```
+
+如果未执行该升级，上传包含可识别人脸的头像时可能出现 `Data too long for column 'feat_json_id'`，接口表现为 `POST /api/v1/persons/{id}/avatar/` 返回 500。
+
 ### 2. 模型挂载
 
 Jenkins 参数 `MODEL_DIR` 默认：
@@ -303,14 +312,28 @@ SRS_RTC_PORT=8000
 SRS_CANDIDATE=10.126.59.25
 SRS_PUBLIC_HOST=10.126.59.25
 MODEL_DIR=/home/liusu/video/models
+YOLO_DEVICE=0
 DATABASE_URL=mysql+pymysql://monitor:monitor_placeholder2026@monitor-mysql:3306/monitor?charset=utf8mb4
 JWT_SECRET=换成生产随机长字符串
+DINGTALK_WEBHOOK=钉钉机器人Webhook，不要写进Git
 RUN_SEED_DATA=false
 ```
 
 首次需要写入业务枚举和告警规则时，可以临时设置 `RUN_SEED_DATA=true`。应用启动时会自动建表并创建默认管理员；`RUN_SEED_DATA` 只用于额外业务种子数据。
 
-### 4. 部署后验证
+应用每次启动都会幂等补齐告警相关枚举数据：`entity_types` 12 条、`action_types` 16 条、`sound_types` 15 条、`face_recognition_results` 3 条；`fence_event_types` 由独立启动 seed 保证 `ENTERED` / `TOO_CLOSE` 两条就绪。AI 管线产出的告警信号使用 `constants.py` 中的固定整数 ID，因此生产库不仅数量要一致，ID/name 也要与常量枚举一致。存量数据库如果已经只有一部分枚举，启动后会按 `name` 插入缺失项，不会清空表，也不会重排已有 ID 或破坏已有告警规则；如果历史库 ID 已错位，应先做一次枚举迁移再正式联调告警规则。启动 seed 还会创建 5 个默认 `response_actions`，并把 `SEND_NOTIFICATION` 绑定到默认告警组；钉钉真实 webhook 通过 `DINGTALK_WEBHOOK` 或 `DINGTALK_WEBHOOK_URL` 配置，不要提交到 Git。
+
+如果需要手动核对生产库枚举数量，可以在服务器执行：
+
+```bash
+docker exec monitor-mysql mysql -umonitor -pmonitor_placeholder2026 monitor -e "SELECT 'entity_types' AS table_name, COUNT(*) AS count FROM entity_types UNION ALL SELECT 'action_types', COUNT(*) FROM action_types UNION ALL SELECT 'sound_types', COUNT(*) FROM sound_types UNION ALL SELECT 'face_recognition_results', COUNT(*) FROM face_recognition_results UNION ALL SELECT 'fence_event_types', COUNT(*) FROM fence_event_types UNION ALL SELECT 'response_actions', COUNT(*) FROM response_actions UNION ALL SELECT 'alert_group_responses', COUNT(*) FROM alert_group_responses;"
+```
+
+### 4. 生产 GPU 推理要求
+
+`YOLO_DEVICE=0` 表示使用第 0 张 GPU。CD 部署会把该参数传入 `monitor-app`，并通过 compose 的 `gpus: all` 让容器访问宿主机 NVIDIA GPU。部署机需要已安装 NVIDIA 驱动和 NVIDIA Container Toolkit；如果部署后 `torch.cuda.is_available()` 为 `False`，说明容器没有拿到 GPU，需要先修 Docker/NVIDIA runtime。
+
+### 5. 部署后验证
 
 ```bash
 docker ps --filter name=monitor-mysql
@@ -318,6 +341,7 @@ docker ps --filter name=monitor-app
 curl --noproxy '*' http://127.0.0.1:8081/health
 docker exec monitor-app find /app/src/third-party -maxdepth 3 -type f
 docker exec monitor-app ls -lah /app/face_images
+docker exec monitor-app python -c "import torch; from src.config import settings; print(settings.YOLO_DEVICE, torch.cuda.is_available(), torch.cuda.device_count())"
 ```
 
 `monitor-node` 联调配置示例：
@@ -332,7 +356,7 @@ RTMP_DEBUG=false
 SECRET_KEY=节点token
 ```
 
-### 5. 完整链路验证
+### 6. 完整链路验证
 
 Server CD 部署成功后，只验证 `/health` 还不够。完整视频链路应按下面顺序确认：
 
@@ -417,6 +441,15 @@ POST /api/v1/auth/login  →  {access_token, user}
 | 运维员 | `operator` | **全部权限**（技术管理员：设备管理、系统日志、用户管理、枚举管理、告警处理、电子围栏、报表等） |
 
 所有受保护端点需在请求头携带 `Authorization: Bearer <access_token>`。
+
+### 系统日志覆盖范围
+
+日志中心会写入两类主要记录：
+
+- 告警日志：AI 告警触发后写入 `ALERT` 类型日志，关联 `view_id` / `event_id` / `recording_id`。
+- 操作日志：登录成功，以及登录用户成功调用 `POST` / `PUT` / `PATCH` / `DELETE` API 时写入 `OPERATION` 类型日志，记录操作人、方法、路径、状态码和目标资源。
+
+失败的 4xx/5xx 写请求不会按成功操作记录，避免日志页被校验失败或权限失败刷屏。日志写入失败不会影响原业务接口响应。
 
 ---
 

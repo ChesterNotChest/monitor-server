@@ -123,7 +123,8 @@ class FaceRecognitionResult(enum.IntEnum):
 
 class FenceEventResult(enum.IntEnum):
     """电子围栏事件枚举。"""
-    ENTERED = 1  # 闯入禁区
+    ENTERED = 1   # 闯入禁区
+    TOO_CLOSE = 2  # 靠近禁区（安全距离内）
 
 
 # ══════════════════════════════════════════════

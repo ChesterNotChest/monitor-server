@@ -13,6 +13,8 @@ class UserResponse(BaseModel):
     username: str = Field(..., description="用户名")
     role: str = Field(..., description="角色标识（security_guard / manager / operator）")
     is_active: bool = Field(..., description="账户是否启用")
+    supervisor_id: int | None = Field(None, description="上级用户 ID")
+    dingtalk_mobile: str | None = Field(None, description="钉钉绑定手机号")
 
     model_config = {"from_attributes": True}
 

@@ -1,8 +1,9 @@
-﻿"""数据库种子数据 —— 首次启动时创建默认管理员和告警规则。
+"""数据库种子数据 —— 首次启动时创建默认管理员和告警规则。
 
 密码写入项目目录下的 ``admin_password.txt``，生产部署前删除此文件。
 """
 
+import json
 import os
 import secrets
 import string
@@ -38,6 +39,27 @@ def seed_admin():
             role="operator",
             is_active=True,
         )
+
+        # 创建演示安全员和负责人，形成上报链
+        guard = repo.create(
+            username="security_guard_1",
+            password_hash=hash_password("guard123"),
+            role="security_guard",
+            dingtalk_mobile="13800000001",
+            supervisor_id=None,  # 暂不设上级，使用 role 上报
+            is_active=True,
+        )
+        manager = repo.create(
+            username="manager_1",
+            password_hash=hash_password("manager123"),
+            role="manager",
+            dingtalk_mobile="13800000002",
+            supervisor_id=None,
+            is_active=True,
+        )
+        # 安全员 → 负责人 上报链
+        guard.supervisor_id = manager.id
+
         db.commit()
 
         print(f"[seed] 已创建管理员账户 admin，密码={password}")
@@ -47,7 +69,8 @@ def seed_admin():
 
 # ── 告警种子 ────────────────────────────────────
 
-# 全量对齐 constants.py 枚举值，按 IntEnum 顺序插入使 auto-increment ID = 枚举值
+# 全量对齐 constants.py 枚举值。AI 管线输出固定整数 ID，生产库最终也应
+# 与这些 ID/name 对齐；seed_alerts 负责幂等补缺，历史错位库需先迁移。
 _ENTITY_NAMES = [
     "person",       # YOLOEntityType.PERSON = 1
     "car",          # YOLOEntityType.CAR = 2
@@ -106,12 +129,15 @@ _FACE_RESULT_NAMES = [
     "normal",       # FaceRecognitionResult.NORMAL = 3
 ]
 
-_FENCE_EVENT_NAMES = [
-    "entered",      # FenceEventResult.ENTERED = 1
-]
-
 _DEFAULT_GROUP_NAME = "默认告警组"
 _DEFAULT_EXCEPTION_NAME = "人员出现"
+_DEFAULT_RESPONSE_ACTIONS = [
+    ("TRIGGER_RECORDING", None),
+    ("SEND_NOTIFICATION", "dingtalk_webhook"),
+    ("ACTIVATE_ALARM", None),
+    ("CALL_API", None),
+    ("SEND_EMAIL", None),
+]
 
 
 def seed_virtual_node():
@@ -137,82 +163,141 @@ def seed_virtual_node():
 
 
 def seed_alerts():
-    """如果告警相关表为空，预置基础种子数据。
+    """幂等补齐告警相关基础种子数据。
 
-    按 IntEnum 顺序插入使 DB auto-increment ID == 枚举整数值。
-    重复调用不重复插入（idempotent）。
+    存量数据库可能只有一部分旧枚举。这里按名称补缺，不清表；
+    若历史库已经出现 ID/name 错位，需要先做一次枚举迁移。
     """
     from src.models.entity_type import EntityType
     from src.models.action_type import ActionType
     from src.models.sound_type import SoundType
     from src.models.face_recognition_result import FaceRecognitionResult
-    from src.models.fence_event_type import FenceEventType
     from src.models.alert_group import AlertGroup
     from src.models.exception import ExceptionDef, exception_entities
+    from src.models.response_action import ResponseAction, alert_group_responses
+    from src.config import settings
 
     db = SessionLocal()
     try:
-        # idempotent: 已有数据则跳过
-        existing = db.query(EntityType).first()
-        if existing is not None:
-            return
+        def get_or_create_by_name(model, name):
+            obj = db.query(model).filter(model.name == name).first()
+            if obj is None:
+                obj = model(name=name)
+                db.add(obj)
+                db.flush()
+            return obj
 
-        # EntityType (12)
         for name in _ENTITY_NAMES:
-            db.add(EntityType(name=name))
-        db.flush()
+            get_or_create_by_name(EntityType, name)
 
-        # ActionType (16)
         for name in _ACTION_NAMES:
-            db.add(ActionType(name=name))
-        db.flush()
+            get_or_create_by_name(ActionType, name)
 
-        # SoundType (15)
         for name in _SOUND_NAMES:
-            db.add(SoundType(name=name))
-        db.flush()
+            get_or_create_by_name(SoundType, name)
 
-        # FaceRecognitionResult (3)
         for name in _FACE_RESULT_NAMES:
-            db.add(FaceRecognitionResult(name=name))
-        db.flush()
+            get_or_create_by_name(FaceRecognitionResult, name)
 
-        # FenceEventType (1)
-        for name in _FENCE_EVENT_NAMES:
-            db.add(FenceEventType(name=name))
-        db.flush()
+        # FenceEventType 由 seed_fence_events() 负责按 id=1/2 精确补齐，避免
+        # 存量库已有 ENTERED/TOO_CLOSE 时再插入 lowercase 重复语义数据。
 
-        # AlertGroup
-        group = AlertGroup(name=_DEFAULT_GROUP_NAME)
-        db.add(group)
-        db.flush()
+        group = get_or_create_by_name(AlertGroup, _DEFAULT_GROUP_NAME)
 
-        # ExceptionDef: 人员出现（关联 person 实体类型）
-        person_id = 1  # YOLOEntityType.PERSON = 1 = EntityType.id
-        exc = ExceptionDef(
-            name=_DEFAULT_EXCEPTION_NAME,
-            severity=SeverityLevel.WARNING,
-            group_id=group.id,
-        )
-        db.add(exc)
-        db.flush()
+        responses = {}
+        webhook_url = settings.DINGTALK_WEBHOOK_URL or os.getenv("DINGTALK_WEBHOOK", "")
+        for name, channel in _DEFAULT_RESPONSE_ACTIONS:
+            response = get_or_create_by_name(ResponseAction, name)
+            if channel and not response.channel:
+                response.channel = channel
+            if name == "SEND_NOTIFICATION" and webhook_url and not response.config_json:
+                response.config_json = json.dumps({"webhook_url": webhook_url})
+            responses[name] = response
 
-        db.execute(
-            exception_entities.insert().values(
-                exception_id=exc.id, entity_id=person_id,
+        notification = responses.get("SEND_NOTIFICATION")
+        if notification is not None:
+            groups_to_bind = [group]
+            has_any_response_binding = db.execute(
+                alert_group_responses.select().limit(1)
+            ).first() is not None
+            if not has_any_response_binding:
+                groups_to_bind = db.query(AlertGroup).all()
+
+            for target_group in groups_to_bind:
+                linked = db.execute(
+                    alert_group_responses.select().where(
+                        alert_group_responses.c.group_id == target_group.id,
+                        alert_group_responses.c.response_id == notification.id,
+                    )
+                ).first()
+                if linked is None:
+                    db.execute(
+                        alert_group_responses.insert().values(
+                            group_id=target_group.id,
+                            response_id=notification.id,
+                        )
+                    )
+
+        exc = db.query(ExceptionDef).filter(
+            ExceptionDef.name == _DEFAULT_EXCEPTION_NAME
+        ).first()
+        if exc is None:
+            exc = ExceptionDef(
+                name=_DEFAULT_EXCEPTION_NAME,
+                severity=SeverityLevel.WARNING,
+                group_id=group.id,
             )
-        )
+            db.add(exc)
+            db.flush()
+
+        person = db.query(EntityType).filter(EntityType.name == "person").first()
+        if person is not None:
+            linked = db.execute(
+                exception_entities.select().where(
+                    exception_entities.c.exception_id == exc.id,
+                    exception_entities.c.entity_id == person.id,
+                )
+            ).first()
+            if linked is None:
+                db.execute(
+                    exception_entities.insert().values(
+                        exception_id=exc.id,
+                        entity_id=person.id,
+                    )
+                )
 
         db.commit()
         print(
-            f"[seed] 已创建告警种子: "
+            f"[seed] 告警种子已就绪: "
             f"entities={len(_ENTITY_NAMES)}, "
             f"actions={len(_ACTION_NAMES)}, "
             f"sounds={len(_SOUND_NAMES)}, "
             f"face_results={len(_FACE_RESULT_NAMES)}, "
-            f"fence_events={len(_FENCE_EVENT_NAMES)}, "
+            f"responses={len(_DEFAULT_RESPONSE_ACTIONS)}, "
             f"group='{_DEFAULT_GROUP_NAME}', "
             f"exception='{_DEFAULT_EXCEPTION_NAME}'"
         )
+    finally:
+        db.close()
+
+
+def seed_fence_events():
+    """精确幂等：确保 FenceEventType 表同时存在 id=1 (ENTERED) 和 id=2 (TOO_CLOSE)。
+
+    与 seed_alerts() 独立；此函数处理存量 DB 只有 id=1 或缺少围栏枚举的场景。
+    """
+    from src.models.fence_event_type import FenceEventType
+
+    db = SessionLocal()
+    try:
+        existing_ids = {r.id for r in db.query(FenceEventType).all()}
+        if 1 in existing_ids and 2 in existing_ids:
+            return
+        if 1 not in existing_ids:
+            db.add(FenceEventType(id=1, name="ENTERED"))
+        if 2 not in existing_ids:
+            db.add(FenceEventType(id=2, name="TOO_CLOSE"))
+        db.commit()
+        print("[seed] fence_event_types: id=1 ENTERED / id=2 TOO_CLOSE 已就绪")
     finally:
         db.close()

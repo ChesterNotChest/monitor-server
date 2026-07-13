@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Integer, Table, Column, String, DateTime, func
+from sqlalchemy import ForeignKey, Integer, Table, Column, String, Text, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import Base
@@ -27,7 +27,8 @@ class ResponseAction(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    # TODO: 扩展状态机字段（如通知发送状态、重试次数等），后续 service 层实现
+    channel: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

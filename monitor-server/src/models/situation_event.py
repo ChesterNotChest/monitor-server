@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, DateTime, func
+from sqlalchemy import ForeignKey, Integer, String, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import Base
@@ -21,6 +21,9 @@ class SituationEvent(Base):
     recording_id: Mapped[int | None] = mapped_column(
         ForeignKey("recordings.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="created", index=True
+    )
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -29,6 +32,14 @@ class SituationEvent(Base):
     monitor_view: Mapped["MonitorView"] = relationship("MonitorView")
     exception: Mapped["ExceptionDef"] = relationship("ExceptionDef")
     recording: Mapped["Recording | None"] = relationship("Recording")
+
+    @property
+    def exception_name(self) -> str | None:
+        return self.exception.name if self.exception else None
+
+    @property
+    def severity(self) -> str | None:
+        return self.exception.severity.name if self.exception and self.exception.severity else None
 
     def __repr__(self) -> str:
         return f"<SituationEvent {self.id} view={self.view_id} at {self.timestamp}>"

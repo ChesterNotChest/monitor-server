@@ -5,8 +5,8 @@
 
 from datetime import datetime
 
-from sqlalchemy import String, Boolean, DateTime, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..extensions import Base
 
@@ -19,8 +19,17 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="security_guard")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    supervisor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    dingtalk_mobile: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+    # 自引用：上级
+    supervisor: Mapped["User | None"] = relationship(
+        "User", remote_side="User.id", backref="subordinates", foreign_keys=[supervisor_id]
     )
 
     def __repr__(self) -> str:

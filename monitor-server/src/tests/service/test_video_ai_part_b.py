@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import SimpleNamespace
+import time
 
 import numpy as np
 import pytest
@@ -323,9 +324,13 @@ async def test_video_ai_processor_registers_frame_hook_and_sets_tracks() -> None
         def register_frame_hook(self, hook) -> None:
             self.hooks.append(hook)
 
+    from src.service.vision_module.vision_face import face_recognizer as face_module
+
     pipeline = _Pipeline()
     processor = register_video_ai_hooks(pipeline, view_id=1)
     processor.face_recognizer._face_lib = None
+    processor.face_recognizer._loaded_version = face_module._face_db_version
+    processor.face_recognizer._last_load_time = time.monotonic()  # 绕过 TTL DB 重载
     processor.fence_engine._fences = []
     processor.fence_engine._fences_loaded_at = 999999.0  # 绕过 TTL DB 重载
     processor.slowfast_runner.clip_length = 99

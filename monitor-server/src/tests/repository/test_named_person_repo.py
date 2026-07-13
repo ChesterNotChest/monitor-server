@@ -1,8 +1,12 @@
 """NamedPersonRepo 冒烟测试。"""
 
+import json
+
 import pytest
+from sqlalchemy import Text
 from sqlalchemy.exc import IntegrityError
 
+from src.models.named_person import NamedPerson
 from src.repository.named_person_repo import NamedPersonRepo
 
 
@@ -79,3 +83,17 @@ class TestNamedPersonRepo:
     def test_find_by_name_not_found(self, db):
         repo = NamedPersonRepo(db)
         assert repo.find_by_name("不存在的名字") is None
+
+    def test_feat_json_id_uses_text_column(self):
+        column_type = NamedPerson.__table__.c.feat_json_id.type
+        assert isinstance(column_type, Text)
+
+    def test_store_long_face_feature_json(self, db):
+        repo = NamedPersonRepo(db)
+        feature_json = json.dumps([0.123456789] * 128)
+
+        np = repo.create(name="长特征用户", feat_json_id=feature_json)
+        fetched = repo.get(np.id)
+
+        assert len(feature_json) > 256
+        assert fetched.feat_json_id == feature_json

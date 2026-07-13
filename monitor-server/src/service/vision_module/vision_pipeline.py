@@ -46,6 +46,7 @@ class FrameContext:
     tracks: list[Track] | None = None  # ByteTrack 产出（B 模块填充）
     action_regions: dict[int, tuple[int, int, int, int]] | None = None  # SlowFast padded crop
     fence_polygons: list[list[tuple[float, float]]] | None = None  # 围栏多边形
+    fence_expanded_polygons: list[list[tuple[float, float]]] | None = None  # 安全距离扩展多边形
 
 
 # ── 类型别名 ──────────────────────────────────
@@ -144,11 +145,12 @@ def _enrich_detection_labels(
         tid = best_track.track_id
         parts: list[tuple[int, str]] = []  # (level, text), 0=info 1=important 2=danger
 
-        # Face — Stranger → 黄框，命名对象 → 黄框
+        # Face — 陌生人黄框，已知人绿框
         face = face_labels.get(tid)
         if face:
-            parts.append((1, f"Face: {face}"))
-            det.alert_level = max(det.alert_level, 1)
+            level = 1 if face == "Stranger" else 0
+            parts.append((level, f"Face: {face}"))
+            det.alert_level = max(det.alert_level, level)
 
         # Fence — 围栏入侵 → 红框
         fence = fence_labels.get(tid)
@@ -217,6 +219,7 @@ class AIPipeline:
         self._push_interval: float = 1.0 / max(settings.FPS_TARGET, 1)
         self._running = False
         self._task: asyncio.Task | None = None
+        self.pipeline_ready = asyncio.Event()  # 首帧推流后 set，供 view_task 判断合流 kill 时机
         self._video_id: int = 0
         self._video_name: str = ""
         self._stream_url: str | None = None
@@ -325,7 +328,7 @@ class AIPipeline:
                     break
                 _drain_count += 1
             if _drain_count:
-                logger.info("[drain] dropped %d frames", _drain_count)
+                logger.debug("[drain] dropped %d frames", _drain_count)
             self._next_frame_due = time.monotonic() + self._push_interval
 
             _loop_frame_count += 1
@@ -359,6 +362,7 @@ class AIPipeline:
                     logger.error("Failed to start stream merge — stopping pipeline")
                     break
                 merge_started = True
+                self.pipeline_ready.set()
 
             # YOLO 检测
             try:
@@ -404,7 +408,7 @@ class AIPipeline:
             if ctx.fence_polygons is not None:
                 if ctx.fence_polygons:
                     logger.info("[Fence] drawing %d polygon(s)", len(ctx.fence_polygons))
-                    annotated = draw_fence_polygons(annotated, ctx.fence_polygons)
+                    annotated = draw_fence_polygons(annotated, ctx.fence_polygons, ctx.fence_expanded_polygons)
                 elif _loop_frame_count <= 2:
                     logger.info("[Fence] ctx.fence_polygons exists but is EMPTY")
             elif _loop_frame_count <= 2:
@@ -464,25 +468,26 @@ class AIPipeline:
     async def _reopen_reader(self) -> bool:
         """Attempt to reopen FrameReader with exponential backoff.
 
-        Returns True if reopen succeeds, False after all retries exhausted.
+        Retries indefinitely — pipeline survives transient RTMP outages.
+        After max attempts, resets counter and continues at max backoff interval.
         """
         self._reader.reset_error()
-        for attempt in range(1, self._REOPEN_MAX_ATTEMPTS + 1):
+        attempt = 0
+        while True:
+            attempt += 1
             backoff = min(
                 self._REOPEN_INITIAL_BACKOFF * (self._REOPEN_BACKOFF_MULT ** (attempt - 1)),
                 self._REOPEN_MAX_BACKOFF,
             )
             logger.warning(
-                "FrameReader reopen attempt %d/%d in %.1fs ...",
-                attempt, self._REOPEN_MAX_ATTEMPTS, backoff,
+                "FrameReader reopen attempt %d in %.1fs ...",
+                attempt, backoff,
             )
             await asyncio.sleep(backoff)
             if self._reader.open(self._video_id, self._video_name,
                                 stream_url=self._stream_url):
                 logger.info("FrameReader reopened successfully (attempt %d)", attempt)
                 return True
-        logger.error(
-            "FrameReader reopen failed after %d attempts",
-            self._REOPEN_MAX_ATTEMPTS,
-        )
-        return False
+            # stop logging every attempt beyond 10 to reduce noise
+            if attempt > self._REOPEN_MAX_ATTEMPTS:
+                attempt = 0  # reset counter, continue at max backoff

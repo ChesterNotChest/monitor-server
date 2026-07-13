@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from sqlalchemy.orm import Session
 
-from src.constants import SlowFastActionType
+from src.constants import SlowFastActionType, FenceEventResult
 from src.service.vision_module.vision_face import FaceRecognizer
 from src.service.vision_module.vision_fence import FenceEngine
 from src.service.vision_module.vision_slowfast import SlowFastRunner
@@ -36,6 +36,7 @@ class VideoAIProcessor:
         # 围栏多边形每帧都设——不管有没有人
         polys = self.fence_engine.fence_polygons
         ctx.fence_polygons = polys
+        ctx.fence_expanded_polygons = self.fence_engine.expanded_polygons
         import logging as _logging
         _slog = _logging.getLogger(__name__)
         if polys:
@@ -104,10 +105,12 @@ class VideoAIProcessor:
         if fence_events:
             for e in fence_events:
                 if e.entered:
-                    _fel[e.track_id] = f"Fence-{e.fence_id}"
+                    suffix = ":TOO_CLOSE" if e.result == FenceEventResult.TOO_CLOSE else ":IN"
+                    _fel[e.track_id] = f"Fence-{e.fence_id}{suffix}"
                 else:
                     _fel.pop(e.track_id, None)  # 离开围栏：清除标签
         ctx.fence_polygons = self.fence_engine.fence_polygons
+        ctx.fence_expanded_polygons = self.fence_engine.expanded_polygons
 
 
 def register_video_ai_hooks(

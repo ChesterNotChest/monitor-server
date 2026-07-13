@@ -1,5 +1,9 @@
 """告警引擎匹配逻辑单元测试 (tasks 15.2.1-15.2.6)。"""
 
+import asyncio
+
+import pytest
+
 from src.service.alert_module.engine import AlertEngine
 
 
@@ -83,3 +87,67 @@ class TestAlertEngineDedup:
         e._triggered[(3, 1)] = 100.0
         e._triggered[(3, 2)] = 100.0
         assert len(e._triggered) == 2
+
+
+class TestAlertEngineEscalationStart:
+    class _Severity:
+        def __init__(self, name):
+            self.name = name
+
+    class _Event:
+        id = 11
+        view_id = 22
+
+    class _Exception:
+        id = 33
+        group_id = 44
+
+        def __init__(self, severity):
+            self.severity = TestAlertEngineEscalationStart._Severity(severity)
+
+    class _Db:
+        def get(self, _model, _id):
+            class View:
+                name = "Main Gate"
+
+            return View()
+
+    @pytest.mark.asyncio
+    async def test_critical_alert_starts_escalation_task(self, monkeypatch):
+        calls = []
+
+        async def fake_start(event_id, view_id, view_name, group_id):
+            calls.append((event_id, view_id, view_name, group_id))
+
+        monkeypatch.setattr(
+            "src.service.alert_module.escalation.start_escalation_from_id",
+            fake_start,
+        )
+
+        engine = AlertEngine(view_id=22)
+        engine._start_escalation_task(
+            self._Db(), self._Event(), self._Exception("CRITICAL")
+        )
+        await asyncio.sleep(0)
+
+        assert calls == [(11, 22, "Main Gate", 44)]
+
+    @pytest.mark.asyncio
+    async def test_warning_alert_does_not_start_escalation_task(self, monkeypatch):
+        calls = []
+
+        async def fake_start(event_id, view_id, view_name, group_id):
+            calls.append((event_id, view_id, view_name, group_id))
+
+        monkeypatch.setattr(
+            "src.service.alert_module.escalation.start_escalation_from_id",
+            fake_start,
+        )
+
+        engine = AlertEngine(view_id=22)
+        engine._start_escalation_task(
+            self._Db(), self._Event(), self._Exception("WARNING")
+        )
+        await asyncio.sleep(0)
+
+        assert calls == []

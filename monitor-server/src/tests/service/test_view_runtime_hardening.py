@@ -1,13 +1,24 @@
 """Runtime hardening tests for View persistence and merge readiness."""
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.app import app
 from src.extensions import Base, get_db
-from src.models import AudioDevice, Node, VideoDevice
+from src.constants import SeverityLevel
+from src.models import (
+    AlertGroup,
+    AlertReview,
+    AudioDevice,
+    ExceptionDef,
+    MonitorView,
+    Node,
+    SituationEvent,
+    User,
+    VideoDevice,
+)
 from src.service import view_task
 
 
@@ -97,6 +108,53 @@ def test_create_view_succeeds_without_raw_merge(db, monkeypatch):
     assert result.id is not None
     # 原始合流已禁用——AI 管线取代了它
     assert not merge_called, "start_merge should NOT be called (raw merge disabled)"
+
+
+def test_delete_view_removes_alert_reviews_before_events(db, monkeypatch):
+    """Deleting a view must remove reviewed alerts before their events."""
+    from src.service import vision_task
+    from src.service.view_module import ffmpeg_manager, lifecycle
+
+    stopped = []
+
+    async def fake_stop_pipeline(view_id):
+        stopped.append(view_id)
+
+    monkeypatch.setattr(ffmpeg_manager, "stop_merge", lambda *args, **kwargs: None)
+    monkeypatch.setattr(lifecycle, "check_and_stop_stream", lambda *args, **kwargs: None)
+    monkeypatch.setattr(vision_task, "stop_pipeline", fake_stop_pipeline)
+
+    node = Node(token="delete-view-node")
+    db.add(node)
+    db.flush()
+    video = VideoDevice(name="delete-view-cam", node_id=node.id)
+    audio = AudioDevice(name="delete-view-mic", node_id=node.id)
+    group = AlertGroup(name="delete-view-group")
+    user = User(username="delete-view-user", password_hash="pw", role="operator")
+    db.add_all([video, audio, group, user])
+    db.flush()
+    view = MonitorView(video_id=video.id, audio_id=audio.id)
+    exception = ExceptionDef(
+        name="delete-view-exception",
+        severity=SeverityLevel.WARNING,
+        group_id=group.id,
+    )
+    db.add_all([view, exception])
+    db.flush()
+    event = SituationEvent(view_id=view.id, exception_id=exception.id)
+    db.add(event)
+    db.flush()
+    review = AlertReview(alert_id=event.id, reviewer_id=user.id, action="handled")
+    db.add(review)
+    db.flush()
+
+    assert view_task.delete_view(db, view.id) is True
+
+    assert db.get(AlertReview, review.id) is None
+    assert db.get(SituationEvent, event.id) is None
+    assert db.get(MonitorView, view.id) is None
+    assert db.scalar(select(func.count()).select_from(AlertReview)) == 0
+    assert stopped == [view.id]
 
 
 def test_wait_for_streams_uses_configured_probe_timeout(monkeypatch):
