@@ -251,6 +251,15 @@ docker run -d \
 
 端口只绑定宿主机回环地址，服务器本机可用 `127.0.0.1:3676` 连接；外部机器不能直接用服务器 IP 访问。`monitor-app` 容器通过 Docker 网络访问 `monitor-mysql:3306`。
 
+已有生产库升级到支持真实人脸特征 JSON 时，需要把 `named_persons.feat_json_id` 从短字符串改为 `TEXT`。新库会按模型自动建成 `TEXT`；旧库执行一次：
+
+```bash
+docker exec monitor-mysql mysql -umonitor -pmonitor_placeholder2026 monitor \
+  -e "ALTER TABLE named_persons MODIFY feat_json_id TEXT NULL;"
+```
+
+如果未执行该升级，上传包含可识别人脸的头像时可能出现 `Data too long for column 'feat_json_id'`，接口表现为 `POST /api/v1/persons/{id}/avatar/` 返回 500。
+
 ### 2. 模型挂载
 
 Jenkins 参数 `MODEL_DIR` 默认：
@@ -417,6 +426,15 @@ POST /api/v1/auth/login  →  {access_token, user}
 | 运维员 | `operator` | **全部权限**（技术管理员：设备管理、系统日志、用户管理、枚举管理、告警处理、电子围栏、报表等） |
 
 所有受保护端点需在请求头携带 `Authorization: Bearer <access_token>`。
+
+### 系统日志覆盖范围
+
+日志中心会写入两类主要记录：
+
+- 告警日志：AI 告警触发后写入 `ALERT` 类型日志，关联 `view_id` / `event_id` / `recording_id`。
+- 操作日志：登录成功，以及登录用户成功调用 `POST` / `PUT` / `PATCH` / `DELETE` API 时写入 `OPERATION` 类型日志，记录操作人、方法、路径、状态码和目标资源。
+
+失败的 4xx/5xx 写请求不会按成功操作记录，避免日志页被校验失败或权限失败刷屏。日志写入失败不会影响原业务接口响应。
 
 ---
 

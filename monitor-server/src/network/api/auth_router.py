@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from src.extensions import get_db
 from src.schema.http.auth_schema import LoginRequest, LoginResponse, UserResponse
 from src.schema.http.common import OkResponse
-from src.service import auth_task
+from src.service import auth_task, log_task
 from src.middleware.rbac import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["认证"])
@@ -21,10 +21,20 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误",
         )
+    user = result["user"]
+    log_task.record_operation(
+        db,
+        operator_id=user.id,
+        action="login",
+        target_type="auth",
+        summary=f"用户登录：{user.username}",
+        details={"username": user.username, "role": user.role},
+    )
+    db.commit()
     return LoginResponse(
         access_token=result["access_token"],
         token_type=result["token_type"],
-        user=UserResponse.model_validate(result["user"]),
+        user=UserResponse.model_validate(user),
     )
 
 
