@@ -137,8 +137,11 @@ class AlertEngine:
                         )
 
                         from src.repository.situation_event_repo import SituationEventRepo
+                        from src.service.alert_module.escalation import STATUS_CREATED
                         event = SituationEventRepo(db).create(
-                            view_id=self._view_id, exception_id=exc.id,
+                            view_id=self._view_id,
+                            exception_id=exc.id,
+                            status=STATUS_CREATED,
                         )
                         db.commit()
 
@@ -168,6 +171,8 @@ class AlertEngine:
                         if rec_id:
                             event.recording_id = rec_id
                             db.commit()
+
+                        self._start_escalation_task(db, event, exc)
 
                         # 写入 Web 日志中心（不影响告警主流程）
                         try:
@@ -239,34 +244,36 @@ class AlertEngine:
                 max_recording_seconds=mr, wind_down_seconds=wd,
                 alert_details=d,
             )
-
-            # 设置初始状态
-            from src.service.alert_module.escalation import STATUS_CREATED
-            event.status = STATUS_CREATED
-            db.commit()
-
-            # ── 通知与上报 ──
-            severity = getattr(exc, "severity", None)
-            if severity and severity.name in ("CRITICAL", "EMERGENCY"):
-                # 提取 ID（session 关闭后 ORM 对象会失效）
-                event_id = event.id
-                event_view_id = event.view_id
-                group_id = exc.group_id
-                from src.repository.monitor_view_repo import MonitorViewRepo
-                _view = MonitorViewRepo(db).get(self._view_id)
-                view_name = _view.name if _view else f"View {self._view_id}"
-
-                # 用 _from_id 版本避免 DetachedInstanceError
-                from src.service.alert_module import escalation as _esc
-                asyncio.create_task(
-                    _esc.start_escalation_from_id(event_id, event_view_id, view_name, group_id),
-                    name=f"escalation-start-{event_id}",
-                )
         except Exception:
             logger.exception("start_rec failed")
             return None
         finally:
             db2.close()
+
+    def _start_escalation_task(self, db, event, exc) -> None:
+        """Start DingTalk escalation for high-severity alerts without blocking recording."""
+        severity = getattr(exc, "severity", None)
+        if not severity or severity.name not in ("CRITICAL", "EMERGENCY"):
+            return
+
+        try:
+            event_id = event.id
+            event_view_id = event.view_id
+            group_id = exc.group_id
+
+            from src.repository.monitor_view_repo import MonitorViewRepo
+            view = MonitorViewRepo(db).get(self._view_id)
+            view_name = getattr(view, "name", None) or f"View {self._view_id}"
+
+            from src.service.alert_module import escalation as _esc
+            asyncio.create_task(
+                _esc.start_escalation_from_id(
+                    event_id, event_view_id, view_name, group_id
+                ),
+                name=f"escalation-start-{event_id}",
+            )
+        except Exception:
+            logger.exception("Failed to start escalation for alert %s", getattr(event, "id", None))
 
     def _keep_alive(self):
         from src.service import replay_task
