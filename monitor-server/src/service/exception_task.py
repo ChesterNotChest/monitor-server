@@ -10,12 +10,18 @@ def list_exceptions(db: Session):
 
 
 def create_exception(db: Session, **kwargs):
-    return ExceptionDefRepo(db).create(**kwargs)
+    r = ExceptionDefRepo(db).create(**kwargs)
+    db.commit()
+    return r
 
 
 def update_exception(db: Session, exc_id: int, **kwargs):
-    return ExceptionDefRepo(db).update(exc_id, **kwargs)
+    r = ExceptionDefRepo(db).update(exc_id, **kwargs)
+    db.commit()
+    return r
 
 
 def delete_exception(db: Session, exc_id: int) -> bool:
-    return ExceptionDefRepo(db).delete(exc_id)
+    ok = ExceptionDefRepo(db).delete(exc_id)
+    db.commit()
+    return ok

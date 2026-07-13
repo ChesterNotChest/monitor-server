@@ -1,207 +1,118 @@
-"""Clip-replay smoke test — 测试环形缓冲区 + 录制会话 + 产物可用性。
+"""Clip-replay smoke test — FrameRingBuffer 基础验证。
 
-用法: conda run -n monitor-server python test_replay_smoke.py
+注: RecordingSession 已切为 RTMP pull 架构 (yuyu branch)，
+不再支持旧 frame-pipe 模式。RecordingSession 集成测试需 SRS 运行。
+用法: pytest monitor-server/src/tests/test_replay_smoke.py -v
 """
 
-import os
-import sys
-import time
-import tempfile
-import subprocess
-
-# 确保能找到 src
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "monitor-server"))
-
-import cv2
+import pytest
 import numpy as np
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
 
-# ⚠️ 必须在任何 SQLAlchemy ORM 操作前导入全部模型，否则 mapper 配置失败
-import src.models  # noqa: F401
-from src.extensions import Base
 from src.service.replay_module.ring_buffer import FrameRingBuffer
-from src.service.replay_module.recorder import RecordingSession
 
-# ── 配置 ──
-OUTPUT_DIR = tempfile.mkdtemp(prefix="replay_test_")
 FPS = 15
 WIDTH, HEIGHT = 640, 480
-TEST_SECONDS = 5          # 总测试帧数对应的时长
-SILENCE_TIMEOUT = 3        # 静默超时（秒），本次测试用短值
-VLC_PATH = r"E:\Program Files (x86)\VideoLAN\VLC\vlc.exe"
+TEST_SECONDS = 5
+JPEG_FORMAT = "jpeg"
 
-print(f"[1] 生成 {FPS * TEST_SECONDS} 帧测试图案...")
-frames = []
-for i in range(FPS * TEST_SECONDS):
-    # 彩色背景 + 移动矩形 + 帧号文字
-    frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
-    hue = (i * 5) % 180
-    color_hsv = np.array([[[hue, 200, 200]]], dtype=np.uint8)
-    color_bgr = cv2.cvtColor(color_hsv, cv2.COLOR_HSV2BGR)[0, 0]
-    frame[:] = tuple(int(c) for c in color_bgr)
 
-    # 移动白色矩形
-    x = (i * 8) % (WIDTH - 100)
-    y = HEIGHT // 2 - 50
-    cv2.rectangle(frame, (x, y), (x + 100, y + 100), (255, 255, 255), -1)
-    cv2.putText(frame, f"Frame {i}", (10, HEIGHT - 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-    cv2.putText(frame, f"Replay Smoke Test", (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+class TestFrameRingBuffer:
+    """环形缓冲区 BGR24 / JPEG 格式读写测试。"""
 
-    # raw BGR24 — 与 recorder FFmpeg 的 -f rawvideo -pix_fmt bgr24 匹配
-    frames.append(frame.tobytes())
+    def test_push_and_len_raw(self):
+        """BGR24 格式: push N 帧后 len == N。"""
+        buf = FrameRingBuffer(max_seconds=10, fps=FPS)
+        frames = _generate_raw_frames(FPS * TEST_SECONDS)
+        for f in frames:
+            buf.push(f)
+        assert len(buf) == FPS * TEST_SECONDS
 
-print(f"   OK — {len(frames)} 帧已生成")
+    def test_dump_all_raw(self):
+        """BGR24: dump_all 返回全部已写入帧。"""
+        buf = FrameRingBuffer(max_seconds=10, fps=FPS)
+        frames = _generate_raw_frames(FPS * TEST_SECONDS)
+        for f in frames:
+            buf.push(f)
+        dumped = buf.dump_all()
+        assert len(dumped) == len(frames)
 
-print(f"\n[2] 环形缓冲区测试...")
-buf = FrameRingBuffer(max_seconds=10, fps=FPS)
-for f in frames:
-    buf.push(f)
-print(f"   缓冲区长度: {len(buf)} (预期 {FPS * TEST_SECONDS})")
+    def test_dump_all_raw_content(self):
+        """BGR24: dump_all 内容与写入一致。"""
+        buf = FrameRingBuffer(max_seconds=10, fps=FPS)
+        frames = _generate_raw_frames(10)
+        for f in frames:
+            buf.push(f)
+        dumped = buf.dump_all()
+        for i, (orig, restored) in enumerate(zip(frames, dumped)):
+            assert orig == restored, f"Frame {i} mismatch"
 
-print(f"\n[3] 触发录制...")
-# 用 monkeypatch 缩短静默超时
-import src.config
-original_silence = src.config.settings.RECORD_STOP_SILENCE_SECONDS
-src.config.settings.RECORD_STOP_SILENCE_SECONDS = SILENCE_TIMEOUT
+    def test_max_seconds_truncation(self):
+        """超出 max_seconds 的旧帧被丢弃。"""
+        buf = FrameRingBuffer(max_seconds=2, fps=FPS)
+        frames = _generate_raw_frames(FPS * TEST_SECONDS)
+        for f in frames:
+            buf.push(f)
+        expected = min(len(frames), 2 * FPS)
+        assert len(buf) == expected
 
-try:
-    # 创建 DB 会话 —— 导入全部模型以触发 mapper 注册
-    db_url = "sqlite:///./test_replay.db"
-    engine = create_engine(db_url, connect_args={"check_same_thread": False})
+    def test_clear(self):
+        """clear() 清空缓冲区。"""
+        buf = FrameRingBuffer(max_seconds=10, fps=FPS)
+        for f in _generate_raw_frames(10):
+            buf.push(f)
+        assert len(buf) == 10
+        buf.clear()
+        assert len(buf) == 0
 
-    from src.models.recording import Recording
-    Recording.__table__.create(bind=engine, checkfirst=True)
+    def test_push_and_len_jpeg(self):
+        """JPEG 格式: push N 帧后 len == N。"""
+        buf = FrameRingBuffer(max_seconds=10, fps=FPS, format=JPEG_FORMAT)
+        frames = _generate_jpeg_frames(FPS * TEST_SECONDS)
+        for f in frames:
+            buf.push(f)
+        assert len(buf) == FPS * TEST_SECONDS
 
-    db = Session(bind=engine)
+    def test_dump_all_jpeg(self):
+        """JPEG: dump_all 返回全部已写入帧。"""
+        buf = FrameRingBuffer(max_seconds=10, fps=FPS, format=JPEG_FORMAT)
+        frames = _generate_jpeg_frames(FPS * TEST_SECONDS)
+        for f in frames:
+            buf.push(f)
+        assert len(buf.dump_all()) == len(frames)
 
-    session = RecordingSession(
-        view_id=999,
-        buffer=buf,
-        cache_path=OUTPUT_DIR,
-        width=WIDTH,
-        height=HEIGHT,
-        fps=FPS,
-    )
 
-    filename = session.start(db)
-    print(f"   录制开始: {filename} → {session.output_path}")
+@pytest.mark.skip(reason="RecordingSession 已改为 RTMP pull 架构，需 SRS 运行才能集成测试")
+def test_recording_session_integration():
+    """旧 frame-pipe 模式的 RecordingSession 测试已废弃。
 
-    # 模拟持续写帧
-    extra_frames_count = SILENCE_TIMEOUT * FPS + 10
-    print(f"   写入 {extra_frames_count} 额外帧并等待静默超时...")
-    for i in range(extra_frames_count):
+    新架构: RecordingSession 从 SRS RTMP 拉流，push_frame 是 no-op。
+    如需测试录制链路，请启动 SRS 后手动跑 playbook。
+    """
+    pass
+
+
+# ── helpers ──
+
+def _generate_raw_frames(n: int) -> list[bytes]:
+    import cv2
+    frames = []
+    for i in range(n):
         frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
-        frame[:] = (0, 100 + (i * 2) % 156, 0)
-        cv2.putText(frame, f"Recorded Frame {i}", (10, HEIGHT // 2),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 3)
-        session.push_frame(frame.tobytes())
-        time.sleep(0.05)
+        frame[:] = ((i * 5) % 180, 200, 200)
+        cv2.putText(frame, f"Frame {i}", (10, HEIGHT - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        frames.append(frame.tobytes())
+    return frames
 
-    # 等待静默监控线程触发停止
-    print(f"   等待静默超时 (SILENCE_TIMEOUT={SILENCE_TIMEOUT}s)...")
-    timeout = SILENCE_TIMEOUT + 5
-    waited = 0
-    while not session.is_stopped() and waited < timeout:
-        time.sleep(0.5)
-        waited += 0.5
 
-    output = session.stop(db)
-    db.close()
-    print(f"   录制停止, output={output}")
-
-    # ── 验证 ──
-    print(f"\n[4] 验证产物...")
-    if output and os.path.exists(output):
-        size_mb = os.path.getsize(output) / 1024 / 1024
-        print(f"   ✅ 文件存在: {output}")
-        print(f"   文件大小: {size_mb:.2f} MB")
-
-        # 用 ffprobe 检查视频信息
-        result = subprocess.run([
-            "ffprobe", "-v", "quiet", "-print_format", "json",
-            "-show_format", "-show_streams", output
-        ], capture_output=True, text=True)
-        if result.returncode == 0:
-            import json
-            info = json.loads(result.stdout)
-            for stream in info.get("streams", []):
-                if stream["codec_type"] == "video":
-                    print(f"   编码: {stream.get('codec_name')}, "
-                          f"分辨率: {stream.get('width')}x{stream.get('height')}, "
-                          f"帧率: {stream.get('r_frame_rate')}")
-            duration = float(info.get("format", {}).get("duration", 0))
-            print(f"   时长: {duration:.1f}s (预期 ~{TEST_SECONDS + SILENCE_TIMEOUT}s)")
-        else:
-            print(f"   ⚠️  ffprobe 失败: {result.stderr[:200]}")
-
-        # 尝试用 VLC 播放（可选）
-        if os.path.exists(VLC_PATH):
-            print(f"\n[5] 尝试用 VLC 打开验证...")
-            subprocess.Popen([VLC_PATH, "--play-and-exit", output],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            print(f"   VLC 已启动，请肉眼确认视频内容正确。")
-        else:
-            print(f"\n   ⚠️  VLC 未找到: {VLC_PATH}")
-    else:
-        print(f"   ❌ 产物文件不存在! output={output}")
-
-finally:
-    src.config.settings.RECORD_STOP_SILENCE_SECONDS = original_silence
-
-# ── JPEG 格式测试 ──
-print(f"\n{'='*60}")
-print(f"[JPG] JPEG 格式录制测试...")
-
-jpeg_output_dir = tempfile.mkdtemp(prefix="replay_jpeg_test_")
-jpeg_frames = []
-for i in range(FPS * TEST_SECONDS):
-    frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
-    frame[:] = (0, 0, 200)
-    cv2.rectangle(frame, (i * 5 % WIDTH, HEIGHT // 3),
-                  (i * 5 % WIDTH + 80, HEIGHT * 2 // 3), (255, 255, 0), -1)
-    cv2.putText(frame, f"JPEG {i}", (10, HEIGHT - 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-    _, enc = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    jpeg_frames.append(enc.tobytes())
-
-jpeg_buf = FrameRingBuffer(max_seconds=10, fps=FPS, format="jpeg")
-for f in jpeg_frames:
-    jpeg_buf.push(f)
-
-jpeg_db = Session(bind=engine)
-jpeg_session = RecordingSession(999, jpeg_buf, jpeg_output_dir, WIDTH, HEIGHT, FPS)
-jpeg_session.start(jpeg_db)
-
-for i in range(SILENCE_TIMEOUT * FPS + 10):
-    frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
-    frame[:] = (200, 0, 0)
-    cv2.putText(frame, f"JPEG Rec {i}", (10, HEIGHT // 2),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 3)
-    _, enc = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    jpeg_session.push_frame(enc.tobytes())
-    time.sleep(0.05)
-
-time.sleep(SILENCE_TIMEOUT + 2)
-jpeg_output = jpeg_session.stop(jpeg_db)
-jpeg_db.close()
-
-if jpeg_output and os.path.exists(jpeg_output):
-    size_mb = os.path.getsize(jpeg_output) / 1024 / 1024
-    result = subprocess.run([
-        "ffprobe", "-v", "quiet", "-print_format", "json",
-        "-show_format", "-show_streams", jpeg_output
-    ], capture_output=True, text=True)
-    if result.returncode == 0:
-        info = json.loads(result.stdout)
-        dur = float(info.get("format", {}).get("duration", 0))
-        codec = info["streams"][0]["codec_name"] if info["streams"] else "?"
-        print(f"   ✅ JPEG 产物: {size_mb:.2f} MB, {codec}, {dur:.1f}s")
-    else:
-        print(f"   ✅ JPEG 产物存在: {size_mb:.2f} MB (ffprobe 失败)")
-else:
-    print(f"   ❌ JPEG 产物不存在!")
-
-print(f"\n[DONE] 产物路径:\n  raw: {OUTPUT_DIR}\n  jpeg: {jpeg_output_dir}")
+def _generate_jpeg_frames(n: int) -> list[bytes]:
+    import cv2
+    frames = []
+    for i in range(n):
+        frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+        frame[:] = (0, 0, 200)
+        cv2.putText(frame, f"JPEG {i}", (10, HEIGHT - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        _, enc = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        frames.append(enc.tobytes())
+    return frames

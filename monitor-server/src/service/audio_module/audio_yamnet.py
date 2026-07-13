@@ -325,7 +325,7 @@ class YamnetRunner:
                 await event_bus.publish(SOUND, {
                     "type": SOUND,
                     "view_id": self._view_id,
-                    "sound_type": sound_type_val,
+                    "sound_type_ids": [sound_type_val],
                     "score": float(scores_np[class_id]),
                 })
         return had_alert

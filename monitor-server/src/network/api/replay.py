@@ -31,4 +31,8 @@ def stream_recording(id: int, db: Session = Depends(get_db)):
     if not os.path.exists(recording.file_path):
         raise HTTPException(status_code=404, detail="录制文件不存在")
     ext = os.path.splitext(recording.file_path)[1].lower()
-    return FileResponse(recording.file_path, media_type=MIME_MAP.get(ext, "application/octet-stream"), filename=os.path.basename(recording.file_path))
+    return FileResponse(
+        recording.file_path,
+        media_type=MIME_MAP.get(ext, "application/octet-stream"),
+        filename=os.path.basename(recording.file_path),
+    )

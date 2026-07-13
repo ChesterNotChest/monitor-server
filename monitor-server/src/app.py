@@ -55,7 +55,7 @@ async def print_urls():
 
     import logging
     from src.extensions import engine, Base
-    from src.seed import seed_admin
+    from src.seed import seed_admin, seed_alerts
 
     # 确保数据库表存在（非测试环境可能未建表）
     Base.metadata.create_all(bind=engine)
@@ -64,6 +64,11 @@ async def print_urls():
         seed_admin()
     except Exception as e:
         logging.getLogger(__name__).warning("seed_admin failed: %s", e)
+
+    try:
+        seed_alerts()
+    except Exception as e:
+        logging.getLogger(__name__).warning("seed_alerts failed: %s", e)
 
     # 恢复已有 View 的 AI 管线（Server 重启后自动续接）
     from src.extensions import SessionLocal
@@ -125,3 +130,8 @@ from src.network.wss.node_handler import node_websocket_endpoint
 
 app.add_api_websocket_route("/ws", node_websocket_endpoint)
 app.add_api_websocket_route(f"{API_PREFIX}/ws", node_websocket_endpoint)
+
+# ---- 注册前端告警 WebSocket 端点 ----
+from src.network.wss.alert_handler import alert_websocket_endpoint
+
+app.add_api_websocket_route("/ws/alerts", alert_websocket_endpoint)

@@ -58,6 +58,15 @@ class ExceptionDef(Base):
         nullable=True,
         index=True,
     )
+    cooldown_seconds: Mapped[int] = mapped_column(
+        Integer, default=30, nullable=False, server_default="30",
+    )
+    max_recording_seconds: Mapped[int] = mapped_column(
+        Integer, default=10, nullable=False, server_default="10",
+    )
+    wind_down_seconds: Mapped[int] = mapped_column(
+        Integer, default=10, nullable=False, server_default="10",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

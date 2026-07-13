@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 import pytest
 
+from src.config import settings
 from src.service.vision_module.vision_frame_reader import FrameReader, FrameReaderState
 from src.service.vision_module.vision_yolo.detector import YoloDetector, Detection, YoloState
 from src.service.vision_module.vision_annotation import draw_detections
@@ -18,6 +19,19 @@ from src.service.vision_module.vision_merger import (
     start_stream_merge, push_frame, stop_stream_merge,
 )
 from src.service.vision_module.vision_event_bus import event_bus, ENTITY
+
+# ── 模型文件检测 ──
+# 配置路径相对于 monitor-server/ 目录（run.py 所在），
+# 但测试从项目根运行。尝试两个位置。
+_candidates = [
+    Path(settings.YOLO_MODEL_PATH),                  # 相对于 cwd (monitor-server/)
+    Path("monitor-server") / settings.YOLO_MODEL_PATH,  # 相对于项目根
+]
+_YOLO_MODEL_AVAILABLE = any(p.exists() for p in _candidates)
+_skip_no_model = pytest.mark.skipif(
+    not _YOLO_MODEL_AVAILABLE,
+    reason=f"YOLO model not found (tried: {_candidates})",
+)
 
 
 # ── 辅助函数 ──────────────────────────────────
@@ -72,11 +86,13 @@ class TestFrameReader:
 class TestYoloDetector:
     """YOLO 检测器——加载与推理。"""
 
+    @_skip_no_model
     def test_load_model(self):
         d = YoloDetector()
         assert d.load()
         assert d.state == YoloState.ACTIVE
 
+    @_skip_no_model
     def test_detect_empty_frame(self):
         d = YoloDetector()
         d.load()
@@ -85,6 +101,7 @@ class TestYoloDetector:
         # 纯色帧无目标
         assert isinstance(detections, list)
 
+    @_skip_no_model
     def test_detect_and_publish(self):
         d = YoloDetector()
         d.load()
@@ -122,10 +139,11 @@ class TestAnnotationOverlay:
             class_id=0,
             confidence=0.9,
             entity_type_id=1,  # PERSON
+            label_suffix="1",  # 必须有 label_suffix 才绘制（三级标注策略）
         )
         annotated = draw_detections(frame, [det])
         assert annotated.shape == frame.shape
-        # 有框的像素肯定变了
+        # 有 label_suffix 的检测会被绘制，像素会变
         assert not np.array_equal(annotated, frame)
 
 
@@ -150,6 +168,7 @@ class TestPipelineIntegration:
     用本地视频文件替代 RTMP。输出到临时文件替代 SRS push。
     """
 
+    @_skip_no_model
     @pytest.mark.asyncio
     async def test_full_pipeline_with_local_video(self, tmp_path: Path):
         """完整管线：本地视频 → YOLO → 标注 → FFmpeg 写文件。
