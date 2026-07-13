@@ -23,6 +23,8 @@ class ElectronicFence(Base):
     dwell_time: Mapped[int] = mapped_column(Integer, default=10)
     density: Mapped[float] = mapped_column(Float, default=0.6)
     leave_frames: Mapped[int] = mapped_column(Integer, default=5)
+    safe_distance: Mapped[int] = mapped_column(Integer, default=0)
+    entry_delay_seconds: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(),
     )

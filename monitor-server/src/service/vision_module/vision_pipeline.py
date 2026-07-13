@@ -45,6 +45,7 @@ class FrameContext:
     tracks: list[Track] | None = None  # ByteTrack 产出（B 模块填充）
     action_regions: dict[int, tuple[int, int, int, int]] | None = None  # SlowFast padded crop
     fence_polygons: list[list[tuple[float, float]]] | None = None  # 围栏多边形
+    fence_expanded_polygons: list[list[tuple[float, float]]] | None = None  # 安全距离扩展
     view_id: int = 0
 
 
@@ -383,7 +384,7 @@ class AIPipeline:
             if ctx.fence_polygons is not None:
                 if ctx.fence_polygons:
                     logger.info("[Fence] drawing %d polygon(s)", len(ctx.fence_polygons))
-                    annotated = draw_fence_polygons(annotated, ctx.fence_polygons)
+                    annotated = draw_fence_polygons(annotated, ctx.fence_polygons, ctx.fence_expanded_polygons)
                 elif _loop_frame_count <= 2:
                     logger.info("[Fence] ctx.fence_polygons exists but is EMPTY")
             elif _loop_frame_count <= 2:

@@ -140,6 +140,7 @@ def draw_part_b_overlay(
     action_labels: dict[int, str] | None = None,
     fence_labels: dict[int, str] | None = None,
     fence_polygons: list[list[tuple[float, float]]] | None = None,
+    fence_expanded_polygons: list[list[tuple[float, float]]] | None = None,
 ) -> np.ndarray:
     """Draw Part B tracking, face, action, and fence state on a frame."""
 
@@ -153,6 +154,12 @@ def draw_part_b_overlay(
             points = np.array(polygon, dtype=np.int32)
             if len(points) >= 3:
                 cv2.polylines(annotated, [points], isClosed=True, color=(255, 255, 0), thickness=2)
+
+    if fence_expanded_polygons:
+        for polygon in fence_expanded_polygons:
+            points = np.array(polygon, dtype=np.int32)
+            if len(points) >= 3:
+                cv2.polylines(annotated, [points], isClosed=True, color=(80, 80, 255), thickness=1, lineType=cv2.LINE_AA)
 
     for track in tracks:
         x1, y1, x2, y2 = [int(round(value)) for value in track.bbox]
@@ -213,8 +220,9 @@ _COLOR_FENCE = (0, 165, 255)  # 橙色 — 围栏边界
 def draw_fence_polygons(
     frame: np.ndarray,
     polygons: list[list[tuple[float, float]]],
+    expanded: list[list[tuple[float, float]]] | None = None,
 ) -> np.ndarray:
-    """在帧上绘制围栏多边形（橙色填充 + 边界线）。"""
+    """在帧上绘制围栏多边形（橙色填充）+ 安全距离扩展框（细红线）。"""
     import cv2
     annotated = frame.copy()
     overlay = annotated.copy()
@@ -223,6 +231,13 @@ def draw_fence_polygons(
         if len(pts) >= 3:
             cv2.fillPoly(overlay, [pts], _COLOR_FENCE)
     cv2.addWeighted(overlay, 0.2, annotated, 0.8, 0, dst=annotated)
+
+    if expanded:
+        for coords in expanded:
+            pts = np.array([(int(x), int(y)) for x, y in coords], dtype=np.int32)
+            if len(pts) >= 3:
+                cv2.polylines(annotated, [pts], isClosed=True, color=(80, 80, 255), thickness=1, lineType=cv2.LINE_AA)
+
     return annotated
 
 

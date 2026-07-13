@@ -1,4 +1,4 @@
-﻿"""数据库种子数据 —— 首次启动时创建默认管理员。
+﻿"""数据库种子数据 —— 首次启动时创建默认管理员 + 围栏事件类型。
 
 密码写入项目目录下的 ``admin_password.txt``，生产部署前删除此文件。
 """
@@ -27,7 +27,7 @@ def seed_admin():
     try:
         repo = UserRepo(db)
         if repo.count() > 0:
-            return  # 已有用户，跳过种子
+            return
 
         password = _generate_password()
         repo.create(
@@ -38,11 +38,25 @@ def seed_admin():
         )
         db.commit()
 
-        # 写密码文件
         with open(ADMIN_PASSWORD_FILE, "w", encoding="utf-8") as f:
             f.write(f"管理员账户\n用户名: admin\n密码: {password}\n")
             f.write("请在首次登录后修改密码，并在生产部署前删除此文件。\n")
 
         print(f"[seed] 已创建管理员账户 admin，密码已写入 {ADMIN_PASSWORD_FILE}")
+    finally:
+        db.close()
+
+
+def seed_fence_events():
+    """预置围栏事件类型（ENTERED + TOO_CLOSE）。"""
+    from src.models.fence_event_type import FenceEventType
+    db = SessionLocal()
+    try:
+        if db.query(FenceEventType).first() is not None:
+            return
+        db.add(FenceEventType(id=1, name="ENTERED"))
+        db.add(FenceEventType(id=2, name="TOO_CLOSE"))
+        db.commit()
+        print("[seed] 已创建围栏事件类型: ENTERED, TOO_CLOSE")
     finally:
         db.close()

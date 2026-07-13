@@ -55,7 +55,7 @@ async def print_urls():
 
     import logging
     from src.extensions import engine, Base
-    from src.seed import seed_admin
+    from src.seed import seed_admin, seed_fence_events
 
     # 确保数据库表存在（非测试环境可能未建表）
     Base.metadata.create_all(bind=engine)
@@ -64,6 +64,11 @@ async def print_urls():
         seed_admin()
     except Exception as e:
         logging.getLogger(__name__).warning("seed_admin failed: %s", e)
+
+    try:
+        seed_fence_events()
+    except Exception as e:
+        logging.getLogger(__name__).warning("seed_fence_events failed: %s", e)
 
     # 恢复已有 View 的 AI 管线（Server 重启后自动续接）
     from src.extensions import SessionLocal

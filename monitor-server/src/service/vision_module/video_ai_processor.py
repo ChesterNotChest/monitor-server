@@ -80,13 +80,16 @@ class VideoAIProcessor:
             _logging.getLogger(__name__).info("[Direct] Action labels: %s", dict(_al))
 
         fence_events = await self.fence_engine.check_and_publish(tracks, ctx.timestamp)
-        if fence_events:
-            for e in fence_events:
-                if e.entered:
-                    _fel[e.track_id] = f"Fence-{e.fence_id}"
-                else:
-                    _fel.pop(e.track_id, None)  # 离开围栏：清除标签
+        # 每帧更新围栏标签——状态持续期间始终保持红色框
+        track_states = self.fence_engine.get_track_states()
+        for tid, label in track_states.items():
+            _fel[tid] = label
+        # 清除不在任何围栏状态的 track 标签
+        for tid in list(_fel.keys()):
+            if tid not in track_states:
+                _fel.pop(tid, None)
         ctx.fence_polygons = self.fence_engine.fence_polygons
+        ctx.fence_expanded_polygons = self.fence_engine.expanded_polygons
 
 
 def register_video_ai_hooks(
