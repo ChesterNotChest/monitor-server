@@ -13,8 +13,17 @@ from contextlib import contextmanager
 from enum import Enum, auto
 
 # Keep in sync with src.run for tests/imports that bypass the normal entrypoint.
-# Use rw_timeout; timeout can make FFmpeg RTMP open in listen mode.
-os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rw_timeout;5000000")
+# Low-latency RTMP: disable ffmpeg buffering, tiny RTMP buffer, live mode.
+os.environ.setdefault(
+    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+    "rw_timeout;5000000|"
+    "fflags;nobuffer|"
+    "flags;low_delay|"
+    "analyzeduration;0|"
+    "probesize;32|"
+    "rtmp_live;live|"
+    "buffer_size;65536",
+)
 
 import cv2
 import numpy as np
@@ -129,6 +138,12 @@ class FrameReader:
         self._frame_id += 1
         timestamp = time.time() - self._open_time
         return True, frame, timestamp, self._frame_id
+
+    def grab(self) -> bool:
+        """丢弃下一帧（不解码，仅抓取编码包）。比 read() 快，用于缓冲排空。"""
+        if self._cap is None:
+            return False
+        return self._cap.grab()
 
     def _read_internal(self) -> tuple[bool, np.ndarray | None]:
         """底层读取，直接取最新帧（不做跳帧窗口——RTMP read 本身已阻塞等帧）。"""

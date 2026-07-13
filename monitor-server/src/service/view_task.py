@@ -142,6 +142,13 @@ def delete_view(db: Session, view_id: int) -> bool:
         for fence in db.scalars(select(ElectronicFence).where(ElectronicFence.view_id == view_id)).all():
             fence_repo.delete(fence.id)
 
+        # 级联删除告警
+        from src.models.situation_event import SituationEvent
+        from src.repository.situation_event_repo import SituationEventRepo
+        event_repo = SituationEventRepo(db)
+        for evt in db.scalars(select(SituationEvent).where(SituationEvent.view_id == view_id)).all():
+            event_repo.delete(evt.id)
+
         view_repo.delete(view_id)
         stop_merge(view_id)
         check_and_stop_stream(db, "video", video_id)

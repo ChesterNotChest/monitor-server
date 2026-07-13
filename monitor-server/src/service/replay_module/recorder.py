@@ -1,48 +1,43 @@
-"""录制引擎 —— 持续录制会话管理。"""
+"""录制会话 —— 从 SRS 拉取 RTMP 流录制到本地 FLV 文件。"""
 
+import logging
 import os
 import subprocess
 import threading
-import time
+import time as _time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from src.config import settings
-from src.repository.recording_repo import RecordingRepo
 from src.service.replay_module.ring_buffer import FrameRingBuffer
+
+logger = logging.getLogger(__name__)
 
 
 class RecordingSession:
-    """一次持续录制会话。
-
-    告警触发时创建，持续写帧到 ffmpeg pipe。
-    每次新告警调用 on_new_alert() 重置静默计时器。
-    连续 ``RECORD_STOP_SILENCE_SECONDS`` 秒无新告警则停止。
-    """
-
-    def __init__(
-        self, view_id: int, buffer: FrameRingBuffer, cache_path: str,
-        width: int = 1920, height: int = 1080, fps: int = 25,
-    ):
+    def __init__(self, view_id: int, buffer: FrameRingBuffer, cache_path: str,
+                 max_duration: int = 10, wind_down: int = 10):
         self.view_id = view_id
-        self.buffer = buffer
         self.cache_path = cache_path
-        self.width = width
-        self.height = height
-        self.fps = fps
-        self.format = getattr(buffer, "format", "raw_bgr24")
+        self.max_duration = max_duration
+        self.wind_down = wind_down
 
-        self._silence_seconds = 0
+        self._start_mono: float = 0
+        self._alert_ended = False
+        self._wind_down_start: float = 0
         self._stop_event = threading.Event()
         self._monitor_thread: threading.Thread | None = None
         self._ffmpeg_proc: subprocess.Popen | None = None
         self.start_time: datetime | None = None
         self.output_path: str | None = None
+        self.recording_id: int | None = None
 
-    def start(self, db) -> str:
-        """开始录制：dump 历史帧 + 启动 ffmpeg pipe + 监听线程。"""
+    def start(self, db) -> int | None:
+        """从 SRS 拉取 view/{id} RTMP 流，录制到本地 FLV。返回 recording_id。"""
+        from src.repository.recording_repo import RecordingRepo
         now = datetime.now(timezone.utc)
         self.start_time = now
+        self._start_mono = _time.monotonic()
 
         cache_dir = Path(self.cache_path)
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -50,95 +45,113 @@ class RecordingSession:
         filename = f"view_{self.view_id}_{ts}.flv"
         self.output_path = str(cache_dir / filename)
 
-        # 启动 ffmpeg pipe —— 按帧格式切换参数
-        if self.format == "jpeg":
-            ffmpeg_cmd = [
-                "ffmpeg", "-y",
-                "-f", "image2pipe", "-c:v", "mjpeg",
-                "-use_wallclock_as_timestamps", "1",
-                "-i", "pipe:0",
-                "-c:v", "copy", "-f", "flv",
-                self.output_path,
-            ]
-        else:
-            ffmpeg_cmd = [
-                "ffmpeg", "-y",
-                "-f", "rawvideo", "-pix_fmt", "bgr24",
-                "-s", f"{self.width}x{self.height}", "-r", str(self.fps),
-                "-i", "pipe:0",
-                "-c:v", "libx264", "-f", "flv",
-                self.output_path,
-            ]
+        # 从 SRS 拉流，stream copy（不需重新编码，FLV 格式干净）
+        rtmp_url = f"rtmp://{settings.SRS_HOST}:{settings.SRS_RTMP_PORT}/view/{self.view_id}"
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-i", rtmp_url,
+            "-c:v", "copy", "-an",
+            "-f", "flv", self.output_path,
+        ]
 
-        self._ffmpeg_proc = subprocess.Popen(
-            ffmpeg_cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+        self._ffmpeg_proc = subprocess.Popen(ffmpeg_cmd,
+                                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        recording = RecordingRepo(db).create(
+            view_id=self.view_id, file_path=self.output_path,
+            start_time=self.start_time, end_time=None,
+        )
+        db.commit()
+        self.recording_id = recording.id
+
+        self._monitor_thread = threading.Thread(target=self._monitor, daemon=True)
+        self._monitor_thread.start()
+        logger.info(
+            "[Replay] START view=%d rec=%d max_dur=%ds wind_down=%ds",
+            self.view_id, self.recording_id, self.max_duration, self.wind_down,
+        )
+        return self.recording_id
+
+    def _monitor(self):
+        while not self._stop_event.wait(timeout=1.0):
+            elapsed = _time.monotonic() - self._start_mono
+            if elapsed >= self.max_duration:
+                logger.info(
+                    "[Replay] MAX_DUR stop view=%d rec=%d elapsed=%.0fs",
+                    self.view_id, self.recording_id, elapsed,
+                )
+                self._stop_ffmpeg()
+                break
+            if self._alert_ended:
+                wind_elapsed = _time.monotonic() - self._wind_down_start
+                if wind_elapsed >= self.wind_down:
+                    logger.info(
+                        "[Replay] WIND_DOWN stop view=%d rec=%d total=%.0fs",
+                        self.view_id, self.recording_id, elapsed,
+                    )
+                    self._stop_ffmpeg()
+                    break
+
+    def _stop_ffmpeg(self):
+        """终止 ffmpeg 进程、设停止标志、写 Recording.end_time"""
+        self._stop_event.set()
+        if self._ffmpeg_proc:
+            try: self._ffmpeg_proc.terminate()
+            except Exception: pass
+            try:
+                self._ffmpeg_proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                try: self._ffmpeg_proc.kill()
+                except Exception: pass
+        # 回填 end_time（monitor 线程无 db 参数，自己开 session）
+        if self.recording_id:
+            try:
+                from src.extensions import SessionLocal
+                from src.repository.recording_repo import RecordingRepo
+                _db = SessionLocal()
+                try:
+                    rec = RecordingRepo(_db).get(self.recording_id)
+                    if rec and rec.end_time is None:
+                        rec.end_time = datetime.now(timezone.utc)
+                        _db.commit()
+                finally:
+                    _db.close()
+            except Exception:
+                pass
+
+    def on_new_alert(self):
+        self._alert_ended = False
+        logger.info(
+            "[Replay] KEEP_ALIVE view=%d rec=%d",
+            self.view_id, self.recording_id,
         )
 
-        # 写入历史帧
-        history = self.buffer.dump_all()
-        for frame in history:
-            try:
-                self._ffmpeg_proc.stdin.write(frame)
-            except (BrokenPipeError, OSError):
-                break
+    def on_alert_end(self):
+        self._alert_ended = True
+        self._wind_down_start = _time.monotonic()
+        logger.info(
+            "[Replay] WIND_DOWN view=%d rec=%d wait=%ds",
+            self.view_id, self.recording_id, self.wind_down,
+        )
 
-        # 启动静默监控线程
-        self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
-        self._monitor_thread.start()
-
-        return filename
+    def is_stopped(self) -> bool: return self._stop_event.is_set()
 
     def push_frame(self, frame_bytes: bytes) -> None:
-        """写入一帧到 ffmpeg pipe。"""
-        if self._ffmpeg_proc and self._ffmpeg_proc.stdin:
-            try:
-                self._ffmpeg_proc.stdin.write(frame_bytes)
-            except (BrokenPipeError, OSError):
-                pass
+        pass  # 不需要 pipe——直接从 SRS 拉流
 
-    def on_new_alert(self) -> None:
-        """新告警触发，重置静默计时器。"""
-        self._silence_seconds = 0
-
-    def is_stopped(self) -> bool:
-        return self._stop_event.is_set()
-
-    def _monitor_loop(self) -> None:
-        """后台线程：每秒检查静默计时器。"""
-        check_interval = settings.RECORD_STOP_SILENCE_SECONDS
-        while self._silence_seconds < check_interval:
-            if self._stop_event.wait(timeout=1):
-                return
-            self._silence_seconds += 1
+    def stop(self, db) -> int | None:
         self._stop_event.set()
-
-    def stop(self, db) -> str | None:
-        """停止录制：关闭 ffmpeg，写入 Recording 记录。"""
-        if self._stop_event.is_set() is False and self._ffmpeg_proc:
-            # 提前停止（如 View 删除）
-            self._stop_event.set()
-
-        if self._ffmpeg_proc and self._ffmpeg_proc.stdin:
-            try:
-                self._ffmpeg_proc.stdin.close()
-            except (BrokenPipeError, OSError):
-                pass
-            try:
-                self._ffmpeg_proc.wait(timeout=5)
+        if self._ffmpeg_proc:
+            try: self._ffmpeg_proc.terminate()
+            except Exception: pass
+            try: self._ffmpeg_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                self._ffmpeg_proc.kill()
-                self._ffmpeg_proc.wait()
+                self._ffmpeg_proc.kill(); self._ffmpeg_proc.wait()
 
-        if self.output_path and os.path.exists(self.output_path):
-            end_time = datetime.now(timezone.utc)
-            RecordingRepo(db).create(
-                view_id=self.view_id,
-                file_path=self.output_path,
-                start_time=self.start_time,
-                end_time=end_time,
-            )
-            return self.output_path
-        return None
+        if self.recording_id:
+            from src.repository.recording_repo import RecordingRepo
+            rec = RecordingRepo(db).get(self.recording_id)
+            if rec:
+                rec.end_time = datetime.now(timezone.utc)
+                db.commit()
+        return self.recording_id

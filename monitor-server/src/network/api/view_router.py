@@ -39,7 +39,7 @@ def list_views(db: Session = Depends(get_db)):
 
 
 @router.get(
-    "/{view_id}",
+    "/{view_id}/",
     response_model=ViewResponse,
     responses={404: {"description": "View 不存在"}},
 )
@@ -52,7 +52,7 @@ def get_view(view_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete(
-    "/{view_id}",
+    "/{view_id}/",
     response_model=OkResponse,
     responses={404: {"description": "View 不存在"}},
 )

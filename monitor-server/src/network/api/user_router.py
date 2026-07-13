@@ -14,7 +14,7 @@ router = APIRouter(prefix="/users", tags=["用户管理"])
 _perm = Depends(require_permission("user:manage"))
 
 
-@router.get("", response_model=list[UserResponse])
+@router.get("/", response_model=list[UserResponse])
 def list_users(db: Session = Depends(get_db), _user=_perm):
     """列出所有用户。
 
@@ -24,7 +24,7 @@ def list_users(db: Session = Depends(get_db), _user=_perm):
 
 
 @router.post(
-    "",
+    "/",
     response_model=UserResponse,
     status_code=201,
     responses={400: {"description": "无效角色"}, 409: {"description": "用户名已存在"}},
@@ -51,14 +51,20 @@ def create_user(
         except ValueError:
             pass
     try:
-        return user_task.create_user(db, username, password, role,
+
+=======
+        result = user_task.create_user(db, username, password, role,
                                      dingtalk_mobile=dingtalk_mobile,
                                      supervisor_id=sup_id)
+        db.commit()
+        return result
+
     except ValueError as e:
         raise HTTPException(409, str(e))
 
 
 @router.put(
+
     "/{user_id}",
     response_model=UserResponse,
     responses={404: {"description": "用户不存在"}},
@@ -92,7 +98,10 @@ def update_user(
 
 
 @router.put(
-    "/{user_id}/role",
+
+=======
+    "/{user_id}/role/",
+
     response_model=UserResponse,
     responses={400: {"description": "无效角色"}, 404: {"description": "用户不存在"}},
 )
@@ -106,11 +115,12 @@ def update_role(user_id: int, role: str, db: Session = Depends(get_db), _user=_p
     result = user_task.update_role(db, user_id, role)
     if result is None:
         raise HTTPException(404, "用户不存在")
+    db.commit()
     return result
 
 
 @router.put(
-    "/{user_id}/deactivate",
+    "/{user_id}/deactivate/",
     response_model=OkResponse,
     responses={404: {"description": "用户不存在"}},
 )
@@ -121,4 +131,5 @@ def deactivate_user(user_id: int, db: Session = Depends(get_db), _user=_perm):
     """
     if not user_task.deactivate_user(db, user_id):
         raise HTTPException(404, "用户不存在")
+    db.commit()
     return OkResponse()

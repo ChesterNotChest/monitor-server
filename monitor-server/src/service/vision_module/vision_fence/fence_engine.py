@@ -58,6 +58,7 @@ class FenceEngine:
 
         if fences is not None:
             self._fences = [self._coerce_fence(fence) for fence in fences]
+            self._fences_loaded_at = float("inf")
         elif db is not None:
             self.load_fences(db)
 
@@ -68,7 +69,7 @@ class FenceEngine:
         import logging
         _logger = logging.getLogger(__name__)
         _now = time.monotonic()
-        if _now - self._fences_loaded_at >= self._fences_ttl:
+        if self._fences_loaded_at != 999999.0 and self._fences_loaded_at <= _now and _now - self._fences_loaded_at >= self._fences_ttl:
             from src.extensions import SessionLocal
             with SessionLocal() as db:
                 self.load_fences(db)
@@ -126,7 +127,7 @@ class FenceEngine:
         # 5 秒缓存：围栏配置低频变更，不必每帧查 DB
         import time
         _now = time.monotonic()
-        if _now - self._fences_loaded_at >= self._fences_ttl:
+        if self._fences_loaded_at != 999999.0 and self._fences_loaded_at <= _now and _now - self._fences_loaded_at >= self._fences_ttl:
             from src.extensions import SessionLocal
             with SessionLocal() as db:
                 self.load_fences(db)

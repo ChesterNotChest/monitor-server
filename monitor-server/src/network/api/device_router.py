@@ -12,7 +12,7 @@ from src.service import device_task
 router = APIRouter(prefix="/devices", tags=["设备管理"])
 
 
-@router.get("/nodes")
+@router.get("/nodes/")
 def list_nodes(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("device:list")),
@@ -25,7 +25,7 @@ def list_nodes(
 
 
 @router.get(
-    "/nodes/{node_id}/health",
+    "/nodes/{node_id}/health/",
     response_model=NodeHealthResponse,
     responses={404: {"description": "Node 不存在"}},
 )
@@ -45,7 +45,7 @@ def node_health(
 
 
 @router.post(
-    "/nodes/{node_id}/onboard",
+    "/nodes/{node_id}/onboard/",
     response_model=OkResponse,
     responses={404: {"description": "Node 不存在"}},
 )

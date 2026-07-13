@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import time as _time
 
 import numpy as np
 
@@ -20,23 +21,15 @@ from src.service.vision_module.vision_types import Track
 logger = logging.getLogger(__name__)
 
 # ── 配色方案 ──────────────────────────────────
-_COLOR_PERSON = (0, 255, 0)       # 绿色 — 人
-_COLOR_OBJECT = (0, 0, 255)       # 红色 — 物品/危险物
+_COLOR_NORMAL = (0, 255, 0)       # 绿色 — 正常
+_COLOR_IMPORTANT = (0, 215, 255)  # 黄色 — 关注
+_COLOR_DANGER = (0, 0, 255)       # 红色 — 危险
+_COLOR_PERSON = (0, 255, 0)       # 绿色 — Person 检测框
 _COLOR_TEXT = (255, 255, 255)     # 白色文字
 _COLOR_LABEL_BG = (0, 0, 0)       # 文字背景黑色
 
 _ENTITY_LABELS: dict[int, str] = {
     YOLOEntityType.PERSON: "Person",
-    YOLOEntityType.CAR: "Car",
-    YOLOEntityType.TRUCK: "Truck",
-    YOLOEntityType.BUS: "Bus",
-    YOLOEntityType.MOTORCYCLE: "Moto",
-    YOLOEntityType.BICYCLE: "Bike",
-    YOLOEntityType.DOG: "Dog",
-    YOLOEntityType.CAT: "Cat",
-    YOLOEntityType.BIRD: "Bird",
-    YOLOEntityType.BACKPACK: "Bag",
-    YOLOEntityType.SUITCASE: "Case",
     YOLOEntityType.KNIFE: "Knife",
 }
 
@@ -44,6 +37,102 @@ _ENTITY_LABELS: dict[int, str] = {
 _face_labels: dict[int, str] = {}
 _fence_labels: dict[int, str] = {}
 _action_labels: dict[int, str] = {}
+
+# ── ActiveSignals — Pipeline 每帧提取的枚举信号快照 ──
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ActiveSignals:
+    """一帧内所有 AI 检测的整数 ID 集合 — AlertEngine 告警匹配的单一数据源。
+
+    全部为存在性集合 — 只关心"画面里有没有"，不关心中"哪个 track 引起的"。
+    引用替换（非 mutate）确保无锁线程安全。
+    """
+    entity_type_ids: frozenset[int] = field(default_factory=frozenset)
+    action_type_ids: frozenset[int] = field(default_factory=frozenset)
+    sound_type_ids: frozenset[int] = field(default_factory=frozenset)
+    face_result_ids: frozenset[int] = field(default_factory=frozenset)
+    fence_result_ids: frozenset[int] = field(default_factory=frozenset)
+
+    EMPTY: "ActiveSignals" = field(init=False, repr=False, default=None)
+
+    @classmethod
+    def empty(cls) -> "ActiveSignals":
+        if cls.EMPTY is None:
+            cls.EMPTY = cls()
+        return cls.EMPTY
+
+
+ActiveSignals.EMPTY = ActiveSignals()
+
+# 检查"无信号"
+_ACTIVE_SIGNALS = ActiveSignals.empty()
+
+# 全局 ID 缓存 — 引用替换策略（GIL 下 set 引用赋值原子，无需显式锁）
+_active_action_type_ids: frozenset[int] = frozenset()
+_active_action_ids_updated_at: float = 0.0
+_active_sound_type_ids: frozenset[int] = frozenset()
+_active_sound_ids_updated_at: float = 0.0
+
+# 信号 TTL（秒）—— 与 AlertEngine ALERT_EVENT_TTL 对齐
+_SIGNAL_TTL: float = 5.0
+
+
+def get_active_signals(
+    entity_type_ids: frozenset[int] | None = None,
+) -> ActiveSignals:
+    """从全局缓存提取当前帧的枚举信号快照。
+
+    - entity_type_ids: 调用方从当前帧 detections 提取后传入
+    - action_type_ids: 读取 _active_action_type_ids（跨帧+TTL, SlowFast 结果按批产出）
+    - sound_type_ids: 读取 _active_sound_type_ids（跨帧+TTL, YAMNet 持续产出）
+    - face_result_ids: 从 _face_labels 推导 Stranger 存在性
+    - fence_result_ids: 从 _fence_labels 推导 ENTERED 存在性
+
+    所有字段使用 frozenset——引用替换保证无锁线程安全。
+    """
+    if entity_type_ids is None:
+        entity_type_ids = frozenset()
+
+    # 动作 TTL 检查（SlowFast 推理是批处理，结果跨帧保持）
+    action_ids: frozenset[int]
+    if _active_action_ids_updated_at > 0 and (
+        _time.time() - _active_action_ids_updated_at < _SIGNAL_TTL
+    ):
+        action_ids = _active_action_type_ids
+    else:
+        action_ids = frozenset()
+
+    # 声音 TTL 检查
+    sound_ids: frozenset[int]
+    if _active_sound_ids_updated_at > 0 and (
+        _time.time() - _active_sound_ids_updated_at < _SIGNAL_TTL
+    ):
+        sound_ids = _active_sound_type_ids
+    else:
+        sound_ids = frozenset()
+
+    # Face: 只要有 "Stranger" → face_result_ids = {2}
+    from src.constants import FaceRecognitionResult
+    face_ids = frozenset()
+    if any(v == "Stranger" for v in _face_labels.values()):
+        face_ids = frozenset({FaceRecognitionResult.STRANGER})
+
+    # Fence: 非空 → {1} (ENTERED)
+    from src.constants import FenceEventResult
+    fence_ids = frozenset()
+    if _fence_labels:
+        fence_ids = frozenset({FenceEventResult.ENTERED})
+
+    return ActiveSignals(
+        entity_type_ids=entity_type_ids,
+        action_type_ids=action_ids,
+        sound_type_ids=sound_ids,
+        face_result_ids=face_ids,
+        fence_result_ids=fence_ids,
+    )
 
 
 async def _on_face_event(payload: dict) -> None:
@@ -96,29 +185,36 @@ except RuntimeError:
     pass  # 无运行中的 event loop（如测试导入）
 
 
-def _bbox_color(entity_type_id: int | None) -> tuple[int, int, int]:
-    """实体类型 → 框颜色。PERSON 绿色，其余红色。"""
-    if entity_type_id == YOLOEntityType.PERSON:
-        return _COLOR_PERSON
-    return _COLOR_OBJECT
+def _alert_color(level: int) -> tuple[int, int, int]:
+    """alert_level → 框颜色。0=绿 1=黄 2=红。"""
+    if level >= 2:
+        return _COLOR_DANGER
+    if level == 1:
+        return _COLOR_IMPORTANT
+    return _COLOR_NORMAL
 
 
 def draw_detections(frame: np.ndarray, detections: list[Detection]) -> np.ndarray:
-    """在帧上绘制 YOLO 实体框和标签。返回新帧（不修改原帧）。"""
+    """在帧上绘制检测框和标签。
+
+    三级着色：danger(红) > important(黄) > normal(绿)。
+    label_suffix 为 None 的检测跳过（抑制的实体）。
+    """
     annotated = frame.copy()
+    drawn = 0
 
     for det in detections:
-        if det.entity_type_id is None:
+        if det.label_suffix is None:
             continue
+        drawn += 1
         x1, y1, x2, y2 = [int(v) for v in det.bbox]
-        color = _bbox_color(det.entity_type_id)
-        label = _ENTITY_LABELS.get(det.entity_type_id, f"#{det.entity_type_id}")
-        if det.label_suffix:
-            label = f"{label} {det.label_suffix}"
+        color = _alert_color(det.alert_level)
+        label = det.label_suffix
 
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
         _draw_label(annotated, label, x1, y1 - 10, color)
 
+    logger.info("[Draw] total=%d drawn=%d", len(detections), drawn)
     return annotated
 
 
@@ -226,6 +322,49 @@ def draw_fence_polygons(
             cv2.fillPoly(overlay, [pts], _COLOR_FENCE)
     cv2.addWeighted(overlay, 0.2, annotated, 0.8, 0, dst=annotated)
     return annotated
+
+
+# ── 音频事件显示（左下角持久化） ──────────────
+
+_sound_label: str | None = None
+_sound_time: float = 0.0
+
+
+def set_sound_label(label: str | None) -> None:
+    """设置当前音频事件标签。label=None 则清除。"""
+    import time as _time
+    global _sound_label, _sound_time
+    _sound_label = label
+    _sound_time = _time.time() if label else 0.0
+
+
+def draw_server_timestamp(frame: np.ndarray) -> np.ndarray:
+    """左上角叠加 Server 处理时间戳（黄色），与 Node 右下角 drawtext 对比 = 端到端延迟。"""
+    import cv2 as _cv2
+    import time as _time
+    ts = _time.strftime("%H:%M:%S")
+    (tw, th), _ = _cv2.getTextSize(ts, _cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    _cv2.rectangle(frame, (4, 4), (tw + 10, th + 10), (0, 0, 0), -1)
+    _cv2.putText(frame, ts, (8, th + 6), _cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+    return frame
+
+
+def draw_sound_overlay(frame: np.ndarray) -> np.ndarray:
+    """左下角音频检测标签（红字），格式 ``SOUND: Gunshot (3s ago)``。"""
+    import cv2 as _cv2
+    import time as _time
+    global _sound_label, _sound_time
+    if _sound_label is None:
+        return frame
+    elapsed = _time.time() - _sound_time if _sound_time > 0 else 0
+    text = f"SOUND: {_sound_label} ({elapsed:.0f}s ago)"
+    h, w = frame.shape[:2]
+    (tw, th), _ = _cv2.getTextSize(text, _cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    overlay = frame.copy()
+    _cv2.rectangle(overlay, (10, h - th - 16), (tw + 20, h - 4), (0, 0, 0), -1)
+    _cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, dst=frame)
+    _cv2.putText(frame, text, (16, h - 10), _cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+    return frame
 
 
 # late import after defining _bbox_color

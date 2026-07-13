@@ -12,7 +12,7 @@ from src.middleware.rbac import get_current_user
 router = APIRouter(prefix="/auth", tags=["认证"])
 
 
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login/", response_model=LoginResponse)
 def login(body: LoginRequest, db: Session = Depends(get_db)):
     """用户登录。"""
     result = auth_task.login(db, body.username, body.password)
@@ -28,13 +28,13 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/logout", response_model=OkResponse)
+@router.post("/logout/", response_model=OkResponse)
 def logout():
     """注销（客户端丢弃 token 即可）。"""
     return OkResponse()
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me/", response_model=UserResponse)
 def me(user=Depends(get_current_user)):
     """获取当前登录用户信息。"""
     return UserResponse.model_validate(user)

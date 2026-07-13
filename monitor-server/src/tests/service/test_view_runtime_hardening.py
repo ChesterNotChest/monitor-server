@@ -60,8 +60,8 @@ def test_create_view_commits_view_and_streaming_state(monkeypatch):
         listed = client.get("/api/v1/views/").json()["views"]
         assert [view["id"] for view in listed] == [view_id]
 
-        videos = client.get("/api/v1/nodes/1/videos").json()["videos"]
-        audios = client.get("/api/v1/nodes/1/audios").json()["audios"]
+        videos = client.get("/api/v1/nodes/1/videos/").json()["videos"]
+        audios = client.get("/api/v1/nodes/1/audios/").json()["audios"]
         assert videos[0]["streaming"] is True
         assert audios[0]["streaming"] is True
     finally:

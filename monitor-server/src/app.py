@@ -55,7 +55,7 @@ async def print_urls():
 
     import logging
     from src.extensions import engine, Base
-    from src.seed import seed_admin
+    from src.seed import seed_admin, seed_alerts
 
     # 确保数据库表存在（非测试环境可能未建表）
     Base.metadata.create_all(bind=engine)
@@ -64,6 +64,11 @@ async def print_urls():
         seed_admin()
     except Exception as e:
         logging.getLogger(__name__).warning("seed_admin failed: %s", e)
+
+    try:
+        seed_alerts()
+    except Exception as e:
+        logging.getLogger(__name__).warning("seed_alerts failed: %s", e)
 
     # 恢复已有 View 的 AI 管线（Server 重启后自动续接）
     from src.extensions import SessionLocal
@@ -116,7 +121,27 @@ async def print_urls():
 @app.on_event("shutdown")
 async def shutdown_cleanup():
     """服务关闭时终止所有 FFmpeg 子进程。"""
+    import logging
+    logging.getLogger(__name__).info("[SHUTDOWN] Server shutdown initiated")
     cleanup_all()
+    logging.getLogger(__name__).info("[SHUTDOWN] cleanup complete")
+
+
+# 注册信号处理 — 记录崩溃原因
+import signal as _signal
+
+def _on_signal(signum, frame):
+    import logging
+    sig_name = _signal.Signals(signum).name if hasattr(_signal, "Signals") else f"signal-{signum}"
+    logging.getLogger(__name__).warning("[CRASH] Received %s — shutting down", sig_name)
+    import sys
+    sys.exit(128 + signum)
+
+try:
+    _signal.signal(_signal.SIGINT, _on_signal)    # Ctrl+C
+    _signal.signal(_signal.SIGTERM, _on_signal)   # kill
+except Exception:
+    pass  # 非主线程时 signal 不可用
 
 
 # ---- 注册子路由 ----
@@ -134,3 +159,8 @@ from src.network.wss.node_handler import node_websocket_endpoint
 
 app.add_api_websocket_route("/ws", node_websocket_endpoint)
 app.add_api_websocket_route(f"{API_PREFIX}/ws", node_websocket_endpoint)
+
+# ---- 注册前端告警 WebSocket 端点 ----
+from src.network.wss.alert_handler import alert_websocket_endpoint
+
+app.add_api_websocket_route("/ws/alerts", alert_websocket_endpoint)

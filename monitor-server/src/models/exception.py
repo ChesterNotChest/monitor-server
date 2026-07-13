@@ -58,6 +58,15 @@ class ExceptionDef(Base):
         nullable=True,
         index=True,
     )
+    cooldown_seconds: Mapped[int] = mapped_column(
+        Integer, default=30, nullable=False, server_default="30",
+    )
+    max_recording_seconds: Mapped[int] = mapped_column(
+        Integer, default=10, nullable=False, server_default="10",
+    )
+    wind_down_seconds: Mapped[int] = mapped_column(
+        Integer, default=10, nullable=False, server_default="10",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -75,6 +84,18 @@ class ExceptionDef(Base):
     sounds: Mapped[list["SoundType"]] = relationship(
         "SoundType", secondary=exception_sounds, lazy="selectin"
     )
+
+    @property
+    def entity_ids(self) -> list[int]:
+        return [e.id for e in self.entities] if self.entities else []
+
+    @property
+    def action_ids(self) -> list[int]:
+        return [a.id for a in self.actions] if self.actions else []
+
+    @property
+    def sound_ids(self) -> list[int]:
+        return [s.id for s in self.sounds] if self.sounds else []
 
     def __repr__(self) -> str:
         return f"<ExceptionDef {self.id} severity={self.severity.name}>"

@@ -1,0 +1,5 @@
+- [x] 1. Propose DeepSeek daily report API behavior.
+- [x] 2. Add request/response schemas for user-provided DeepSeek API calls.
+- [x] 3. Implement DeepSeek chat-completions integration without persisting API keys.
+- [x] 4. Add API route and tests with mocked DeepSeek responses.
+- [x] 5. Validate OpenSpec and run focused report tests.
