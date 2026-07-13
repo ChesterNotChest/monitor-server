@@ -67,5 +67,8 @@ def delete_exception(exc_id: int, db: Session = Depends(get_db), _user=_perm):
 
     **权限**: exception:manage
     """
-    if not exception_task.delete_exception(db, exc_id):
-        raise HTTPException(404)
+    try:
+        if not exception_task.delete_exception(db, exc_id):
+            raise HTTPException(404)
+    except IntegrityError:
+        raise HTTPException(400, "该异常已有告警事件关联，无法删除。请先处理相关告警事件")
