@@ -72,11 +72,12 @@ _ACTIVE_SIGNALS = ActiveSignals.empty()
 
 # 全局 ID 缓存 — 引用替换策略（GIL 下 set 引用赋值原子，无需显式锁）
 _active_action_type_ids: frozenset[int] = frozenset()
+_active_action_ids_updated_at: float = 0.0
 _active_sound_type_ids: frozenset[int] = frozenset()
 _active_sound_ids_updated_at: float = 0.0
 
-# 声音信号 TTL（秒）—— 与 AlertEngine ALERT_EVENT_TTL 对齐
-_SOUND_SIGNAL_TTL: float = 5.0
+# 信号 TTL（秒）—— 与 AlertEngine ALERT_EVENT_TTL 对齐
+_SIGNAL_TTL: float = 5.0
 
 
 def get_active_signals(
@@ -85,8 +86,8 @@ def get_active_signals(
     """从全局缓存提取当前帧的枚举信号快照。
 
     - entity_type_ids: 调用方从当前帧 detections 提取后传入
-    - action_type_ids: 读取 _active_action_type_ids（VideoAIProcessor 每帧更新）
-    - sound_type_ids: 读取 _active_sound_type_ids（YAMNet 跨帧更新，TTL 过期清空）
+    - action_type_ids: 读取 _active_action_type_ids（跨帧+TTL, SlowFast 结果按批产出）
+    - sound_type_ids: 读取 _active_sound_type_ids（跨帧+TTL, YAMNet 持续产出）
     - face_result_ids: 从 _face_labels 推导 Stranger 存在性
     - fence_result_ids: 从 _fence_labels 推导 ENTERED 存在性
 
@@ -95,10 +96,19 @@ def get_active_signals(
     if entity_type_ids is None:
         entity_type_ids = frozenset()
 
+    # 动作 TTL 检查（SlowFast 推理是批处理，结果跨帧保持）
+    action_ids: frozenset[int]
+    if _active_action_ids_updated_at > 0 and (
+        _time.time() - _active_action_ids_updated_at < _SIGNAL_TTL
+    ):
+        action_ids = _active_action_type_ids
+    else:
+        action_ids = frozenset()
+
     # 声音 TTL 检查
     sound_ids: frozenset[int]
     if _active_sound_ids_updated_at > 0 and (
-        _time.time() - _active_sound_ids_updated_at < _SOUND_SIGNAL_TTL
+        _time.time() - _active_sound_ids_updated_at < _SIGNAL_TTL
     ):
         sound_ids = _active_sound_type_ids
     else:
@@ -118,7 +128,7 @@ def get_active_signals(
 
     return ActiveSignals(
         entity_type_ids=entity_type_ids,
-        action_type_ids=_active_action_type_ids,
+        action_type_ids=action_ids,
         sound_type_ids=sound_ids,
         face_result_ids=face_ids,
         fence_result_ids=fence_ids,

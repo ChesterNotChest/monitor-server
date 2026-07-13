@@ -213,7 +213,6 @@ class YamnetRunner:
                 )
                 break
 
-            logger.debug("YAMNet read waiting view=%d chunk=%d ...", self._view_id, chunk_count)
             try:
                 chunk = await asyncio.wait_for(
                     self._proc.stdout.read(samples_per_window * 4),
@@ -226,8 +225,10 @@ class YamnetRunner:
                 )
                 break
             chunk_count += 1
-            logger.debug("YAMNet read done view=%d chunk=%d len=%d",
-                         self._view_id, chunk_count, len(chunk) if chunk else 0)
+            # 每 50 chunk (~50s) 输出一次，避免每 1s 刷屏
+            if chunk_count % 50 == 0:
+                logger.debug("YAMNet read progress view=%d chunk=%d len=%d",
+                             self._view_id, chunk_count, len(chunk) if chunk else 0)
 
             if first_chunk:
                 logger.info("YAMNet first chunk received view=%d len=%d", self._view_id, len(chunk) if chunk else 0)
@@ -300,36 +301,39 @@ class YamnetRunner:
                 b_max = max(float(scores_np[aid]) for aid in group_b if aid < len(scores_np))
                 dangers.append(((a_max + b_max) / 2, combo_label))
 
-        # 3. 按分数降序，取 top-2
+        # 3. 按分数降序，取 top-2（危险检测）
         dangers.sort(reverse=True)
-        if dangers:
-            label_parts = [f"{name} ({score:.2f})" for score, name in dangers[:2]]
-            set_sound_label(" | ".join(label_parts))
-        else:
-            set_sound_label(None)  # 无危险时清除
+        label_parts = [f"{name} ({score:.2f})" for score, name in dangers[:2]]
 
-        # 4. EventBus 发布 — 独立危险 + 组合标签（供 AlertEngine 跨模态融合）
+        # 同时收集 SOUND_TYPE_MAP 匹配（全部显示，方便调试）
         had_alert = False
         for score, name in dangers:
             had_alert = True
             await event_bus.publish(SOUND, {
                 "type": SOUND,
                 "view_id": self._view_id,
-                "sound_name": name,       # "Screaming" / "Fighting" / "Riot" ...
+                "sound_name": name,
                 "score": score,
             })
-        # 同时发布旧 SOUND_TYPE_MAP 格式（兼容现有 AlertEngine 规则）
         matched_sound_ids: set[int] = set()
         for sound_type_val, class_id in SOUND_TYPE_MAP.items():
             if class_id < len(scores_np) and scores_np[class_id] > self._threshold:
                 had_alert = True
-                matched_sound_ids.add(sound_type_val + 1)  # YAMNetSoundType 枚举值 = index + 1
+                s = float(scores_np[class_id])
+                matched_sound_ids.add(sound_type_val + 1)
+                label_parts.append(f"{_sound_name(sound_type_val + 1)} ({s:.2f})")
                 await event_bus.publish(SOUND, {
                     "type": SOUND,
                     "view_id": self._view_id,
                     "sound_type_ids": [sound_type_val],
-                    "score": float(scores_np[class_id]),
+                    "score": s,
                 })
+
+        # 汇总显示（危险 + SOUND_TYPE_MAP 全部命中）
+        if label_parts:
+            set_sound_label(" | ".join(label_parts))
+        else:
+            set_sound_label(None)
         # 同步写入全局声音 ID 缓存（引用替换，无锁安全）
         if matched_sound_ids:
             import time as _t

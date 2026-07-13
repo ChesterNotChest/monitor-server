@@ -136,6 +136,8 @@ class FaceRecognizer:
             )
         return results
 
+    _last_logged_labels: dict[int, str] = {}
+
     def get_face_labels(self) -> dict[int, str]:
         labels: dict[int, str] = {}
         for track_id, result in self._last_results.items():
@@ -143,20 +145,23 @@ class FaceRecognizer:
                 labels[track_id] = result.person_name
             elif result.result == FaceResultStatus.STRANGER:
                 labels[track_id] = "Stranger"
-        if labels:
-            logger.info("[Face] labels: %s", labels)
+        # 只在标签集合变化时输出（降噪）
+        if labels != self._last_logged_labels:
+            if labels:
+                logger.info("[Face] labels: %s", labels)
+            self._last_logged_labels = dict(labels)
         return labels
 
     def _recognize_track(self, frame: np.ndarray, track: Track) -> FaceResult | None:
         logger.debug("[Face] track %d: START crop", track.track_id)
         crop = _crop(frame, track.bbox)
         if crop is None:
-            logger.info("[Face] track %d: crop failed", track.track_id)
+            logger.debug("[Face] track %d: crop failed", track.track_id)
             return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
         height, width = crop.shape[:2]
         if width < _MIN_FACE_CROP_SIZE or height < _MIN_FACE_CROP_SIZE:
-            logger.info("[Face] track %d: crop too small %dx%d (min %d)",
-                         track.track_id, width, height, _MIN_FACE_CROP_SIZE)
+            logger.debug("[Face] track %d: crop too small %dx%d (min %d)",
+                          track.track_id, width, height, _MIN_FACE_CROP_SIZE)
             return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
 
         if self._face_lib is None:
@@ -170,21 +175,21 @@ class FaceRecognizer:
             locations = self._face_lib.face_locations(rgb_crop)
             logger.debug("[Face] track %d: face_locations done, found=%d", track.track_id, len(locations))
             if not locations:
-                logger.info("[Face] track %d: no face_locations found in %dx%d crop",
-                             track.track_id, width, height)
+                logger.debug("[Face] track %d: no face_locations found in %dx%d crop",
+                              track.track_id, width, height)
                 return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
             logger.debug("[Face] track %d: calling face_encodings", track.track_id)
             encodings = self._face_encodings(rgb_crop, locations)
             logger.debug("[Face] track %d: face_encodings done, count=%d", track.track_id, len(encodings))
             if not encodings:
-                logger.info("[Face] track %d: face found but encoding failed", track.track_id)
+                logger.debug("[Face] track %d: face found but encoding failed", track.track_id)
                 return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
         except Exception:
             logger.exception("Face recognition failed for track %s", track.track_id)
             return FaceResult(track.track_id, None, FaceResultStatus.NO_RESULT)
 
         if not self._known_encodings:
-            logger.info("[Face] track %d: STRANGER (no known people in DB)", track.track_id)
+            logger.debug("[Face] track %d: STRANGER (no known people in DB)", track.track_id)
             return FaceResult(track.track_id, None, FaceResultStatus.STRANGER)
 
         encoding = encodings[0]
@@ -196,9 +201,11 @@ class FaceRecognizer:
         )
         logger.debug("[Face] track %d: compare done, matched=%s", track.track_id, any(matches))
         if not any(matches):
+            logger.debug("[Face] track %d: STRANGER", track.track_id)
             return FaceResult(track.track_id, None, FaceResultStatus.STRANGER)
 
         match_index = matches.index(True)
+        logger.info("[Face] track %d: NAMED %s", track.track_id, self._known_names[match_index])
         return FaceResult(track.track_id, self._known_names[match_index], FaceResultStatus.NORMAL)
 
     def _face_encodings(self, rgb_crop: np.ndarray, locations: list[tuple[int, int, int, int]]) -> list[np.ndarray]:

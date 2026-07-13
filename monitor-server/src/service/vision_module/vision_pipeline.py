@@ -299,7 +299,10 @@ class AIPipeline:
         _hold_count = 0
         _push_count = 0
         _loop_last_log = time.monotonic()
+        _total_frame_count = 0       # 诊断：累计帧数（检测 stall）
+        _yolo_crash_count = 0       # 诊断：YOLO 崩溃计数
 
+        logger.info("[Pipeline] START loop view=%d", view_id)
         while self._running:
             # ── 时钟门控：等够整拍再开始处理，消除 asyncio 拥堵偏差 ──
             _now = time.monotonic()
@@ -322,6 +325,7 @@ class AIPipeline:
             self._next_frame_due = time.monotonic() + self._push_interval
 
             _loop_frame_count += 1
+            _total_frame_count += 1
             _t0 = time.monotonic()
             success, frame, ts, fid = self._reader.read()
             _t1 = time.monotonic()
@@ -353,7 +357,12 @@ class AIPipeline:
                 merge_started = True
 
             # YOLO 检测
-            detections = await self._yolo.detect_and_publish(frame, view_id)
+            try:
+                detections = await self._yolo.detect_and_publish(frame, view_id)
+            except Exception:
+                logger.exception("[Pipeline] YOLO crash view=%d frame=%d", view_id, _total_frame_count)
+                _yolo_crash_count += 1
+                detections = []  # 空列表让后续逻辑退化
             _t2 = time.monotonic()
 
             # 帧上下文
@@ -429,16 +438,17 @@ class AIPipeline:
                 if self._reader.open_time > 0 and self._reader.stream_pos_ms > 0:
                     _elapsed = (time.time() - self._reader.open_time) * 1000.0
                     _buf_ms = _elapsed - self._reader.stream_pos_ms
-                logger.info("[obs] FPS=%.1f | r=%.0f y=%.0f hk=%.0f dr=%.0f ms | pipe=%.0f age=%.0fms buf=%.0fms hold=%d sink=%d",
+                logger.info("[obs] FPS=%.1f | r=%.0f y=%.0f hk=%.0f dr=%.0f ms | pipe=%.0f age=%.0fms buf=%.0fms hold=%d sink=%d total=%d yc=%d",
                             _fps, _read_ms, _yolo_ms, _hooks_ms, _draw_ms, _pipe_ms,
                             _frame_age * 1000, _buf_ms, _hold_count,
-                            _loop_frame_count - _push_count)
+                            _loop_frame_count - _push_count,
+                            _total_frame_count, _yolo_crash_count)
                 _loop_frame_count = 0
                 _hold_count = 0
                 _push_count = 0
                 _loop_last_log = _tn
 
-        logger.info("Pipeline main loop exited for view_id=%d", view_id)
+        logger.info("[Pipeline] EXIT loop view=%d reason=loop_end", view_id)
 
     # ── Reopen helpers ──────────────────────────
 
