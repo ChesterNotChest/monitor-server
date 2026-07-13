@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     DEBUG_WEB_STREAM: bool = False
     DEBUG_FLV_TRANSMIT: bool = False
 
+    # --- 管理员账户 ---
+    ADMIN_DEFAULT_PASSWORD: str = "admin123"
+
     # --- JWT 认证 ---
     JWT_SECRET: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"

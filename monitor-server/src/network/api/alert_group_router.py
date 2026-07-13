@@ -12,7 +12,7 @@ router = APIRouter(prefix="/alert-groups", tags=["告警分级"])
 _perm = Depends(require_permission("alert_group:manage"))
 
 
-@router.get("", response_model=list[AlertGroupResponse])
+@router.get("/", response_model=list[AlertGroupResponse])
 def list_groups(db: Session = Depends(get_db), _user=_perm):
     """列出所有告警分组。
 
@@ -22,7 +22,7 @@ def list_groups(db: Session = Depends(get_db), _user=_perm):
 
 
 @router.post(
-    "",
+    "/",
     response_model=AlertGroupResponse,
     status_code=201,
     responses={409: {"description": "分组名称已存在"}},
@@ -36,7 +36,7 @@ def create_group(body: AlertGroupCreate, db: Session = Depends(get_db), _user=_p
 
 
 @router.put(
-    "/{group_id}",
+    "/{group_id}/",
     response_model=AlertGroupResponse,
     responses={404: {"description": "分组不存在"}},
 )
@@ -51,7 +51,7 @@ def update_group(group_id: int, body: AlertGroupCreate, db: Session = Depends(ge
 
 
 @router.delete(
-    "/{group_id}",
+    "/{group_id}/",
     status_code=204,
     responses={404: {"description": "分组不存在"}},
 )

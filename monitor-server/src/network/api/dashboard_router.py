@@ -11,7 +11,7 @@ from src.service import dashboard_task
 router = APIRouter(prefix="/dashboard", tags=["仪表板"])
 
 
-@router.get("/stats", response_model=DashboardStats)
+@router.get("/stats/", response_model=DashboardStats)
 def stats(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("dashboard:view")),
@@ -23,7 +23,7 @@ def stats(
     return dashboard_task.get_stats(db)
 
 
-@router.get("/trends", response_model=DashboardTrends)
+@router.get("/trends/", response_model=DashboardTrends)
 def trends(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("dashboard:view")),

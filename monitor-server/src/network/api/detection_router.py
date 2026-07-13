@@ -20,7 +20,7 @@ _perm = Depends(require_permission("detection:manage"))
 entity_router = APIRouter(prefix="/detection/entity-types", tags=["实体类型枚举"])
 
 
-@entity_router.get("", response_model=list[DetectionTypeResponse])
+@entity_router.get("/", response_model=list[DetectionTypeResponse])
 def list_entities(db: Session = Depends(get_db), _user=_perm):
     """列出所有实体类型。
 
@@ -30,7 +30,7 @@ def list_entities(db: Session = Depends(get_db), _user=_perm):
 
 
 @entity_router.post(
-    "",
+    "/",
     response_model=DetectionTypeResponse,
     status_code=201,
     responses={409: {"description": "实体类型已存在"}},
@@ -44,7 +44,7 @@ def create_entity(body: DetectionTypeCreate, db: Session = Depends(get_db), _use
 
 
 @entity_router.put(
-    "/{item_id}",
+    "/{item_id}/",
     response_model=DetectionTypeResponse,
     responses={404: {"description": "实体类型不存在"}},
 )
@@ -59,7 +59,7 @@ def update_entity(item_id: int, body: DetectionTypeCreate, db: Session = Depends
 
 
 @entity_router.delete(
-    "/{item_id}",
+    "/{item_id}/",
     status_code=204,
     responses={404: {"description": "实体类型不存在"}},
 )
@@ -77,7 +77,7 @@ def delete_entity(item_id: int, db: Session = Depends(get_db), _user=_perm):
 action_router = APIRouter(prefix="/detection/action-types", tags=["行为类型枚举"])
 
 
-@action_router.get("", response_model=list[DetectionTypeResponse])
+@action_router.get("/", response_model=list[DetectionTypeResponse])
 def list_actions(db: Session = Depends(get_db), _user=_perm):
     """列出所有行为类型。
 
@@ -87,7 +87,7 @@ def list_actions(db: Session = Depends(get_db), _user=_perm):
 
 
 @action_router.post(
-    "",
+    "/",
     response_model=DetectionTypeResponse,
     status_code=201,
     responses={409: {"description": "行为类型已存在"}},
@@ -101,7 +101,7 @@ def create_action(body: DetectionTypeCreate, db: Session = Depends(get_db), _use
 
 
 @action_router.put(
-    "/{item_id}",
+    "/{item_id}/",
     response_model=DetectionTypeResponse,
     responses={404: {"description": "行为类型不存在"}},
 )
@@ -116,7 +116,7 @@ def update_action(item_id: int, body: DetectionTypeCreate, db: Session = Depends
 
 
 @action_router.delete(
-    "/{item_id}",
+    "/{item_id}/",
     status_code=204,
     responses={404: {"description": "行为类型不存在"}},
 )
@@ -134,7 +134,7 @@ def delete_action(item_id: int, db: Session = Depends(get_db), _user=_perm):
 sound_router = APIRouter(prefix="/detection/sound-types", tags=["声音类型枚举"])
 
 
-@sound_router.get("", response_model=list[DetectionTypeResponse])
+@sound_router.get("/", response_model=list[DetectionTypeResponse])
 def list_sounds(db: Session = Depends(get_db), _user=_perm):
     """列出所有声音类型。
 
@@ -144,7 +144,7 @@ def list_sounds(db: Session = Depends(get_db), _user=_perm):
 
 
 @sound_router.post(
-    "",
+    "/",
     response_model=DetectionTypeResponse,
     status_code=201,
     responses={409: {"description": "声音类型已存在"}},
@@ -158,7 +158,7 @@ def create_sound(body: DetectionTypeCreate, db: Session = Depends(get_db), _user
 
 
 @sound_router.put(
-    "/{item_id}",
+    "/{item_id}/",
     response_model=DetectionTypeResponse,
     responses={404: {"description": "声音类型不存在"}},
 )
@@ -173,7 +173,7 @@ def update_sound(item_id: int, body: DetectionTypeCreate, db: Session = Depends(
 
 
 @sound_router.delete(
-    "/{item_id}",
+    "/{item_id}/",
     status_code=204,
     responses={404: {"description": "声音类型不存在"}},
 )
@@ -190,17 +190,17 @@ def delete_sound(item_id: int, db: Session = Depends(get_db), _user=_perm):
 
 fence_event_router = APIRouter(prefix="/detection/fence-event-types", tags=["围栏事件类型"])
 
-@fence_event_router.get("", response_model=list[DetectionTypeResponse])
+@fence_event_router.get("/", response_model=list[DetectionTypeResponse])
 def list_fence_events(db: Session = Depends(get_db), _user=_perm):
     return FenceEventTypeRepo(db).all()
 
 
-@fence_event_router.post("", response_model=DetectionTypeResponse, status_code=201)
+@fence_event_router.post("/", response_model=DetectionTypeResponse, status_code=201)
 def create_fence_event(body: DetectionTypeCreate, db: Session = Depends(get_db), _user=_perm):
     return FenceEventTypeRepo(db).create(name=body.name)
 
 
-@fence_event_router.put("/{item_id}", response_model=DetectionTypeResponse)
+@fence_event_router.put("/{item_id}/", response_model=DetectionTypeResponse)
 def update_fence_event(item_id: int, body: DetectionTypeCreate, db: Session = Depends(get_db), _user=_perm):
     r = FenceEventTypeRepo(db).update(item_id, name=body.name)
     if r is None:
@@ -208,7 +208,7 @@ def update_fence_event(item_id: int, body: DetectionTypeCreate, db: Session = De
     return r
 
 
-@fence_event_router.delete("/{item_id}", status_code=204)
+@fence_event_router.delete("/{item_id}/", status_code=204)
 def delete_fence_event(item_id: int, db: Session = Depends(get_db), _user=_perm):
     if not FenceEventTypeRepo(db).delete(item_id):
         raise HTTPException(404)

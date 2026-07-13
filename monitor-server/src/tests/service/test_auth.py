@@ -38,7 +38,7 @@ def client(db):
 
 class TestLogin:
     def test_login_success(self, client, db):
-        resp = client.post("/api/v1/auth/login", json={
+        resp = client.post("/api/v1/auth/login/", json={
             "username": "test_admin",
             "password": "test123",
         })
@@ -50,7 +50,7 @@ class TestLogin:
         assert data["user"]["role"] == "operator"
 
     def test_login_wrong_password(self, client):
-        resp = client.post("/api/v1/auth/login", json={
+        resp = client.post("/api/v1/auth/login/", json={
             "username": "test_admin",
             "password": "wrong",
         })
@@ -64,7 +64,7 @@ class TestLogin:
             role=Role.SECURITY_GUARD,
             is_active=False,
         )
-        resp = client.post("/api/v1/auth/login", json={
+        resp = client.post("/api/v1/auth/login/", json={
             "username": "inactive_user",
             "password": "pw",
         })
@@ -74,24 +74,24 @@ class TestLogin:
 class TestMe:
     def test_me_with_valid_token(self, client):
         # Login
-        resp = client.post("/api/v1/auth/login", json={
+        resp = client.post("/api/v1/auth/login/", json={
             "username": "test_admin", "password": "test123",
         })
         token = resp.json()["access_token"]
 
         # GET /me
-        resp = client.get("/api/v1/auth/me", headers={
+        resp = client.get("/api/v1/auth/me/", headers={
             "Authorization": f"Bearer {token}",
         })
         assert resp.status_code == 200
         assert resp.json()["username"] == "test_admin"
 
     def test_me_without_token(self, client):
-        resp = client.get("/api/v1/auth/me")
+        resp = client.get("/api/v1/auth/me/")
         assert resp.status_code == 401  # HTTPBearer returns 401 for missing header
 
     def test_me_with_invalid_token(self, client):
-        resp = client.get("/api/v1/auth/me", headers={
+        resp = client.get("/api/v1/auth/me/", headers={
             "Authorization": "Bearer invalid.token.here",
         })
         assert resp.status_code == 401
@@ -99,6 +99,6 @@ class TestMe:
 
 class TestLogout:
     def test_logout_ok(self, client):
-        resp = client.post("/api/v1/auth/logout")
+        resp = client.post("/api/v1/auth/logout/")
         assert resp.status_code == 200
         assert resp.json() == {"ok": True}

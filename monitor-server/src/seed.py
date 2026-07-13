@@ -23,14 +23,15 @@ def _generate_password(length: int = 16) -> str:
 
 
 def seed_admin():
-    """如果 users 表为空，创建管理员账户并写密码文件。"""
+    """如果 users 表为空，创建管理员账户。密码从 ADMIN_DEFAULT_PASSWORD 配置读取。"""
+    from src.config import settings
     db = SessionLocal()
     try:
         repo = UserRepo(db)
         if repo.count() > 0:
             return
 
-        password = _generate_password()
+        password = settings.ADMIN_DEFAULT_PASSWORD
         repo.create(
             username="admin",
             password_hash=hash_password(password),
@@ -39,11 +40,7 @@ def seed_admin():
         )
         db.commit()
 
-        with open(ADMIN_PASSWORD_FILE, "w", encoding="utf-8") as f:
-            f.write(f"管理员账户\n用户名: admin\n密码: {password}\n")
-            f.write("请在首次登录后修改密码，并在生产部署前删除此文件。\n")
-
-        print(f"[seed] 已创建管理员账户 admin，密码已写入 {ADMIN_PASSWORD_FILE}")
+        print(f"[seed] 已创建管理员账户 admin，密码={password}")
     finally:
         db.close()
 

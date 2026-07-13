@@ -14,7 +14,7 @@ router = APIRouter(prefix="/users", tags=["用户管理"])
 _perm = Depends(require_permission("user:manage"))
 
 
-@router.get("", response_model=list[UserResponse])
+@router.get("/", response_model=list[UserResponse])
 def list_users(db: Session = Depends(get_db), _user=_perm):
     """列出所有用户。
 
@@ -24,7 +24,7 @@ def list_users(db: Session = Depends(get_db), _user=_perm):
 
 
 @router.post(
-    "",
+    "/",
     response_model=UserResponse,
     status_code=201,
     responses={400: {"description": "无效角色"}, 409: {"description": "用户名已存在"}},
@@ -49,7 +49,7 @@ def create_user(
 
 
 @router.put(
-    "/{user_id}/role",
+    "/{user_id}/role/",
     response_model=UserResponse,
     responses={400: {"description": "无效角色"}, 404: {"description": "用户不存在"}},
 )
@@ -67,7 +67,7 @@ def update_role(user_id: int, role: str, db: Session = Depends(get_db), _user=_p
 
 
 @router.put(
-    "/{user_id}/deactivate",
+    "/{user_id}/deactivate/",
     response_model=OkResponse,
     responses={404: {"description": "用户不存在"}},
 )
