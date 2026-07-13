@@ -312,7 +312,7 @@ class AIPipeline:
             # ── 缓冲排空：grab()（不解码）丢弃积压帧，追赶实时 ──
             _target = self._next_frame_due
             _drain_count = 0
-            while (_drain_count < 50 and
+            while (_drain_count < 10 and
                    (_target - time.monotonic()) < -self._push_interval):
                 if not self._reader.grab():
                     break

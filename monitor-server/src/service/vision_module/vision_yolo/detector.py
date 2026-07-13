@@ -79,8 +79,14 @@ class YoloDetector:
     def load(self) -> bool:
         """加载 YOLO 模型。"""
         model_path = Path(settings.YOLO_MODEL_PATH)
+        # cwd 可能不在 monitor-server/ 目录（如从项目根运行测试），
+        # 尝试相对 config.py 所在目录解析
         if not model_path.exists():
-            logger.error("YOLO model not found: %s", model_path)
+            _alt = Path(__file__).resolve().parents[4] / settings.YOLO_MODEL_PATH
+            if _alt.exists():
+                model_path = _alt
+        if not model_path.exists():
+            logger.error("YOLO model not found: %s (cwd=%s)", model_path, os.getcwd())
             self._state = YoloState.ERROR
             return False
         try:

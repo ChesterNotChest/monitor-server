@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 _COLOR_NORMAL = (0, 255, 0)       # 绿色 — 正常
 _COLOR_IMPORTANT = (0, 215, 255)  # 黄色 — 关注
 _COLOR_DANGER = (0, 0, 255)       # 红色 — 危险
+_COLOR_PERSON = (0, 255, 0)       # 绿色 — Person 检测框
 _COLOR_TEXT = (255, 255, 255)     # 白色文字
 _COLOR_LABEL_BG = (0, 0, 0)       # 文字背景黑色
 
