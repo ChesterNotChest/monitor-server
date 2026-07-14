@@ -57,6 +57,8 @@ class TestSpoofLabels:
     def test_spoof_label(self, recognizer_fake):
         r = recognizer_fake
         r._last_results[1] = FaceResult(track_id=1, person_name=None, result=FaceResultStatus.SPOOF)
+        if hasattr(r, "_active_ids"):
+            r._active_ids = {1}
         labels = r.get_face_labels()
         assert labels[1] == "Spoof"
 

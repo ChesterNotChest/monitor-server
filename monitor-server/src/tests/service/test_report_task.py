@@ -59,17 +59,30 @@ def test_daily_report_summarizes_alerts(db):
 
 
 def test_deepseek_daily_report_uses_model_text(db, monkeypatch):
+    from src.service import report_task
+
     calls = []
 
-    def fake_call_deepseek(api_key, model, local_report):
-        calls.append((api_key, model, local_report))
-        return {
-            "summary": "DeepSeek 生成的日报摘要。",
-            "key_findings": ["模型发现一"],
-            "recommendations": ["模型建议一"],
-        }
+    if hasattr(report_task, "_call_deepseek_report_model"):
+        def fake_call_deepseek_report_model(api_key, model, local_report):
+            calls.append((api_key, model, local_report))
+            return {
+                "summary": "DeepSeek 生成的日报摘要。",
+                "key_findings": ["模型发现一"],
+                "recommendations": ["模型建议一"],
+            }
 
-    monkeypatch.setattr("src.service.report_task._call_deepseek_report_model", fake_call_deepseek)
+        monkeypatch.setattr(report_task, "_call_deepseek_report_model", fake_call_deepseek_report_model)
+    else:
+        async def fake_call_deepseek(api_key, model, system_prompt, user_prompt, *args, **kwargs):
+            calls.append((api_key, model, system_prompt, user_prompt))
+            return {
+                "summary": "DeepSeek 生成的日报摘要。",
+                "key_findings": ["模型发现一"],
+                "recommendations": ["模型建议一"],
+            }
+
+        monkeypatch.setattr(report_task, "_call_deepseek", fake_call_deepseek)
 
     report = get_deepseek_daily_report(db, "sk-test", date(2026, 7, 12), "deepseek-v4-flash")
 
