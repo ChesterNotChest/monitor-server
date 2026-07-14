@@ -55,8 +55,9 @@ pipeline {
                         set -eu
                         docker run --rm \
                           -v "$MODEL_DIR:/app/src/third-party:ro" \
+                          -v "$MODEL_DIR/uniface:/root/.uniface/models:ro" \
                           ${DOCKER_IMAGE}:${BUILD_NUMBER} \
-                          sh -c 'test -f /app/src/third-party/yolo/yolo11n.pt && python -m pytest src/tests/ --tb=short'
+                          sh -c 'test -f /app/src/third-party/yolo/yolo11n.pt && test -f /root/.uniface/models/minifasnet_v2.onnx && python -m pytest src/tests/ --tb=short'
                     '''
                 }
             }
