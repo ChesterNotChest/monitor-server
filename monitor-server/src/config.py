@@ -58,7 +58,8 @@ class Settings(BaseSettings):
     YOLO_MODEL_PATH: str = "src/third-party/yolo/yolo11n.pt"
     YOLO_DEVICE: str = "cpu"
     STREAM_RECONNECT_MAX_RETRIES: int = 10
-    FACE_MATCH_TOLERANCE: float = 0.5
+    FACE_MATCH_TOLERANCE: float = 0.42
+    FACE_MATCH_MARGIN: float = 0.06
     FACE_SKIP_FRAMES: int = 5
     YAMNET_THRESHOLD: float = 0.5
     DWELL_TIME_DEFAULT: int = 10

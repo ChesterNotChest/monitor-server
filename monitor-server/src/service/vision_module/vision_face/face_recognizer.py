@@ -78,7 +78,10 @@ class FaceRecognizer:
         self._named_confirm: dict[int, int] = {}
         self._stranger_confirm: dict[int, int] = {}  # track → 连续 Stranger 帧数
         self._spoof_count: dict[int, int] = {}  # track → 连续 Spoof 帧数
+        self._cached_since: dict[int, int] = {}  # track → 锁定后经历的识别帧数（定期复核用）
+        self._absent_frames: dict[int, int] = {}  # track → 连续离场帧数（超时清理用）
         self._frame_counter = 0
+        self._recognition_counter = 0  # 识别帧计数（非跳帧）
         self._face_lib = self._load_face_recognition()
         self._spoofer = self._load_spoofer() if enable_spoof else None
         self._loaded_version: int = -1
@@ -138,10 +141,25 @@ class FaceRecognizer:
         self._active_ids = {t.track_id for t in tracks}
 
         _is_recognition_frame = (self._frame_counter % self.skip_frames == 1)
+        if _is_recognition_frame:
+            self._recognition_counter += 1
 
-        # 1. 已缓存的 track 直接返回
-        uncached = [t for t in tracks if t.track_id not in self._last_results]
-        if not uncached:
+        _REVERIFY_INTERVAL = 20  # 每 20 个识别帧 (~6.7s) 复核一次已锁定的 track
+
+        # 1. 区分未缓存 / 需复核 / 直接复用
+        uncached: list[Track] = []
+        for t in tracks:
+            if t.track_id not in self._last_results:
+                uncached.append(t)
+            elif _is_recognition_frame:
+                age = self._cached_since.get(t.track_id, 0) + 1
+                self._cached_since[t.track_id] = age
+                if age >= _REVERIFY_INTERVAL:
+                    uncached.append(t)
+                    self._cached_since.pop(t.track_id, None)
+
+        # 所有 track 都已缓存且未到复核点
+        if not uncached and all(t.track_id in self._last_results for t in tracks):
             return [self._last_results[t.track_id] for t in tracks]
 
         # 2. 跳帧
@@ -198,6 +216,7 @@ class FaceRecognizer:
                 logger.debug("[dbg] track %d NAMED confirm=%d/2 name=%s", track.track_id, c, result.person_name)
                 if c >= 2:
                     self._last_results[track.track_id] = result
+                    self._cached_since[track.track_id] = 0  # 新锁定，重置复核计时
                     self._named_confirm.pop(track.track_id, None)
                     logger.info("[dbg] track %d NAMED locked: %s", track.track_id, result.person_name)
             else:
@@ -207,27 +226,42 @@ class FaceRecognizer:
                 logger.debug("[dbg] track %d STRANGER confirm=%d/2", track.track_id, c)
                 if c >= 2:
                     self._last_results[track.track_id] = result
+                    self._cached_since[track.track_id] = 0  # 新锁定，重置复核计时
                     self._stranger_confirm.pop(track.track_id, None)
                     logger.info("[dbg] track %d STRANGER locked", track.track_id)
                 self._named_confirm.pop(track.track_id, None)
 
-        # 5. LRU 清理
+        # 5. LRU 清理 + 离场超时
+        _ABSENT_MAX_FRAMES = 150  # NORMAL/SPOOF 离场 ~10s 后强制清理（防 track_id 复用）
         active_ids = {t.track_id for t in tracks}
         stale = [tid for tid in self._last_results if tid not in active_ids]
         for tid in stale:
             result = self._last_results.get(tid)
             if result is not None and result.result in (FaceResultStatus.NORMAL, FaceResultStatus.SPOOF):
-                pass
+                absent = self._absent_frames.get(tid, 0) + 1
+                self._absent_frames[tid] = absent
+                if absent >= _ABSENT_MAX_FRAMES:
+                    self._last_results.pop(tid, None)
+                    self._absent_frames.pop(tid, None)
+                    self._cached_since.pop(tid, None)
+                    self._named_confirm.pop(tid, None)
             else:
                 self._last_results.pop(tid, None)
                 self._named_confirm.pop(tid, None)
                 self._stranger_confirm.pop(tid, None)
                 self._spoof_count.pop(tid, None)
+                self._absent_frames.pop(tid, None)
+                self._cached_since.pop(tid, None)
+        # 仍在场的 track 重置离场计数
+        for tid in active_ids:
+            self._absent_frames.pop(tid, None)
         _MAX_LAST = 512
         if len(self._last_results) > _MAX_LAST:
             overflow = sorted(self._last_results.keys())[:len(self._last_results) - _MAX_LAST]
             for tid in overflow:
                 self._last_results.pop(tid, None)
+                self._cached_since.pop(tid, None)
+                self._absent_frames.pop(tid, None)
 
         return [self._last_results[t.track_id] for t in tracks
                 if t.track_id in self._last_results]
@@ -287,12 +321,23 @@ class FaceRecognizer:
         else:
             encoding = encodings[0]
 
-        # 用 face_distance 找最近的匹配，而非第一个 True
+        # 用 face_distance 找最近的匹配，要求与第二名拉开 margin
         distances = self._face_lib.face_distance(self._known_encodings, encoding)
         best_idx: int = int(np.argmin(distances))
         best_dist: float = float(distances[best_idx])
         if best_dist > self.tolerance:
             return FaceResult(track.track_id, None, FaceResultStatus.STRANGER)
+
+        # 多候选时要求最优匹配有足够区分度（margin），避免擦边命中
+        if len(distances) >= 2:
+            sorted_dists = sorted(float(d) for d in distances)
+            margin = sorted_dists[1] - sorted_dists[0]
+            if margin < settings.FACE_MATCH_MARGIN:
+                logger.info(
+                    "[Face] track %d: margin too low (best=%.3f 2nd=%.3f margin=%.3f<%s) → STRANGER",
+                    track.track_id, sorted_dists[0], sorted_dists[1], margin, settings.FACE_MATCH_MARGIN,
+                )
+                return FaceResult(track.track_id, None, FaceResultStatus.STRANGER)
 
         logger.info("[Face] track %d: NAMED %s (dist=%.3f)", track.track_id, self._known_names[best_idx], best_dist)
         return FaceResult(track.track_id, self._known_names[best_idx], FaceResultStatus.NORMAL)
@@ -325,20 +370,24 @@ class FaceRecognizer:
         self, frame: np.ndarray, tracks: list[Track], view_id: int,
     ) -> list[FaceResult]:
         results = self.recognize(frame, tracks)
-        if results:
-            await event_bus.publish(FACE, {
-                "view_id": view_id,
-                "faces": [
-                    {
-                        "track_id": r.track_id,
-                        "person_name": r.person_name,
-                        "result": r.result.name,
-                        "result_id": int(r.result_id),
-                    }
-                    for r in results
-                ],
-                "labels": self.get_face_labels(),
-            })
+        labels = self.get_face_labels()
+        logger.debug(
+            "[Face] publish view=%d tracks=%d results=%d labels=%s",
+            view_id, len(tracks), len(results), labels,
+        )
+        await event_bus.publish(FACE, {
+            "view_id": view_id,
+            "faces": [
+                {
+                    "track_id": r.track_id,
+                    "person_name": r.person_name,
+                    "result": r.result.name,
+                    "result_id": int(r.result_id),
+                }
+                for r in results
+            ],
+            "labels": labels,
+        })
         return results
 
     # ── Internals ────────────────────────────────

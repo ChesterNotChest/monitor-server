@@ -151,9 +151,8 @@ async def _on_face_event(payload: dict) -> None:
     global _face_labels
     labels = payload.get("labels", {})
     logger.info("[FaceSub] called, labels=%s has_faces=%s", labels, payload.get("faces", "?")[:1])
-    if labels:
-        _face_labels = {int(k): v for k, v in labels.items()}
-    else:
+    _face_labels = {int(k): v for k, v in labels.items()} if labels else {}
+    if not labels:
         logger.warning("[FaceSub] payload has no 'labels' key: %s", list(payload.keys()))
 
 
@@ -185,11 +184,10 @@ async def _on_action_event(payload: dict) -> None:
     global _action_labels
     actions: list[dict] = payload.get("actions", [])
     logger.info("[ActionSub] called, actions=%s", len(actions))
-    if actions:
-        _action_labels = {
-            a["track_id"]: f"Action-{a.get('action_type_id', '?')}"
-            for a in actions if "track_id" in a
-        }
+    _action_labels = {
+        a["track_id"]: f"Action-{a.get('action_type_id', '?')}"
+        for a in actions if "track_id" in a
+    }
 
 
 # 启动时注册订阅
