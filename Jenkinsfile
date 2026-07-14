@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        node {
+            label 'built-in'
+            customWorkspace '/var/jenkins_home/workspace/serverCICD'
+        }
+    }
 
     options {
         timestamps()
@@ -31,6 +36,20 @@ pipeline {
     }
 
     stages {
+        stage("Validate Workspace") {
+            steps {
+                sh '
+                    set -eu
+                    case "$WORKSPACE" in
+                        *@*)
+                            echo "Refusing to run from temporary Jenkins workspace: $WORKSPACE" >&2
+                            exit 1
+                            ;;
+                    esac
+                '
+            }
+        }
+
         stage("Checkout") {
             steps {
                 checkout scm
