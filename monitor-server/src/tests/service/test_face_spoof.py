@@ -56,13 +56,13 @@ class TestSpoofCheck:
 class TestSpoofLabels:
     def test_spoof_label(self, recognizer_fake):
         r = recognizer_fake
-        r._last_results[1] = FaceResult(1, None, FaceResultStatus.SPOOF)
+        r._last_results[1] = FaceResult(track_id=1, person_name=None, result=FaceResultStatus.SPOOF)
         labels = r.get_face_labels()
         assert labels[1] == "Spoof"
 
     def test_spoof_persists_in_lru(self, recognizer_fake):
         r = recognizer_fake
-        r._last_results[1] = FaceResult(1, None, FaceResultStatus.SPOOF)
+        r._last_results[1] = FaceResult(track_id=1, person_name=None, result=FaceResultStatus.SPOOF)
         # LRU cleanup with empty active_ids → SPOOF should survive
         import types
         # simulate stale cleanup logic inline
@@ -77,7 +77,7 @@ class TestSpoofLabels:
 
     def test_stranger_cleaned_in_lru(self, recognizer_fake):
         r = recognizer_fake
-        r._last_results[2] = FaceResult(2, None, FaceResultStatus.STRANGER)
+        r._last_results[2] = FaceResult(track_id=2, person_name=None, result=FaceResultStatus.STRANGER)
         active_ids = set()
         for tid in list(r._last_results):
             result = r._last_results.get(tid)
