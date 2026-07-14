@@ -179,13 +179,15 @@ def _build_escalation_message(event, users: list, from_role: str, view_name: str
         u.username if u.dingtalk_mobile else f"{u.username}(未绑定手机号)"
         for u in users
     )
+    mobiles_with_phone = [u for u in users if u.dingtalk_mobile]
+    mobiles = "@" + " @".join(u.dingtalk_mobile for u in mobiles_with_phone) if mobiles_with_phone else ""
 
     title = f"⚠️ 告警未响应 - 已上报"
     text = (
         f"## ⚠️ 告警未响应\n\n"
         f"**原告警**: {sev_name} - {view_name}\n"
         f"**{from_role}** 未在 {settings.ESCALATION_TIMEOUT_SECONDS} 秒内响应\n"
-        f"**已上报至**: {names}\n\n"
+        f"**已上报至**: {names} {mobiles}\n\n"
         f"---\n\n"
         f"请在 {settings.ESCALATION_TIMEOUT_SECONDS} 秒内确认处理\n\n"
         f"[点击确认处理]({ack_url})"
@@ -452,9 +454,11 @@ async def _send_simple_notification(text: str, at_mobiles: list[str]) -> None:
 
 
 def _build_ack_url(alert_id: int) -> str:
-    """构建确认链接（含短期 token）。"""
+    """构建确认链接（含短期 token），使用公网地址。"""
     from src.config import settings
-    host = settings.HOST if settings.HOST != "0.0.0.0" else "127.0.0.1"
+    host = settings.SRS_PUBLIC_HOST or settings.HOST
+    if host == "0.0.0.0":
+        host = "127.0.0.1"
     token = _generate_ack_token(alert_id)
     return f"http://{host}:{settings.PORT}/api/v1/alerts/{alert_id}/ack?token={token}"
 

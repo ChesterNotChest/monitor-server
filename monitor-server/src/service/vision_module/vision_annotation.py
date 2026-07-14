@@ -385,13 +385,20 @@ def draw_server_timestamp(frame: np.ndarray) -> np.ndarray:
 
 
 def draw_sound_overlay(frame: np.ndarray) -> np.ndarray:
-    """左下角音频检测标签（红字），格式 ``SOUND: Gunshot (3s ago)``。"""
+    """左下角音频检测标签（红字），TTL 后自动清除。
+
+    显示格式 ``SOUND: Gunshot (3s ago)``，持续 10 秒后消失。
+    """
     import cv2 as _cv2
     import time as _time
     global _sound_label, _sound_time
     if _sound_label is None:
         return frame
     elapsed = _time.time() - _sound_time if _sound_time > 0 else 0
+    if elapsed > 10.0:
+        _sound_label = None
+        _sound_time = 0.0
+        return frame
     text = f"SOUND: {_sound_label} ({elapsed:.0f}s ago)"
     h, w = frame.shape[:2]
     (tw, th), _ = _cv2.getTextSize(text, _cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)

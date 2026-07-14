@@ -186,10 +186,6 @@ class FenceEngine:
         for (fid, tid), state in list(self._states.items()):
             if tid in active_ids:
                 continue
-            fence = self._find_fence(fid)
-            if fence is None:
-                self._drop_key((fid, tid))
-                continue
             if state == FenceState.ENTERED:
                 events.append(FenceEvent(fence_id=fid, track_id=tid,
                                           result=FenceEventResult.ENTERED, entered=False))
@@ -234,9 +230,20 @@ class FenceEngine:
 
 
 def _expand_polygon(coords: list[tuple[float, float]], dist: int) -> list[tuple[float, float]]:
-    """向量外扩：将多边形每条边向外平移 dist 像素，取交点。"""
+    """向量外扩：将多边形每条边向外平移 dist 像素，取交点。
+
+    自动检测 winding order：若为 CW（用户随手顺时针绘制），先反转至 CCW。
+    """
     if dist <= 0:
         return coords
+    # 确保 CCW（shoelace signed area > 0 = CCW）
+    area = sum(
+        coords[i][0] * coords[(i + 1) % len(coords)][1]
+        - coords[(i + 1) % len(coords)][0] * coords[i][1]
+        for i in range(len(coords))
+    )
+    if area < 0:
+        coords = list(reversed(coords))
     result: list[tuple[float, float]] = []
     n = len(coords)
     for i in range(n):

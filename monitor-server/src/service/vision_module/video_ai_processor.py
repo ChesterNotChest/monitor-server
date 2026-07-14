@@ -131,12 +131,13 @@ class VideoAIProcessor:
 
         fence_events = await self.fence_engine.check_and_publish(tracks, ctx.timestamp)
         if fence_events:
+            view_fence = _fel.setdefault(self.view_id, {})
             for e in fence_events:
                 if e.entered:
                     suffix = ":TOO_CLOSE" if e.result == FenceEventResult.TOO_CLOSE else ":IN"
-                    _fel[e.track_id] = f"Fence-{e.fence_id}{suffix}"
+                    view_fence[e.track_id] = f"Fence-{e.fence_id}{suffix}"
                 else:
-                    _fel.pop(e.track_id, None)  # 离开围栏：清除标签
+                    view_fence.pop(e.track_id, None)  # 离开围栏：清除标签
         ctx.fence_polygons = self.fence_engine.fence_polygons
         ctx.fence_expanded_polygons = self.fence_engine.expanded_polygons
 
