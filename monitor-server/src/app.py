@@ -61,7 +61,8 @@ async def print_urls():
     from src.seed import seed_admin, seed_alerts, seed_virtual_node, seed_fence_events
 
 
-    # 确保数据库表存在（非测试环境可能未建表）
+    # 确保所有模型已导入，再建表
+    import src.models.daily_report  # noqa: F401 ─ 确保 report_settings 等表被创建
     Base.metadata.create_all(bind=engine)
 
     try:

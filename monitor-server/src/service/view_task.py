@@ -165,14 +165,22 @@ def delete_view(db: Session, view_id: int) -> bool:
 
         db.commit()
 
-        # 停止 AI 推理管线
+        # 停止 AI 推理管线（阻塞等待，确保管线完全停止后再 commit）
         import asyncio
-        from src.service.vision_task import stop_pipeline
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(stop_pipeline(view_id))
-        except RuntimeError:
-            asyncio.run(stop_pipeline(view_id))
+        from src.service.vision_task import stop_pipeline, _pipeline_loops
+        owner_loop = _pipeline_loops.get(view_id)
+        if owner_loop is not None and owner_loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(stop_pipeline(view_id), owner_loop)
+            try:
+                future.result(timeout=15)
+                logger.info("Pipeline stopped for deleted view_id=%d", view_id)
+            except Exception:
+                logger.exception("stop_pipeline failed for view_id=%d", view_id)
+        else:
+            try:
+                asyncio.run(stop_pipeline(view_id))
+            except Exception:
+                logger.exception("stop_pipeline failed for view_id=%d", view_id)
 
         return True
     except Exception:

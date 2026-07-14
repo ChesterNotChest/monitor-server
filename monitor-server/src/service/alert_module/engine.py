@@ -205,6 +205,17 @@ class AlertEngine:
 
                         self._ongoing[key] = {}
                     except Exception:
+                        from sqlalchemy.exc import IntegrityError
+                        import sys as _sys
+                        _exc = _sys.exc_info()[1]
+                        if isinstance(_exc, IntegrityError) and "view_id" in str(_exc):
+                            self._running = False
+                            logger.error(
+                                "[AlertEngine v=%d] View deleted (FK violation) — engine stopped",
+                                self._view_id,
+                            )
+                            db.rollback()
+                            return
                         logger.exception("Failed to create alert")
                 else:
                     # 检查录制是否已停止（MAX_DUR/wind_down）→ 重置状态允许新录制

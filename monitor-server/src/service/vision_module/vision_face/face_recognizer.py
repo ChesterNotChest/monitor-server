@@ -280,16 +280,22 @@ class FaceRecognizer:
         if not self._known_encodings:
             return FaceResult(track.track_id, None, FaceResultStatus.STRANGER)
 
-        encoding = encodings[0]
-        matches = self._face_lib.compare_faces(
-            self._known_encodings, encoding, tolerance=self.tolerance,
-        )
-        if not any(matches):
+        # 多脸时取最大的那张（忽略侧脸/路人）
+        if len(encodings) > 1:
+            best_idx = max(range(len(locations)), key=lambda i: _face_area(locations[i]))
+            encoding = encodings[best_idx]
+        else:
+            encoding = encodings[0]
+
+        # 用 face_distance 找最近的匹配，而非第一个 True
+        distances = self._face_lib.face_distance(self._known_encodings, encoding)
+        best_idx: int = int(np.argmin(distances))
+        best_dist: float = float(distances[best_idx])
+        if best_dist > self.tolerance:
             return FaceResult(track.track_id, None, FaceResultStatus.STRANGER)
 
-        match_index = matches.index(True)
-        logger.info("[Face] track %d: NAMED %s", track.track_id, self._known_names[match_index])
-        return FaceResult(track.track_id, self._known_names[match_index], FaceResultStatus.NORMAL)
+        logger.info("[Face] track %d: NAMED %s (dist=%.3f)", track.track_id, self._known_names[best_idx], best_dist)
+        return FaceResult(track.track_id, self._known_names[best_idx], FaceResultStatus.NORMAL)
 
     # ── Labels ───────────────────────────────────
 
@@ -374,6 +380,12 @@ class FaceRecognizer:
             logger.warning("face_recognition is not installed; face module returns NO_RESULT")
             return None
         return face_recognition
+
+
+def _face_area(loc: tuple[int, int, int, int]) -> int:
+    """face_location (top, right, bottom, left) 的面积。"""
+    top, right, bottom, left = loc
+    return (right - left) * (bottom - top)
 
 
 def _crop(frame: np.ndarray, bbox: list[float]) -> np.ndarray | None:

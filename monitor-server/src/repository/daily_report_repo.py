@@ -58,14 +58,13 @@ class ReportSettingRepo:
         return row.value if row else None
 
     def set(self, key: str, value: str) -> None:
-        from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
-
-        stmt = sqlite_upsert(ReportSetting).values(key=key, value=value)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["key"],
-            set_=dict(value=value),
+        existing = self.db.scalar(
+            select(ReportSetting).where(ReportSetting.key == key)
         )
-        self.db.execute(stmt)
+        if existing:
+            existing.value = value
+        else:
+            self.db.add(ReportSetting(key=key, value=value))
         self.db.flush()
 
     def get_api_key(self) -> str | None:
