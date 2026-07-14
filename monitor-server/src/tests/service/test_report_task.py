@@ -1,8 +1,4 @@
 from datetime import date, datetime
-import json
-
-import httpx
-
 from src.constants import SeverityLevel
 from src.models.situation_event import SituationEvent
 from src.repository.alert_group_repo import AlertGroupRepo
@@ -63,32 +59,17 @@ def test_daily_report_summarizes_alerts(db):
 
 
 def test_deepseek_daily_report_uses_model_text(db, monkeypatch):
-    class FakeResponse:
-        status_code = 200
-
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "choices": [{
-                    "message": {
-                        "content": json.dumps({
-                            "summary": "DeepSeek 生成的日报摘要。",
-                            "key_findings": ["模型发现一"],
-                            "recommendations": ["模型建议一"],
-                        }, ensure_ascii=False)
-                    }
-                }]
-            }
-
     calls = []
 
-    def fake_post(url, headers, json, timeout):
-        calls.append((url, headers, json, timeout))
-        return FakeResponse()
+    def fake_call_deepseek(api_key, model, local_report):
+        calls.append((api_key, model, local_report))
+        return {
+            "summary": "DeepSeek 生成的日报摘要。",
+            "key_findings": ["模型发现一"],
+            "recommendations": ["模型建议一"],
+        }
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr("src.service.report_task._call_deepseek_report_model", fake_call_deepseek)
 
     report = get_deepseek_daily_report(db, "sk-test", date(2026, 7, 12), "deepseek-v4-flash")
 
@@ -98,4 +79,5 @@ def test_deepseek_daily_report_uses_model_text(db, monkeypatch):
     assert report["ai_provider"] == "deepseek"
     assert report["ai_model"] == "deepseek-v4-flash"
     assert report["ai_generated"] is True
-    assert calls[0][1]["Authorization"] == "Bearer sk-test"
+    assert calls[0][0] == "sk-test"
+    assert calls[0][1] == "deepseek-v4-flash"

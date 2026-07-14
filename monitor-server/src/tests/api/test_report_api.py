@@ -2,7 +2,7 @@ from src.constants import API_PREFIX
 
 
 def test_daily_report_endpoint_empty(client, admin_headers):
-    resp = client.get(f"{API_PREFIX}/reports/daily?date=2026-07-12", headers=admin_headers)
+    resp = client.get(f"{API_PREFIX}/reports/daily/?date=2026-07-12", headers=admin_headers)
 
     assert resp.status_code == 200
     data = resp.json()
