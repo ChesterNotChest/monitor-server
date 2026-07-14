@@ -135,6 +135,7 @@ class FaceRecognizer:
     def recognize(self, frame: np.ndarray, tracks: list[Track]) -> list[FaceResult]:
         self._frame_counter += 1
         self._ensure_known_people()
+        self._active_ids = {t.track_id for t in tracks}
 
         _is_recognition_frame = (self._frame_counter % self.skip_frames == 1)
 
@@ -293,10 +294,13 @@ class FaceRecognizer:
     # ── Labels ───────────────────────────────────
 
     _last_logged_labels: dict[int, str] = {}
+    _active_ids: set[int] = set()  # 当前帧活跃 track，防止离场 SPOOF 信号泄漏
 
     def get_face_labels(self) -> dict[int, str]:
         labels: dict[int, str] = {}
         for track_id, result in self._last_results.items():
+            if track_id not in self._active_ids:
+                continue  # 已离场的 track 不参与标签/信号
             if result.result == FaceResultStatus.SPOOF:
                 labels[track_id] = "Spoof"
             elif result.result == FaceResultStatus.NORMAL and result.person_name:
