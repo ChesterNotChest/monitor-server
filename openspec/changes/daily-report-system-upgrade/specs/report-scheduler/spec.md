@@ -18,12 +18,12 @@
 ### Requirement: Midnight remainder supplement
 系统 SHALL 在次日凌晨 00:05 CST 补生成前一日 17:00~23:59 CST 范围的余量日报。
 
-- 补生成逻辑：读取前一日 17:00 的主日报，将时间范围扩展至 00:00~23:59，重新计算统计层数据，覆盖原记录
+- 补生成逻辑：读取前一日 17:00 的主日报，将时间范围扩展至 00:00~23:59，重新计算统计层数据，覆盖原记录；**同时重新生成 `insights_json`（若配置了 API Key）**
 - `stats_json.time_range_end` 更新为 `23:59`
 
 #### Scenario: Supplement merges remainder
 - **WHEN** 凌晨 00:05 触发补充
-- **THEN** 前一日日报的 `stats_json` 更新为全天数据，`time_range_end` 变为 `23:59`
+- **THEN** 前一日日报的 `stats_json` 更新为全天数据，`time_range_end` 变为 `23:59`；`insights_json` 基于全天数据重新生成
 
 #### Scenario: Supplement on missing primary report
 - **WHEN** 前一日 17:00 的日报因服务不可用而缺失

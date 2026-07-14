@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     ESCALATION_TIMEOUT_SECONDS: int = 60
     ESCALATION_MAX_LEVELS: int = 2
 
+    # --- 日报 AI 洞察 ---
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_REPORT_MODEL: str = "deepseek-v4-flash"
+
     # --- JWT 认证 ---
     JWT_SECRET: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"

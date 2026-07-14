@@ -298,3 +298,72 @@ curl -s http://127.0.0.1:8002/api/v1/views/ -H "Authorization: Bearer $TOKEN"
 # 查看 obs 日志
 grep "\[obs\]" <server_output_file>
 ```
+
+---
+
+## 八、日报系统
+
+### 配置
+
+在 `.env` 中设置（可选，不设置则仅统计层可用）：
+
+```env
+# DeepSeek API Key（申请地址: https://platform.deepseek.com）
+DEEPSEEK_API_KEY=sk-xxxxxxxx
+# 模型选择（推荐 deepseek-v4-flash，性价比最高）
+DEEPSEEK_REPORT_MODEL=deepseek-v4-flash
+```
+
+安装依赖后重启 Server：
+
+```bash
+pip install apscheduler>=3.10.0
+python run.py
+```
+
+### 定时规则
+
+| 时间 | 动作 |
+|------|------|
+| 每日 17:00 CST | 自动生成当日日报（00:00~17:00），含统计层 + AI 洞察（若配置 Key） |
+| 每日 00:05 CST | 补充前一日余量（17:00~23:59），覆盖为全天数据，重新生成 AI 洞察 |
+| 服务启动时 | 检查当日日报是否缺失，缺失则补生成 |
+
+所有时间均为北京时间 (UTC+8)。
+
+### API 端点
+
+```bash
+TOKEN=$(curl -s -X POST http://127.0.0.1:8002/api/v1/auth/login/ \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}' | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# 获取持久化日报（新格式: stats + insights）
+curl -s "http://127.0.0.1:8002/api/v1/reports/daily/persisted/?date=2026-07-14" \
+  -H "Authorization: Bearer $TOKEN" | python -m json.tool | head -40
+
+# 手动即时生成（00:00~now CST）
+curl -s -X POST "http://127.0.0.1:8002/api/v1/reports/daily/generate-now/" \
+  -H "Authorization: Bearer $TOKEN" | python -m json.tool | head -20
+
+# 查看/配置 API Key
+curl -s "http://127.0.0.1:8002/api/v1/reports/settings/" \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -s -X PUT "http://127.0.0.1:8002/api/v1/reports/settings/" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"api_key":"sk-your-key","model":"deepseek-v4-flash"}'
+
+# 旧版日报端点（向后兼容）
+curl -s "http://127.0.0.1:8002/api/v1/reports/daily/?date=2026-07-14" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 前端入口
+
+- 日报页面: `http://localhost:5173/report/2026-07-14`
+- 「立即生成当天日报」按钮 → POST `/daily/generate-now/`
+- 「API Key」按钮 → 齿轮图标弹窗配置
+- 日期选择器 → 切换历史日报
+- 页面底部 → 显示"北京时间 (UTC+8)"和"下次自动生成时间"

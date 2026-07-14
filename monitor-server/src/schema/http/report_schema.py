@@ -38,3 +38,60 @@ class DeepSeekDailyReportRequest(BaseModel):
     date: dt_date | None = Field(default=None, description="Report date in YYYY-MM-DD")
     api_key: str = Field(..., min_length=1, description="User-provided DeepSeek API key")
     model: str = Field(default="deepseek-v4-flash", description="DeepSeek model name")
+
+
+# ── Persisted daily report (new API shape) ──
+
+class DailyStats(BaseModel):
+    """统计层输出（规则引擎，永远可用）。"""
+    period: str = Field("daily")
+    date: str = Field(..., description="Report date YYYY-MM-DD")
+    time_range_start: str = Field(..., description="ISO start with +08:00 offset")
+    time_range_end: str = Field(..., description="ISO end with +08:00 offset")
+    total_alerts: int
+    risk_level: str
+    by_severity: list[ReportItem]
+    top_exceptions: list[ReportItem]
+    hourly_trend: list[DailyTrendPoint]
+    by_view: list[ReportItem] = Field(default_factory=list)
+    entity_types: list[ReportItem] = Field(default_factory=list)
+
+
+class DailyInsights(BaseModel):
+    """洞察层输出（AI 生成，可选）。"""
+    partial: bool = False
+    summary: str
+    key_findings: list[str]
+    pattern_analysis: dict | None = None
+    trend_forecast: dict | None = None
+    risk_distribution: list[dict] = Field(default_factory=list)
+    recommendations: list[str]
+    generated_at: str | None = None
+
+
+class PersistedDailyReportResponse(BaseModel):
+    """持久化日报响应（新 API）。stats 永远存在，insights 可选。"""
+    report_date: str = Field(..., description="Report date YYYY-MM-DD")
+    stats: DailyStats
+    insights: DailyInsights | None = None
+    ai_provider: str | None = None
+    ai_model: str | None = None
+    regenerated_count: int = 0
+    generated_at: str | None = None
+    next_scheduled_at: str | None = Field(default=None, description="Next auto-generation time in CST")
+    generated_now: bool = Field(default=False, description="True if this was manual generation")
+
+
+class ReportSettingsResponse(BaseModel):
+    """API Key 设置响应。"""
+    has_key: bool = False
+    key_preview: str | None = None
+    model: str = "deepseek-v4-flash"
+    source: str | None = None  # "env" or "user"
+    next_scheduled_at: str | None = None
+
+
+class ReportSettingsRequest(BaseModel):
+    """API Key 设置请求。"""
+    api_key: str | None = Field(default=None, description="New API key, empty string to clear")
+    model: str | None = Field(default=None, description="Model name override")

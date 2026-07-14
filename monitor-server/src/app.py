@@ -133,6 +133,16 @@ async def print_urls():
     except Exception as e:
         logging.getLogger(__name__).warning("[Recovery] Escalation timer recovery skipped: %s", e)
 
+    # 日报定时调度初始化
+    try:
+        from src.service.schedule_report import init_scheduler, _startup_backfill
+        init_scheduler()
+        import asyncio as _asyncio3
+        _asyncio3.create_task(_startup_backfill())
+        logging.getLogger(__name__).info("[Recovery] Report scheduler initialized")
+    except Exception as e:
+        logging.getLogger(__name__).warning("[Recovery] Report scheduler skipped: %s", e)
+
 
 @app.on_event("shutdown")
 async def shutdown_cleanup():

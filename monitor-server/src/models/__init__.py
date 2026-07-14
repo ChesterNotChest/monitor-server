@@ -25,6 +25,7 @@ from .recording import Recording
 from .log_entry import LogEntry
 from .user import User
 from .escalation_log import EscalationLog
+from .daily_report import DailyReport, WeeklyReport, ReportSetting
 
 __all__ = [
     "Node",
@@ -51,4 +52,7 @@ __all__ = [
     "LogEntry",
     "User",
     "EscalationLog",
+    "DailyReport",
+    "WeeklyReport",
+    "ReportSetting",
 ]
