@@ -18,6 +18,7 @@ services:
       DINGTALK_WEBHOOK_URL: ${DINGTALK_WEBHOOK_URL:-}
       STREAM_SERVER_URL: ${STREAM_SERVER_URL:-}
       YOLO_DEVICE: ${YOLO_DEVICE:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
       RTMP_HOST: stream-server
       RTMP_PORT: 1935
       SRS_HOST: stream-server
