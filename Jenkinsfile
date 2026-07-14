@@ -38,7 +38,7 @@ pipeline {
     stages {
         stage("Validate Workspace") {
             steps {
-                sh '
+                sh '''
                     set -eu
                     case "$WORKSPACE" in
                         *@*)
@@ -46,7 +46,7 @@ pipeline {
                             exit 1
                             ;;
                     esac
-                '
+                '''
             }
         }
 
