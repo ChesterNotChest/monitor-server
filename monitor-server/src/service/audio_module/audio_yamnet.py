@@ -283,6 +283,8 @@ class YamnetRunner:
                     dangers.append((s, label, aid))
 
         # 2. 按分数降序，取 top-2（危险检测）
+        if dangers:
+            logger.info("[dbg] YAMNet dangers=%d top=%s", len(dangers), dangers[0][1])
         dangers.sort(reverse=True)
         label_parts = [f"{name} ({score:.2f})" for score, name, _ in dangers[:2]]
 

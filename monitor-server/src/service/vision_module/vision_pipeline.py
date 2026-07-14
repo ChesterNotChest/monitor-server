@@ -333,14 +333,16 @@ class AIPipeline:
                     break
                 _drain_count += 1
             if _drain_count:
-                logger.debug("[drain] dropped %d frames", _drain_count)
+                logger.info("[drain] dropped %d frames", _drain_count)
             self._next_frame_due = time.monotonic() + self._push_interval
 
             _loop_frame_count += 1
             _total_frame_count += 1
+            logger.info("[dbg] frame %d wait=%.3fs", _total_frame_count, _wait)
             _t0 = time.monotonic()
             success, frame, ts, fid = self._reader.read()
             _t1 = time.monotonic()
+            logger.info("[dbg] frame %d read=%.0fms success=%s", _total_frame_count, (_t1-_t0)*1000, success)
             if not success:
                 if self._reader.state == FrameReaderState.ERROR:
                     logger.error("FrameReader in ERROR state — attempting reopen")
@@ -456,6 +458,25 @@ class AIPipeline:
                             _frame_age * 1000, _buf_ms, _hold_count,
                             _loop_frame_count - _push_count,
                             _total_frame_count, _yolo_crash_count)
+                # 慢帧自愈：首帧 pipe > 3s（YOLO 暖机）→ RTMP 缓冲爆炸 → 立即重连，不 drain
+                if _total_frame_count <= 3 and _pipe_ms > self._SLOW_FRAME_RESET_MS and self._reader.state == FrameReaderState.ACTIVE:
+                    logger.warning("[Pipeline] slow frame pipe=%.0fms>%dms → reset FrameReader (skip drain)",
+                                  _pipe_ms, self._SLOW_FRAME_RESET_MS)
+                    self._reader.close()
+                    self._reader.open(self._video_id, self._video_name,
+                                     stream_url=self._stream_url)
+                    self._next_frame_due = time.monotonic()
+
+                # buf 自愈：延迟绝对值 > 15s → 重连 RTMP 丢弃全部积压
+                if abs(_buf_ms) > self._BUF_AUTO_RESET_MS and self._reader.state == FrameReaderState.ACTIVE:
+                    logger.warning("[Pipeline] buf=%.0fms > %dms → auto reset FrameReader",
+                                  _buf_ms, self._BUF_AUTO_RESET_MS)
+                    self._reader.reset_error()
+                    self._reader.close()
+                    self._reader.open(self._video_id, self._video_name,
+                                     stream_url=self._stream_url)
+                    self._next_frame_due = time.monotonic()
+
                 _loop_frame_count = 0
                 _hold_count = 0
                 _push_count = 0
@@ -465,6 +486,8 @@ class AIPipeline:
 
     # ── Reopen helpers ──────────────────────────
 
+    _BUF_AUTO_RESET_MS = 15000  # RTMP 缓冲 > 15s → 自动重连
+    _SLOW_FRAME_RESET_MS = 3000  # 单帧 pipe > 3s → 首帧暖机 reset
     _REOPEN_INITIAL_BACKOFF = 2.0
     _REOPEN_MAX_BACKOFF = 60.0
     _REOPEN_BACKOFF_MULT = 2.0

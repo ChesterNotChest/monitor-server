@@ -153,6 +153,7 @@ class FaceRecognizer:
                 tid for tid, r in self._last_results.items()
                 if r.result == FaceResultStatus.SPOOF
             }
+            logger.debug("[dbg] spoof: total=%d confirmed=%d", len(tracks), len(_spoof_confirmed))
             _spoof_processed = 0
             for track in tracks:
                 if track.track_id in _spoof_confirmed:
@@ -187,16 +188,20 @@ class FaceRecognizer:
             if result.person_name:
                 c = self._named_confirm.get(track.track_id, 0) + 1
                 self._named_confirm[track.track_id] = c
+                logger.debug("[dbg] track %d NAMED confirm=%d/2 name=%s", track.track_id, c, result.person_name)
                 if c >= 2:
                     self._last_results[track.track_id] = result
                     self._named_confirm.pop(track.track_id, None)
+                    logger.info("[dbg] track %d NAMED locked: %s", track.track_id, result.person_name)
             else:
                 # STRANGER: 需 2 次确认防误报
                 c = self._stranger_confirm.get(track.track_id, 0) + 1
                 self._stranger_confirm[track.track_id] = c
+                logger.debug("[dbg] track %d STRANGER confirm=%d/2", track.track_id, c)
                 if c >= 2:
                     self._last_results[track.track_id] = result
                     self._stranger_confirm.pop(track.track_id, None)
+                    logger.info("[dbg] track %d STRANGER locked", track.track_id)
                 self._named_confirm.pop(track.track_id, None)
 
         # 5. LRU 清理
