@@ -68,6 +68,7 @@ class FaceRecognizer:
         known_people: Iterable[tuple[np.ndarray, str]] | None = None,
         tolerance: float | None = None,
         skip_frames: int | None = None,
+        enable_spoof: bool = True,
     ) -> None:
         self.tolerance = settings.FACE_MATCH_TOLERANCE if tolerance is None else tolerance
         self.skip_frames = max(1, settings.FACE_SKIP_FRAMES if skip_frames is None else skip_frames)
@@ -77,7 +78,7 @@ class FaceRecognizer:
         self._named_confirm: dict[int, int] = {}
         self._frame_counter = 0
         self._face_lib = self._load_face_recognition()
-        self._spoofer = self._load_spoofer()
+        self._spoofer = self._load_spoofer() if enable_spoof else None
         self._loaded_version: int = -1
         self._last_load_time: float = 0.0
 

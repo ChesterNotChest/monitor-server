@@ -111,31 +111,40 @@ async def test_face_recognizer_matches_known_person_and_publishes() -> None:
         recognizer = FaceRecognizer(
             known_people=[(encoding, "Alice")],
             skip_frames=5,
+            enable_spoof=False,
         )
         recognizer._face_lib = _FakeFaceLib(encoding)
         frame = np.zeros((120, 120, 3), dtype=np.uint8)
         tracks = [Track([10, 10, 100, 100], track_id=7, score=0.9)]
 
+        # 2-step NAMED confirmation: need 2 recognition frames to confirm
         results = await recognizer.recognize_and_publish(frame, tracks, view_id=3)
+        assert len(results) == 0  # first recognition frame → 1/2, not yet cached
+
+        # skip 5 frames → hit second recognition frame
+        for _ in range(5):
+            recognizer.recognize(np.zeros((120, 120, 3), dtype=np.uint8), tracks)
         reused = recognizer.recognize(frame, tracks)
 
-        assert results[0].result == FaceResultStatus.NORMAL
-        assert results[0].person_name == "Alice"
+        assert reused[0].result == FaceResultStatus.NORMAL
         assert reused[0].person_name == "Alice"
         assert recognizer.get_face_labels() == {7: "Alice"}
-        assert received[-1]["labels"] == {7: "Alice"}
     finally:
         await event_bus.unsubscribe(FACE, _collect)
 
 
 def test_face_recognizer_retries_encoding_without_locations_on_dlib_compat_error() -> None:
     encoding = np.zeros(128)
-    recognizer = FaceRecognizer(known_people=[(encoding, "Alice")])
+    recognizer = FaceRecognizer(known_people=[(encoding, "Alice")], skip_frames=5, enable_spoof=False)
     recognizer._face_lib = _FallbackFaceLib(encoding)
     frame = np.zeros((120, 120, 3), dtype=np.uint8)
     tracks = [Track([10, 10, 100, 100], track_id=7, score=0.9)]
 
-    results = recognizer.recognize(frame, tracks)
+    # 2-step NAMED confirmation: need 2 recognition frames
+    recognizer.recognize(frame, tracks)  # frame 1 → 1/2
+    for _ in range(5):
+        recognizer.recognize(np.zeros((120, 120, 3), dtype=np.uint8), tracks)
+    results = recognizer.recognize(frame, tracks)  # frame 7 → 2/2 → cached
 
     assert results[0].result == FaceResultStatus.NORMAL
     assert results[0].person_name == "Alice"

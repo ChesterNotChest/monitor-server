@@ -62,7 +62,7 @@ def test_seed_alerts_backfills_partial_enum_tables(monkeypatch):
         assert db.query(EntityType).count() == 12
         assert db.query(ActionType).count() == 16
         assert db.query(SoundType).count() == 15
-        assert db.query(FaceRecognitionResult).count() == 3
+        assert db.query(FaceRecognitionResult).count() == 4  # NO_RESULT, STRANGER, NORMAL, SPOOF
         assert db.query(AlertGroup).filter_by(name="默认告警组").count() == 1
         assert db.query(ExceptionDef).filter_by(name="人员出现").count() == 1
         assert db.query(ResponseAction).count() == 5
