@@ -89,6 +89,9 @@ class _FakeFaceLib:
     def compare_faces(self, known_encodings, face_encoding, tolerance=0.6):
         return [np.linalg.norm(known - face_encoding) <= tolerance for known in known_encodings]
 
+    def face_distance(self, known_encodings, face_encoding):
+        return np.array([np.linalg.norm(known - face_encoding) for known in known_encodings])
+
 
 class _FallbackFaceLib(_FakeFaceLib):
     def face_encodings(self, _rgb_crop, _locations=None):
