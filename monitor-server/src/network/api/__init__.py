@@ -15,6 +15,7 @@ from .node_router import router as node_router
 from .replay import router as replay_router
 from .report_router import router as report_router
 from .user_router import router as user_router
+from .vehicle_router import router as vehicle_router
 from .view_router import router as view_router
 
 routers = [
@@ -37,6 +38,7 @@ routers = [
     replay_router,
     report_router,
     user_router,
+    vehicle_router,
     view_router,
 ]
 

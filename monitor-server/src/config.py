@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     YOLO_DEVICE: str = "cpu"
     YOLO_CONFIDENCE: float = 0.5
     YOLO_MODEL_PATH: str = "src/third-party/yolo/yolo11n.pt"
+    # --- 车辆检测旁路 ---
+    VEHICLE_BYPASS_ONLY: bool = False  # true=仅车辆检测（跳过 SlowFast/Face/Fence/Alert/YAMNet）
+    VEHICLE_CONFIDENCE: float = 0.4
+    VEHICLE_IOU_THRESHOLD: float = 0.5
+    VEHICLE_DEDUP_FRAMES: int = 30
     YOLO_DEVICE: str = "cpu"
     STREAM_RECONNECT_MAX_RETRIES: int = 10
     FACE_MATCH_TOLERANCE: float = 0.42

@@ -11,6 +11,7 @@ import logging
 from src.service.alert_module.engine import AlertEngine
 from src.service.audio_module.audio_yamnet import YamnetRunner
 from src.service.vision_module.vision_pipeline import AIPipeline
+from src.config import settings
 from src.service.vision_module.vision_event_bus import event_bus, RECORDING
 from src.service import replay_task
 
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # ── 活跃管线注册表 ──
 _active_pipelines: dict[int, AIPipeline] = {}
+_vehicle_processors: dict[int, "VehicleProcessor"] = {}
 _alert_engines: dict[int, AlertEngine] = {}
 _yamnet_runners: dict[int, YamnetRunner] = {}
 
@@ -90,34 +92,51 @@ async def start_pipeline(view_id: int, video_id: int, video_name: str,
     _pipeline_stop_events[view_id] = asyncio.Event()
 
     # 1.5 注册 Part B 模块 (ByteTrack + Face + Fence + SlowFast)
+    if not settings.VEHICLE_BYPASS_ONLY:
+        try:
+            from src.extensions import SessionLocal
+            from src.service.vision_module.video_ai_processor import register_video_ai_hooks
+            db = SessionLocal()
+            register_video_ai_hooks(pipeline, view_id, db=db)
+            logger.info("Part B hooks registered for view_id=%d", view_id)
+        except Exception:
+            logger.warning("Failed to register Part B hooks for view_id=%d", view_id, exc_info=True)
+    else:
+        logger.info("VEHICLE_BYPASS_ONLY=true, skipping Part B (SlowFast/Face/Fence/ByteTrack)")
+
+    # 1.6 注册车辆检测旁路 (VehicleProcessor — 独立 hook，与 Part B 解耦)
     try:
-        from src.extensions import SessionLocal
-        from src.service.vision_module.video_ai_processor import register_video_ai_hooks
-        db = SessionLocal()
-        register_video_ai_hooks(pipeline, view_id, db=db)
-        logger.info("Part B hooks registered for view_id=%d", view_id)
+        from src.service.vision_module.vision_vehicle import VehicleProcessor
+        vehicle_proc = VehicleProcessor()
+        _vehicle_processors[view_id] = vehicle_proc
+        pipeline.register_frame_hook(vehicle_proc.process_frame)
+        logger.info("VehicleProcessor hook registered for view_id=%d", view_id)
     except Exception:
-        logger.warning("Failed to register Part B hooks for view_id=%d", view_id, exc_info=True)
+        logger.warning("Failed to register VehicleProcessor for view_id=%d", view_id, exc_info=True)
 
     # 2. 启动告警引擎 (Part C)
-    alert = AlertEngine(view_id)
-    await alert.start()
-    _alert_engines[view_id] = alert
-    logger.info("AlertEngine started for view_id=%d", view_id)
+    if not settings.VEHICLE_BYPASS_ONLY:
+        alert = AlertEngine(view_id)
+        await alert.start()
+        _alert_engines[view_id] = alert
+        logger.info("AlertEngine started for view_id=%d", view_id)
+    else:
+        logger.info("VEHICLE_BYPASS_ONLY=true, skipping AlertEngine")
 
     # 3. 有音频设备时启动 YAMNet (Part C)
-    if audio_id is not None:
+    if not settings.VEHICLE_BYPASS_ONLY and audio_id is not None:
         yamnet = YamnetRunner(view_id, audio_id, audio_name)
         asyncio.create_task(yamnet.run())
         _yamnet_runners[view_id] = yamnet
         logger.info("YamnetRunner started for view_id=%d audio_id=%d", view_id, audio_id)
 
     # 4. 初始化录制缓冲区 + 注册 RECORDING 订阅者
-    replay_task.start_buffer(view_id)
-    logger.info("Recording buffer started for view_id=%d", view_id)
+    if not settings.VEHICLE_BYPASS_ONLY:
+        replay_task.start_buffer(view_id)
+        logger.info("Recording buffer started for view_id=%d", view_id)
 
     global _recording_subscribed
-    if not _recording_subscribed:
+    if not _recording_subscribed and not settings.VEHICLE_BYPASS_ONLY:
         await event_bus.subscribe(RECORDING, _on_recording)
         _recording_subscribed = True
         logger.info("RECORDING subscriber registered")
@@ -166,6 +185,10 @@ async def _stop_pipeline_on_owner_loop(view_id: int) -> None:
     pipeline = _active_pipelines.pop(view_id, None)
     if pipeline:
         await pipeline.stop()
+
+    # 清理车辆检测旁路
+    _vehicle_processors.pop(view_id, None)
+    logger.debug("VehicleProcessor cleaned up for view_id=%d", view_id)
 
     _pipeline_loops.pop(view_id, None)
     event = _pipeline_stop_events.pop(view_id, None)

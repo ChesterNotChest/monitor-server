@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
 import numpy as np
@@ -23,6 +23,7 @@ from src.service.vision_module.vision_annotation import (
     draw_sound_overlay, draw_server_timestamp,
     _face_labels, _fence_labels, _action_labels,
 )
+from src.service.vision_module.vision_vehicle.processor import draw_vehicle_detections
 from src.service.vision_module.vision_merger import (
     start_stream_merge, push_frame, stop_stream_merge,
 )
@@ -47,6 +48,7 @@ class FrameContext:
     action_regions: dict[int, tuple[int, int, int, int]] | None = None  # SlowFast padded crop
     fence_polygons: list[list[tuple[float, float]]] | None = None  # 围栏多边形
     fence_expanded_polygons: list[list[tuple[float, float]]] | None = None  # 安全距离扩展多边形
+    vehicle_detections: list[Detection] = field(default_factory=list)  # VehicleProcessor 产出（旁路模块填充）
 
 
 # ── 类型别名 ──────────────────────────────────
@@ -432,6 +434,8 @@ class AIPipeline:
             # 诊断叠加：Server 时间戳（左上角）+ 音频事件（左下角）
             annotated = draw_server_timestamp(annotated)
             annotated = draw_sound_overlay(annotated)
+            if ctx.vehicle_detections:
+                annotated = draw_vehicle_detections(annotated, ctx.vehicle_detections)
 
             # 推流 + 缓存用于断流时 frame hold
             self._latest_frame = annotated
