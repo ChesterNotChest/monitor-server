@@ -28,6 +28,8 @@ class VideoAIProcessor:
         self.slowfast_runner = SlowFastRunner(
             enable_real_kinetics=True, enable_real_ava=True, ava_confidence_threshold=0.3,
         )
+        # 预加载模型到 GPU——避免首帧推理时 CUDA 分配卡 YOLO
+        self.slowfast_runner.load()
         self.fence_engine = FenceEngine(view_id=view_id, db=db)
         self._frame_count = 0  # 启动错峰计数器
 
