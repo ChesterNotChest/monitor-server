@@ -124,6 +124,18 @@ def delete_view(db: Session, view_id: int) -> bool:
         video_id = view.video_id
         audio_id = view.audio_id
 
+        # 清理关联录制文件（磁盘）
+        import os
+        from sqlalchemy import select
+        from src.models.recording import Recording
+        for rec in db.scalars(select(Recording).where(Recording.view_id == view_id)).all():
+            if rec.file_path and os.path.isfile(rec.file_path):
+                try:
+                    os.remove(rec.file_path)
+                    logger.info("Deleted recording file: %s", rec.file_path)
+                except OSError:
+                    logger.warning("Failed to delete recording file: %s", rec.file_path)
+
         # 先清围栏——围栏生命周期包含于 View
         from sqlalchemy import select
         from src.repository.electronic_fence_repo import ElectronicFenceRepo
