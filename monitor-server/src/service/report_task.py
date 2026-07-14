@@ -109,7 +109,7 @@ def build_daily_stats(db: Session, report_date: date | None = None,
         if event.view_id:
             view_name = f"View {event.view_id}"
             if hasattr(event, "monitor_view") and event.monitor_view:
-                view_name = getattr(event.monitor_view, "name", view_name)
+                view_name = getattr(event.monitor_view, "name", None) or view_name
             view_counter[view_name] += 1
 
         # entity_types from linked entities

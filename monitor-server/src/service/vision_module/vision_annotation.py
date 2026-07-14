@@ -147,13 +147,13 @@ def get_active_signals(
 
 
 async def _on_face_event(payload: dict) -> None:
-    """订阅 FACE topic，更新人脸标签映射。"""
+    """订阅 FACE topic，更新人脸标签映射（原地更新，保持引用一致）。"""
     global _face_labels
     labels = payload.get("labels", {})
-    logger.info("[FaceSub] called, labels=%s has_faces=%s", labels, payload.get("faces", "?")[:1])
-    _face_labels = {int(k): v for k, v in labels.items()} if labels else {}
-    if not labels:
-        logger.warning("[FaceSub] payload has no 'labels' key: %s", list(payload.keys()))
+    logger.info("[FaceSub] called, labels=%s", {int(k): v for k, v in labels.items()})
+    _face_labels.clear()
+    if labels:
+        _face_labels.update({int(k): v for k, v in labels.items()})
 
 
 async def _on_fence_event(payload: dict) -> None:
@@ -180,14 +180,15 @@ async def _on_fence_event(payload: dict) -> None:
 
 
 async def _on_action_event(payload: dict) -> None:
-    """订阅 ACTION topic，更新动作标签映射。"""
+    """订阅 ACTION topic，更新动作标签映射（原地更新，保持引用一致）。"""
     global _action_labels
     actions: list[dict] = payload.get("actions", [])
     logger.info("[ActionSub] called, actions=%s", len(actions))
-    _action_labels = {
+    _action_labels.clear()
+    _action_labels.update({
         a["track_id"]: f"Action-{a.get('action_type_id', '?')}"
         for a in actions if "track_id" in a
-    }
+    })
 
 
 # 启动时注册订阅
