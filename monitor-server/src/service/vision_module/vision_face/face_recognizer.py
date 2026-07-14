@@ -76,6 +76,7 @@ class FaceRecognizer:
         self._known_names: list[str] = []
         self._last_results: dict[int, FaceResult] = {}
         self._named_confirm: dict[int, int] = {}
+        self._stranger_confirm: dict[int, int] = {}  # track → 连续 Stranger 帧数
         self._frame_counter = 0
         self._face_lib = self._load_face_recognition()
         self._spoofer = self._load_spoofer() if enable_spoof else None
@@ -156,6 +157,9 @@ class FaceRecognizer:
             for track in tracks:
                 if track.track_id in _spoof_confirmed:
                     continue
+                x1, y1, x2, y2 = track.bbox
+                if (x2 - x1) < _MIN_FACE_CROP_SIZE or (y2 - y1) < _MIN_FACE_CROP_SIZE:
+                    continue  # 太小 → 不做 spoof
                 if _spoof_processed >= 3:
                     break
                 _spoof_processed += 1
@@ -178,6 +182,7 @@ class FaceRecognizer:
             _processed += 1
             if result is None or result.result == FaceResultStatus.NO_RESULT:
                 self._named_confirm.pop(track.track_id, None)
+                self._stranger_confirm.pop(track.track_id, None)
                 continue
             if result.person_name:
                 c = self._named_confirm.get(track.track_id, 0) + 1
@@ -186,7 +191,12 @@ class FaceRecognizer:
                     self._last_results[track.track_id] = result
                     self._named_confirm.pop(track.track_id, None)
             else:
-                self._last_results[track.track_id] = result
+                # STRANGER: 需 2 次确认防误报
+                c = self._stranger_confirm.get(track.track_id, 0) + 1
+                self._stranger_confirm[track.track_id] = c
+                if c >= 2:
+                    self._last_results[track.track_id] = result
+                    self._stranger_confirm.pop(track.track_id, None)
                 self._named_confirm.pop(track.track_id, None)
 
         # 5. LRU 清理
@@ -199,6 +209,7 @@ class FaceRecognizer:
             else:
                 self._last_results.pop(tid, None)
                 self._named_confirm.pop(tid, None)
+                self._stranger_confirm.pop(tid, None)
         _MAX_LAST = 512
         if len(self._last_results) > _MAX_LAST:
             overflow = sorted(self._last_results.keys())[:len(self._last_results) - _MAX_LAST]

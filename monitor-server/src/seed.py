@@ -121,6 +121,14 @@ _SOUND_NAMES = [
     "rain",             # YAMNetSoundType.RAIN = 13
     "footsteps",        # YAMNetSoundType.FOOTSTEPS = 14
     "silence",          # YAMNetSoundType.SILENCE = 15
+    "shout",            # YAMNetSoundType.SHOUT = 16
+    "yell",             # YAMNetSoundType.YELL = 17
+    "crying",           # YAMNetSoundType.CRYING = 18
+    "crowd",            # YAMNetSoundType.CROWD = 19
+    "civil_siren",      # YAMNetSoundType.CIVIL_SIREN = 20
+    "artillery",        # YAMNetSoundType.ARTILLERY = 21
+    "fireworks",        # YAMNetSoundType.FIREWORKS = 22
+    "firecracker",      # YAMNetSoundType.FIRECRACKER = 23
 ]
 
 _FACE_RESULT_NAMES = [
@@ -131,7 +139,6 @@ _FACE_RESULT_NAMES = [
 ]
 
 _DEFAULT_GROUP_NAME = "默认告警组"
-_DEFAULT_EXCEPTION_NAME = "人员出现"
 _DEFAULT_RESPONSE_ACTIONS = [
     ("TRIGGER_RECORDING", None),
     ("SEND_NOTIFICATION", "dingtalk_webhook"),
@@ -174,7 +181,7 @@ def seed_alerts():
     from src.models.sound_type import SoundType
     from src.models.face_recognition_result import FaceRecognitionResult
     from src.models.alert_group import AlertGroup
-    from src.models.exception import ExceptionDef, exception_entities
+    from src.models.exception import ExceptionDef, exception_entities, exception_actions, exception_sounds
     from src.models.response_action import ResponseAction, alert_group_responses
     from src.config import settings
 
@@ -239,33 +246,76 @@ def seed_alerts():
                         )
                     )
 
-        exc = db.query(ExceptionDef).filter(
-            ExceptionDef.name == _DEFAULT_EXCEPTION_NAME
-        ).first()
-        if exc is None:
+        # (name, severity, face_result_name, fence_event_id, action_names, sound_names, entity_names)
+        _EXCEPTION_DEFS: list[tuple] = [
+            ("陌生人",          SeverityLevel.WARNING,    "stranger",       None, None,                            None,                                          ["person"]),
+            ("假人",            SeverityLevel.WARNING,    "spoof",          None, None,                            None,                                          ["person"]),
+            ("安全距离",        SeverityLevel.WARNING,    None,             2,    None,                            None,                                          ["person"]),
+            ("进入禁区",        SeverityLevel.CRITICAL,   None,             1,    None,                            None,                                          ["person"]),
+            ("疑似打架",        SeverityLevel.WARNING,    None,             None, ["fighting"],                    None,                                          ["person"]),
+            ("打架: Screaming", SeverityLevel.EMERGENCY,  None,             None, ["fighting"],                    ["scream"],                                    ["person"]),
+            ("打架: Crying",    SeverityLevel.EMERGENCY,  None,             None, ["fighting"],                    ["crying"],                                    ["person"]),
+            ("打架: Crowd",     SeverityLevel.EMERGENCY,  None,             None, ["fighting"],                    ["crowd"],                                     ["person"]),
+            ("打架: Yell",      SeverityLevel.EMERGENCY,  None,             None, ["fighting"],                    ["yell"],                                      ["person"]),
+            ("打架: Shout",     SeverityLevel.EMERGENCY,  None,             None, ["fighting"],                    ["shout"],                                     ["person"]),
+            ("打架: Breaking",  SeverityLevel.EMERGENCY,  None,             None, ["fighting"],                    ["glass_breaking"],                            ["person"]),
+            ("倒地",            SeverityLevel.EMERGENCY,  None,             None, ["lying_down"],                  None,                                          ["person"]),
+            ("摔倒",            SeverityLevel.WARNING,    None,             None, ["falling"],                     None,                                          ["person"]),
+            ("吸烟",            SeverityLevel.CRITICAL,   None,             None, ["smoking"],                     None,                                          ["person"]),
+            ("人防警报",        SeverityLevel.CRITICAL,   None,             None, None,                            ["civil_siren"],                               None),
+            ("挥手",            SeverityLevel.WARNING,    None,             None, ["waving"],                      None,                                          ["person"]),
+            ("奔跑",            SeverityLevel.WARNING,    None,             None, ["running"],                     None,                                          ["person"]),
+            ("警报警报",        SeverityLevel.WARNING,    None,             None, None,                            ["alarm"],                                     None),
+            ("警笛警报",        SeverityLevel.WARNING,    None,             None, None,                            ["siren"],                                     None),
+            ("爆炸",            SeverityLevel.CRITICAL,   None,             None, None,                            ["explosion"],                                 None),
+            ("炮火",            SeverityLevel.CRITICAL,   None,             None, None,                            ["artillery"],                                 None),
+            ("枪击",            SeverityLevel.CRITICAL,   None,             None, None,                            ["gunshot"],                                   None),
+            ("烟花",            SeverityLevel.CRITICAL,   None,             None, None,                            ["fireworks"],                                 None),
+            ("鞭炮",            SeverityLevel.CRITICAL,   None,             None, None,                            ["firecracker"],                               None),
+        ]
+
+        _created = 0
+        for name, severity, face_name, fence_id, action_names, sound_names, entity_names in _EXCEPTION_DEFS:
+            exc = db.query(ExceptionDef).filter(ExceptionDef.name == name).first()
+            if exc is not None:
+                continue  # 已存在，跳过
+            face_id = None
+            if face_name:
+                fr = db.query(FaceRecognitionResult).filter(FaceRecognitionResult.name == face_name).first()
+                if fr:
+                    face_id = fr.id
             exc = ExceptionDef(
-                name=_DEFAULT_EXCEPTION_NAME,
-                severity=SeverityLevel.WARNING,
-                group_id=group.id,
+                name=name, severity=severity, group_id=group.id,
+                face_result_id=face_id, fence_event_id=fence_id,
             )
             db.add(exc)
             db.flush()
 
-        person = db.query(EntityType).filter(EntityType.name == "person").first()
-        if person is not None:
-            linked = db.execute(
-                exception_entities.select().where(
-                    exception_entities.c.exception_id == exc.id,
-                    exception_entities.c.entity_id == person.id,
-                )
-            ).first()
-            if linked is None:
-                db.execute(
-                    exception_entities.insert().values(
-                        exception_id=exc.id,
-                        entity_id=person.id,
-                    )
-                )
+            # 动作关联
+            if action_names:
+                for aname in action_names:
+                    action = db.query(ActionType).filter(ActionType.name == aname).first()
+                    if action:
+                        db.execute(
+                            exception_actions.insert().values(exception_id=exc.id, action_id=action.id)
+                        )
+            # 声音关联
+            if sound_names:
+                for sname in sound_names:
+                    sound = db.query(SoundType).filter(SoundType.name == sname).first()
+                    if sound:
+                        db.execute(
+                            exception_sounds.insert().values(exception_id=exc.id, sound_id=sound.id)
+                        )
+            # 实体关联
+            if entity_names:
+                for ename in entity_names:
+                    entity = db.query(EntityType).filter(EntityType.name == ename).first()
+                    if entity:
+                        db.execute(
+                            exception_entities.insert().values(exception_id=exc.id, entity_id=entity.id)
+                        )
+            _created += 1
 
         db.commit()
         print(
@@ -276,7 +326,7 @@ def seed_alerts():
             f"face_results={len(_FACE_RESULT_NAMES)}, "
             f"responses={len(_DEFAULT_RESPONSE_ACTIONS)}, "
             f"group='{_DEFAULT_GROUP_NAME}', "
-            f"exception='{_DEFAULT_EXCEPTION_NAME}'"
+            f"exceptions={_created} new"
         )
     finally:
         db.close()
