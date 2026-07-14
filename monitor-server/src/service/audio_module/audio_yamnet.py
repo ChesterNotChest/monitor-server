@@ -52,29 +52,21 @@ def _load_class_names() -> dict[int, str]:
 # （如 SCREAM→class 2 实际是 Conversation，GUNSHOT→430 实际是 Boom）。
 # 对照 yamnet_class_map.csv 逐条校正。
 SOUND_TYPE_MAP: dict[int, int] = {
-    0: 421,   # GUNSHOT       → "Gunshot, gunfire"
-    1: 11,    # SCREAM        → "Screaming"
-    2: 390,   # SIREN         → "Siren"
-    3: 420,   # EXPLOSION     → "Explosion"
-    4: 464,   # GLASS_BREAKING → "Breaking"
-    5: 70,    # DOG_BARKING   → "Bark"
-    6: 302,   # CAR_HORN      → "Vehicle horn, car horn, honking"
-    7: 320,   # ENGINE        → "Motorcycle" (closest engine class)
-    8: 20,    # BABY_CRYING   → "Baby cry, infant cry"
-    9: 394,   # ALARM         → "Fire alarm"
-    10: 281,  # THUNDER       → "Thunder"
-    11: 277,  # WIND          → "Wind"
-    12: 283,  # RAIN          → "Rain"
-    13: 48,   # FOOTSTEPS     → "Walk, footsteps"
-    14: 494,  # SILENCE         → "Silence"
-    15: 6,    # SHOUT          → "Shout"
-    16: 9,    # YELL           → "Yell"
-    17: 19,   # CRYING         → "Crying"
-    18: 64,   # CROWD          → "Crowd"
-    19: 391,  # CIVIL_SIREN    → "Civil defense siren"
-    20: 424,  # ARTILLERY      → "Artillery fire"
-    21: 426,  # FIREWORKS      → "Fireworks"
-    22: 427,  # FIRECRACKER    → "Firecracker"
+    1: 421,   # GUNSHOT       → "Gunshot, gunfire"
+    2: 11,    # SCREAM        → "Screaming"
+    3: 390,   # SIREN         → "Siren"
+    4: 420,   # EXPLOSION     → "Explosion"
+    5: 464,   # GLASS_BREAKING → "Breaking"
+    6: 70,    # DOG_BARKING   → "Bark"
+    7: 302,   # CAR_HORN      → "Vehicle horn, car horn, honking"
+    8: 320,   # ENGINE        → "Motorcycle" (closest engine class)
+    9: 20,    # BABY_CRYING   → "Baby cry, infant cry"
+    10: 394,  # ALARM         → "Fire alarm"
+    11: 281,  # THUNDER       → "Thunder"
+    12: 277,  # WIND          → "Wind"
+    13: 283,  # RAIN          → "Rain"
+    14: 48,   # FOOTSTEPS     → "Walk, footsteps"
+    15: 494,  # SILENCE       → "Silence"
 }
 
 YAMNET_THRESHOLD = 0.5
@@ -303,14 +295,14 @@ class YamnetRunner:
             if aid is not None:
                 for st_val, st_aid in SOUND_TYPE_MAP.items():
                     if st_aid == aid:
-                        matched_sound_ids.add(st_val + 1)
+                        matched_sound_ids.add(st_val)
                         break
         for sound_type_val, class_id in SOUND_TYPE_MAP.items():
             if class_id < len(scores_np) and scores_np[class_id] > self._threshold:
                 had_alert = True
                 s = float(scores_np[class_id])
-                matched_sound_ids.add(sound_type_val + 1)
-                label_parts.append(f"{_sound_name(sound_type_val + 1)} ({s:.2f})")
+                matched_sound_ids.add(sound_type_val)
+                label_parts.append(f"{_sound_name(sound_type_val)} ({s:.2f})")
                 await event_bus.publish(SOUND, {
                     "type": SOUND,
                     "view_id": self._view_id,

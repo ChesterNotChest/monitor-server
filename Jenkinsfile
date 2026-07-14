@@ -28,9 +28,24 @@ pipeline {
         DOCKER_IMAGE = "monitor-server"
         COMPOSE_FILE = "docker-compose.prod.yml"
         APP_DEBUG = "false"
+        COMPOSE_PROJECT = "servercicd"
     }
 
     stages {
+        stage("Validate Workspace") {
+            steps {
+                sh '''
+                    set -eu
+                    case "$WORKSPACE" in
+                        *@*)
+                            echo "Refusing to run from temporary Jenkins workspace: $WORKSPACE" >&2
+                            exit 1
+                            ;;
+                    esac
+                '''
+            }
+        }
+
         stage("Checkout") {
             steps {
                 checkout scm
@@ -92,7 +107,7 @@ pipeline {
                         docker run --rm -v "$MODEL_DIR:/models:ro" "$DOCKER_IMAGE:$IMAGE_TAG" test -d /models
                         docker network inspect servercicd_default >/dev/null
                         docker ps --filter name=monitor-mysql --format '{{.Names}} {{.Status}}' | grep -q '^monitor-mysql '
-                        docker compose --project-directory "$HOST_WORKSPACE" -f "$HOST_WORKSPACE/$COMPOSE_FILE" up -d --remove-orphans
+                        docker compose -p "$COMPOSE_PROJECT" --project-directory "$HOST_WORKSPACE" -f "$HOST_WORKSPACE/$COMPOSE_FILE" up -d --remove-orphans
                         docker image prune -f
                     '''
                 }
@@ -111,7 +126,7 @@ pipeline {
                         case "$HOST_WORKSPACE" in
                             /var/jenkins_home/*) HOST_WORKSPACE="/home/liusu/jenkins/${HOST_WORKSPACE#/var/jenkins_home/}" ;;
                         esac
-                        docker compose --project-directory "$HOST_WORKSPACE" -f "$HOST_WORKSPACE/$COMPOSE_FILE" ps
+                        docker compose -p "$COMPOSE_PROJECT" --project-directory "$HOST_WORKSPACE" -f "$HOST_WORKSPACE/$COMPOSE_FILE" ps
                         docker exec monitor-nginx wget -qO- http://127.0.0.1/health
                         docker exec monitor-app python -c "from src.app import app; print([getattr(r, 'path', None) for r in app.routes])"
                         docker exec monitor-app python -c "import torch; from src.config import settings; print('YOLO_DEVICE=', settings.YOLO_DEVICE); print('cuda_available=', torch.cuda.is_available()); print('cuda_device_count=', torch.cuda.device_count())"
@@ -131,7 +146,7 @@ pipeline {
                     case "$HOST_WORKSPACE" in
                         /var/jenkins_home/*) HOST_WORKSPACE="/home/liusu/jenkins/${HOST_WORKSPACE#/var/jenkins_home/}" ;;
                     esac
-                    docker compose --project-directory "$HOST_WORKSPACE" -f "$HOST_WORKSPACE/$COMPOSE_FILE" exec -T app python -m src.seed_data
+                    docker compose -p "$COMPOSE_PROJECT" --project-directory "$HOST_WORKSPACE" -f "$HOST_WORKSPACE/$COMPOSE_FILE" exec -T app python -m src.seed_data
                 '''
             }
         }
