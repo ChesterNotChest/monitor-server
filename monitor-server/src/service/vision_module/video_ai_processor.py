@@ -28,9 +28,13 @@ class VideoAIProcessor:
         self.slowfast_runner = SlowFastRunner(
             enable_real_kinetics=True, enable_real_ava=True, ava_confidence_threshold=0.3,
         )
+        # 预加载模型到 GPU——避免首帧推理时 CUDA 分配卡 YOLO
+        self.slowfast_runner.load()
         self.fence_engine = FenceEngine(view_id=view_id, db=db)
+        self._frame_count = 0  # 启动错峰计数器
 
     async def process_frame(self, ctx: "FrameContext") -> None:
+        self._frame_count += 1
         tracks = self.tracker.update(ctx.detections)
         ctx.tracks = tracks
         # 围栏多边形每帧都设——不管有没有人
@@ -51,7 +55,15 @@ class VideoAIProcessor:
             _van._active_action_type_ids = frozenset()
             return
 
-        await self.face_recognizer.recognize_and_publish(ctx.frame, tracks, ctx.view_id)
+        # 启动错峰：前 2 帧只跑 tracker + fence，第 3 帧起开人脸，第 4 帧起开动作
+        _WARMUP_FACE_START = 3
+        _WARMUP_ACTION_START = 4
+
+        if self._frame_count <= 5:
+            _slog.info("[dbg] procFrame=%d tracks=%d", self._frame_count, len(tracks))
+
+        if self._frame_count >= _WARMUP_FACE_START:
+            await self.face_recognizer.recognize_and_publish(ctx.frame, tracks, ctx.view_id)
         # ⚠️ 绕过事件总线直接更新全局标签（FACE + ACTION）
         # 事件总线订阅 create_task 有时静默失败，详见 vision_annotation.py:84-94 注释
         import logging as _logging
@@ -68,22 +80,23 @@ class VideoAIProcessor:
         # SlowFast: enqueue + publish ACTION events (non-blocking)
         _MIN_BOX_AREA = 6400  # ~80×80
         ctx.action_regions = {}
-        for track in tracks:
-            # 跳过 SPOOF（假脸不做动作检测）
-            if face_labels.get(track.track_id) == "Spoof":
-                continue
-            x1, y1, x2, y2 = track.bbox
-            box_w, box_h = x2 - x1, y2 - y1
-            if box_w * box_h < _MIN_BOX_AREA:
-                continue  # 人太小 → 不跑动作检测
-            bbox = _padded_bbox(track.bbox, ctx.frame.shape[1], ctx.frame.shape[0], pad=0.3)
-            if bbox is None:
-                continue
-            ctx.action_regions[track.track_id] = bbox
-            crop = _crop_padded(ctx.frame, track, pad=0.3)
-            if crop is not None:
-                self.slowfast_runner.enqueue(track.track_id, crop)  # 同步，只入队不 publish
-        action_results = self.slowfast_runner.collect_results()
+        if self._frame_count >= _WARMUP_ACTION_START:
+            for track in tracks:
+                # 跳过 SPOOF（假脸不做动作检测）
+                if face_labels.get(track.track_id) == "Spoof":
+                    continue
+                x1, y1, x2, y2 = track.bbox
+                box_w, box_h = x2 - x1, y2 - y1
+                if box_w * box_h < _MIN_BOX_AREA:
+                    continue  # 人太小 → 不跑动作检测
+                bbox = _padded_bbox(track.bbox, ctx.frame.shape[1], ctx.frame.shape[0], pad=0.3)
+                if bbox is None:
+                    continue
+                ctx.action_regions[track.track_id] = bbox
+                crop = _crop_padded(ctx.frame, track, pad=0.3)
+                if crop is not None:
+                    self.slowfast_runner.enqueue(track.track_id, crop)  # 同步，只入队不 publish
+        action_results = self.slowfast_runner.collect_results() if self._frame_count >= _WARMUP_ACTION_START else []
         if action_results:
             # 置信度阈值: 低于此值的动作不进标签（Kinetics/AVA 噪声 ~0.50）
             _MIN_CONF = 0.55

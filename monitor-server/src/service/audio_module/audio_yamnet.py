@@ -66,7 +66,15 @@ SOUND_TYPE_MAP: dict[int, int] = {
     11: 277,  # WIND          → "Wind"
     12: 283,  # RAIN          → "Rain"
     13: 48,   # FOOTSTEPS     → "Walk, footsteps"
-    14: 494,  # SILENCE       → "Silence"
+    14: 494,  # SILENCE         → "Silence"
+    15: 6,    # SHOUT          → "Shout"
+    16: 9,    # YELL           → "Yell"
+    17: 19,   # CRYING         → "Crying"
+    18: 64,   # CROWD          → "Crowd"
+    19: 391,  # CIVIL_SIREN    → "Civil defense siren"
+    20: 424,  # ARTILLERY      → "Artillery fire"
+    21: 426,  # FIREWORKS      → "Fireworks"
+    22: 427,  # FIRECRACKER    → "Firecracker"
 }
 
 YAMNET_THRESHOLD = 0.5
@@ -76,25 +84,14 @@ YAMNET_SAMPLE_RATE = 16000
 # ── 危险声音检测（全 521 类）─────────────────────
 # 独立危险：任一类 score > DANGER_THRESHOLD 直接触发
 _DANGER_STANDALONE: dict[int, str] = {
-    11: "Screaming", 19: "Crying", 20: "Baby_cry", 22: "Wail",
+    6: "Shout", 9: "Yell", 11: "Screaming", 19: "Crying", 20: "Baby_cry", 22: "Wail",
+    64: "Crowd",
     317: "Police_siren", 318: "Ambulance", 319: "Fire_truck",
     382: "Alarm", 391: "Civil_siren", 393: "Smoke_alarm", 394: "Fire_alarm",
     420: "Explosion", 421: "Gunshot", 422: "Machine_gun", 424: "Artillery",
     426: "Fireworks", 427: "Firecracker",
 }
 
-# 组合判定：来自不同组的信号同时出现 → 复合危险
-_GROUP_SHOUT    = {6: "Shout", 7: "Bellow", 9: "Yell", 10: "Kids_shout"}
-_GROUP_CROWD    = {61: "Cheering", 64: "Crowd", 65: "Hubbub"}
-_GROUP_IMPACT   = {454: "Thump", 461: "Slap", 462: "Whack", 463: "Smash",
-                   464: "Breaking", 437: "Shatter"}
-
-# (组A, 组B, 标签) — 两组同时有 > DANGER_THRESHOLD 的类 → 触发
-_COMBOS: list[tuple[dict[int, str], dict[int, str], str]] = [
-    (_GROUP_SHOUT, _GROUP_CROWD, "Fighting"),
-    (_GROUP_SHOUT, _GROUP_IMPACT, "Violence"),
-    (_GROUP_CROWD, _GROUP_IMPACT, "Riot"),
-]
 
 
 def _sound_name(sound_type_val: int) -> str:
@@ -285,23 +282,9 @@ class YamnetRunner:
                 if s > DANGER_THRESHOLD:
                     dangers.append((s, label, aid))
 
-        # 2. 组合判定
-        for group_a, group_b, combo_label in _COMBOS:
-            a_hit = any(
-                aid < len(scores_np) and float(scores_np[aid]) > DANGER_THRESHOLD
-                for aid in group_a
-            )
-            b_hit = any(
-                aid < len(scores_np) and float(scores_np[aid]) > DANGER_THRESHOLD
-                for aid in group_b
-            )
-            if a_hit and b_hit:
-                # 取两组最高分的均值作为组合得分
-                a_max = max(float(scores_np[aid]) for aid in group_a if aid < len(scores_np))
-                b_max = max(float(scores_np[aid]) for aid in group_b if aid < len(scores_np))
-                dangers.append(((a_max + b_max) / 2, combo_label, None))
-
-        # 3. 按分数降序，取 top-2（危险检测）
+        # 2. 按分数降序，取 top-2（危险检测）
+        if dangers:
+            logger.info("[dbg] YAMNet dangers=%d top=%s", len(dangers), dangers[0][1])
         dangers.sort(reverse=True)
         label_parts = [f"{name} ({score:.2f})" for score, name, _ in dangers[:2]]
 

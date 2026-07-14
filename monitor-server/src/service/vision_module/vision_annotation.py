@@ -77,7 +77,7 @@ _active_sound_type_ids: frozenset[int] = frozenset()
 _active_sound_ids_updated_at: float = 0.0
 
 # 信号 TTL（秒）—— 与 AlertEngine ALERT_EVENT_TTL 对齐
-_SIGNAL_TTL: float = 5.0
+_SIGNAL_TTL: float = 10.0  # 声音瞬发但需留存供 AlertEngine 组合判定
 
 
 def get_active_signals(

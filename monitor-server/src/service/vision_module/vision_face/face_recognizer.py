@@ -68,6 +68,7 @@ class FaceRecognizer:
         known_people: Iterable[tuple[np.ndarray, str]] | None = None,
         tolerance: float | None = None,
         skip_frames: int | None = None,
+        enable_spoof: bool = True,
     ) -> None:
         self.tolerance = settings.FACE_MATCH_TOLERANCE if tolerance is None else tolerance
         self.skip_frames = max(1, settings.FACE_SKIP_FRAMES if skip_frames is None else skip_frames)
@@ -75,9 +76,11 @@ class FaceRecognizer:
         self._known_names: list[str] = []
         self._last_results: dict[int, FaceResult] = {}
         self._named_confirm: dict[int, int] = {}
+        self._stranger_confirm: dict[int, int] = {}  # track → 连续 Stranger 帧数
+        self._spoof_count: dict[int, int] = {}  # track → 连续 Spoof 帧数
         self._frame_counter = 0
         self._face_lib = self._load_face_recognition()
-        self._spoofer = self._load_spoofer()
+        self._spoofer = self._load_spoofer() if enable_spoof else None
         self._loaded_version: int = -1
         self._last_load_time: float = 0.0
 
@@ -151,17 +154,26 @@ class FaceRecognizer:
                 tid for tid, r in self._last_results.items()
                 if r.result == FaceResultStatus.SPOOF
             }
+            logger.debug("[dbg] spoof: total=%d confirmed=%d", len(tracks), len(_spoof_confirmed))
             _spoof_processed = 0
             for track in tracks:
                 if track.track_id in _spoof_confirmed:
                     continue
+                x1, y1, x2, y2 = track.bbox
+                if (x2 - x1) < _MIN_FACE_CROP_SIZE or (y2 - y1) < _MIN_FACE_CROP_SIZE:
+                    continue  # 太小 → 不做 spoof
                 if _spoof_processed >= 3:
                     break
                 _spoof_processed += 1
                 if self._check_spoof(frame, track.bbox):
-                    result = FaceResult(track.track_id, None, FaceResultStatus.SPOOF)
-                    self._last_results[track.track_id] = result
-                    logger.warning("[Face] track %d: SPOOF detected", track.track_id)
+                    self._spoof_count[track.track_id] = self._spoof_count.get(track.track_id, 0) + 1
+                    if self._spoof_count[track.track_id] >= 3:
+                        result = FaceResult(track.track_id, None, FaceResultStatus.SPOOF)
+                        self._last_results[track.track_id] = result
+                        self._spoof_count.pop(track.track_id, None)
+                        logger.warning("[Face] track %d: SPOOF confirmed", track.track_id)
+                else:
+                    self._spoof_count.pop(track.track_id, None)  # 一帧不是就重置
 
         # 4. 人脸识别 — 仅 uncached + 非 SPOOF（每帧上限防突发拥堵）
         _MAX_FACES_PER_FRAME = 2
@@ -177,15 +189,25 @@ class FaceRecognizer:
             _processed += 1
             if result is None or result.result == FaceResultStatus.NO_RESULT:
                 self._named_confirm.pop(track.track_id, None)
+                self._stranger_confirm.pop(track.track_id, None)
                 continue
             if result.person_name:
                 c = self._named_confirm.get(track.track_id, 0) + 1
                 self._named_confirm[track.track_id] = c
+                logger.debug("[dbg] track %d NAMED confirm=%d/2 name=%s", track.track_id, c, result.person_name)
                 if c >= 2:
                     self._last_results[track.track_id] = result
                     self._named_confirm.pop(track.track_id, None)
+                    logger.info("[dbg] track %d NAMED locked: %s", track.track_id, result.person_name)
             else:
-                self._last_results[track.track_id] = result
+                # STRANGER: 需 2 次确认防误报
+                c = self._stranger_confirm.get(track.track_id, 0) + 1
+                self._stranger_confirm[track.track_id] = c
+                logger.debug("[dbg] track %d STRANGER confirm=%d/2", track.track_id, c)
+                if c >= 2:
+                    self._last_results[track.track_id] = result
+                    self._stranger_confirm.pop(track.track_id, None)
+                    logger.info("[dbg] track %d STRANGER locked", track.track_id)
                 self._named_confirm.pop(track.track_id, None)
 
         # 5. LRU 清理
@@ -198,6 +220,8 @@ class FaceRecognizer:
             else:
                 self._last_results.pop(tid, None)
                 self._named_confirm.pop(tid, None)
+                self._stranger_confirm.pop(tid, None)
+                self._spoof_count.pop(tid, None)
         _MAX_LAST = 512
         if len(self._last_results) > _MAX_LAST:
             overflow = sorted(self._last_results.keys())[:len(self._last_results) - _MAX_LAST]
@@ -209,17 +233,20 @@ class FaceRecognizer:
 
     # ── Spoof check ──────────────────────────────
 
+    _SPOOF_CONFIDENCE_THRESHOLD = 0.7  # fake confidence > 0.7 才判为假脸
+
     def _check_spoof(self, frame: np.ndarray, bbox: list[float]) -> bool:
-        """MiniFASNet 单帧假脸检测。返回 True = 假脸。"""
+        """MiniFASNet 单帧假脸检测。用 confidence 阈值替代模型内部 is_real。"""
         if self._spoofer is None:
             return False
         try:
             x1, y1, x2, y2 = [int(round(v)) for v in bbox]
             result = self._spoofer.predict(frame, (x1, y1, x2, y2))
-            is_real = result.is_real
-            if not is_real:
-                logger.info("[Face] SPOOF detected (conf=%.3f)", result.confidence)
-            return not is_real
+            fake_conf = 1.0 - result.confidence if result.is_real else result.confidence
+            if fake_conf > self._SPOOF_CONFIDENCE_THRESHOLD:
+                logger.info("[Face] SPOOF fake_conf=%.3f > %.2f", fake_conf, self._SPOOF_CONFIDENCE_THRESHOLD)
+                return True
+            return False
         except Exception:
             logger.debug("MiniFASNet prediction failed", exc_info=True)
             return False

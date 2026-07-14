@@ -91,6 +91,14 @@ class YAMNetSoundType(enum.IntEnum):
     RAIN = 13
     FOOTSTEPS = 14
     SILENCE = 15
+    SHOUT = 16
+    YELL = 17
+    CRYING = 18
+    CROWD = 19
+    CIVIL_SIREN = 20
+    ARTILLERY = 21
+    FIREWORKS = 22
+    FIRECRACKER = 23
 
 
 # ══════════════════════════════════════════════
