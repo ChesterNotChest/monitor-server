@@ -319,8 +319,9 @@ class YamnetRunner:
         if matched_sound_ids:
             import time as _t
             import src.service.vision_module.vision_annotation as _van
-            _van._active_sound_type_ids = _van._active_sound_type_ids.union(matched_sound_ids)
-            _van._active_sound_ids_updated_at = _t.time()
+            _van._active_sound_type_ids[self._view_id] = \
+                _van._active_sound_type_ids.get(self._view_id, frozenset()).union(matched_sound_ids)
+            _van._active_sound_ids_updated_at[self._view_id] = _t.time()
         return had_alert
 
     def _log_top_scores(self, waveform, window_count: int, rms: float = 0.0) -> None:

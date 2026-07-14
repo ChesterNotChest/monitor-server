@@ -52,7 +52,7 @@ class VideoAIProcessor:
         if not tracks:
             # 无 track 时清空动作 ID 缓存
             import src.service.vision_module.vision_annotation as _van
-            _van._active_action_type_ids = frozenset()
+            _van._active_action_type_ids[self.view_id] = frozenset()
             return
 
         # 启动错峰：前 2 帧只跑 tracker + fence，第 3 帧起开人脸，第 4 帧起开动作
@@ -117,10 +117,10 @@ class VideoAIProcessor:
             # 同步写入整数 ID 缓存（跨帧保留+TTL，引用替换无锁安全）
             import time as _t
             import src.service.vision_module.vision_annotation as _van
-            _van._active_action_type_ids = frozenset(
-                r.action_type_id for r in action_results if r.confidence >= _MIN_CONF
-            )
-            _van._active_action_ids_updated_at = _t.time()
+            _new_ids = frozenset(r.action_type_id for r in action_results if r.confidence >= _MIN_CONF)
+            _van._active_action_type_ids[self.view_id] = \
+                _van._active_action_type_ids.get(self.view_id, frozenset()).union(_new_ids)
+            _van._active_action_ids_updated_at[self.view_id] = _t.time()
 
         fence_events = await self.fence_engine.check_and_publish(tracks, ctx.timestamp)
         if fence_events:

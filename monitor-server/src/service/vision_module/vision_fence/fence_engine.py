@@ -80,6 +80,13 @@ class FenceEngine:
         self.fence_polygons
         return [self._get_expanded(f) for f in self._fences if f.safe_distance > 0]
 
+    def clear_states_for_fence(self, fence_id: int) -> None:
+        """删除围栏后清理残留状态 key。"""
+        for d in (self._states, self._entry_start, self._leave_counts):
+            stale = [k for k in d if k[0] == fence_id]
+            for k in stale:
+                d.pop(k, None)
+
     def load_fences(self, db: Session) -> None:
         rows = db.scalars(select(ElectronicFence).where(ElectronicFence.view_id == self.view_id)).all()
         self._fences = [self._coerce_fence(r) for r in rows]

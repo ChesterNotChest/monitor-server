@@ -273,6 +273,13 @@ class AIPipeline:
         # 2. 打开帧读取器（失败不阻止——_run_loop 会重试）
         self._reader.open(video_id, video_name, stream_url=stream_url)
 
+        # 2.5 动态对齐源帧率：消费略快于生产，自然排空 RTMP 缓冲
+        _src_fps = self._reader.fps if self._reader.fps > 0 else settings.FPS_TARGET
+        _target_fps = min(_src_fps + 1, 30)
+        self._push_interval = 1.0 / max(_target_fps, 1)
+        logger.info("Dynamic push_interval: %.3fs (source=%.1f target=%.1f)",
+                    self._push_interval, _src_fps, _target_fps)
+
         # 3. 启动 FFmpeg 合流
         #    用 YOLO 输入尺寸作为视频尺寸（大多数视频是 640x480 或类似）
         #    实际尺寸从第一帧获取
@@ -399,12 +406,12 @@ class AIPipeline:
 
             # 标注叠加 — 一步到位：用 Track/Face 信息富化 Detection 标签，单遍绘制
             _enrich_detection_labels(detections, ctx.tracks, _face_labels,
-                                         _fence_labels, _action_labels)
+                                         _fence_labels.get(view_id, {}), _action_labels)
 
             # 提取 ActiveSignals 快照供 AlertEngine 使用
             from src.service.vision_module.vision_annotation import get_active_signals as _gas
             _eids = frozenset(d.entity_type_id for d in detections if d.entity_type_id is not None)
-            _signals = _gas(entity_type_ids=_eids)
+            _signals = _gas(entity_type_ids=_eids, view_id=view_id)
             import src.service.vision_module.vision_annotation as _van
             _van._ACTIVE_SIGNALS = _signals
 
@@ -487,7 +494,7 @@ class AIPipeline:
     # ── Reopen helpers ──────────────────────────
 
     _BUF_AUTO_RESET_MS = 15000  # RTMP 缓冲 > 15s → 自动重连
-    _SLOW_FRAME_RESET_MS = 3000  # 单帧 pipe > 3s → 首帧暖机 reset
+    _SLOW_FRAME_RESET_MS = 5000  # 单帧 pipe > 5s → 首帧暖机 reset（给 drain + 自然追赶留空间）
     _REOPEN_INITIAL_BACKOFF = 2.0
     _REOPEN_MAX_BACKOFF = 60.0
     _REOPEN_BACKOFF_MULT = 2.0
