@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_REPORT_MODEL: str = "deepseek-v4-flash"
 
+    # --- 录制（.env 默认值，运行时可通过 API 覆盖并持久化） ---
+    RECORDING_MAX_SECONDS: int = 10
+    RECORDING_WIND_DOWN_SECONDS: int = 10
+
     # --- JWT 认证 ---
     JWT_SECRET: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"

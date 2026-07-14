@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 
+from src.config import settings
 from src.extensions import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -145,8 +146,8 @@ class AlertEngine:
                         )
                         db.commit()
 
-                        mr = getattr(exc, "max_recording_seconds", 10) or 10
-                        wd = getattr(exc, "wind_down_seconds", 10) or 10
+                        mr = settings.RECORDING_MAX_SECONDS
+                        wd = settings.RECORDING_WIND_DOWN_SECONDS
                         if _active_rec:
                             rec_id = _active_rec
                             self._keep_alive()

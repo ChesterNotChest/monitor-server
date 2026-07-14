@@ -12,6 +12,13 @@ from .base import BaseRepo
 class SituationEventRepo(BaseRepo[SituationEvent]):
     model = SituationEvent
 
+    def get(self, id: int) -> SituationEvent | None:
+        return self.db.scalars(
+            select(SituationEvent)
+            .options(selectinload(SituationEvent.exception))
+            .where(SituationEvent.id == id)
+        ).first()
+
     def _select_with_relations(self):
         return (
             select(SituationEvent)

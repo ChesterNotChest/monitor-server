@@ -18,6 +18,7 @@ class RecordingSession:
     def __init__(self, view_id: int, buffer: FrameRingBuffer, cache_path: str,
                  max_duration: int = 10, wind_down: int = 10):
         self.view_id = view_id
+        self.buffer = buffer
         self.cache_path = cache_path
         self.max_duration = max_duration
         self.wind_down = wind_down
@@ -28,24 +29,50 @@ class RecordingSession:
         self._stop_event = threading.Event()
         self._monitor_thread: threading.Thread | None = None
         self._ffmpeg_proc: subprocess.Popen | None = None
+        self._pre_roll_path: str | None = None
         self.start_time: datetime | None = None
         self.output_path: str | None = None
         self.recording_id: int | None = None
 
     def start(self, db) -> int | None:
-        """从 SRS 拉取 view/{id} RTMP 流，录制到本地 FLV。返回 recording_id。"""
+        """从 SRS 拉取 view/{id} RTMP 流，拼 30s 预卷 + 正向录制到 FLV。"""
         from src.repository.recording_repo import RecordingRepo
         now = datetime.now(timezone.utc)
         self.start_time = now
-        self._start_mono = _time.monotonic()
 
         cache_dir = Path(self.cache_path)
         cache_dir.mkdir(parents=True, exist_ok=True)
         ts = now.strftime("%Y%m%d_%H%M%S")
-        filename = f"view_{self.view_id}_{ts}.flv"
-        self.output_path = str(cache_dir / filename)
+        self.output_path = str(cache_dir / f"view_{self.view_id}_{ts}.flv")
 
-        # 从 SRS 拉流，stream copy（不需重新编码，FLV 格式干净）
+        # 3路拼合: 预卷(环形缓冲) → 正向录制(SRS RTMP)
+        pre_roll = str(cache_dir / f"view_{self.view_id}_{ts}_preroll.flv")
+        frames = self.buffer.dump_all()
+        if frames and self.buffer.width > 0 and self.buffer.height > 0:
+            try:
+                subprocess.run([
+                    "ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24",
+                    "-s", f"{self.buffer.width}x{self.buffer.height}",
+                    "-r", str(max(self.buffer.fps, 1)), "-i", "pipe:0",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                    "-an", "-f", "flv", pre_roll,
+                ], input=b"".join(frames), capture_output=True, timeout=15)
+                if Path(pre_roll).exists():
+                    self._pre_roll_path = pre_roll
+                    logger.info("[Replay] Pre-roll encoded: %d frames %dx%d",
+                               len(frames), self.buffer.width, self.buffer.height)
+                else:
+                    logger.warning("[Replay] Pre-roll encoding produced no file")
+                    self._pre_roll_path = None
+            except Exception as e:
+                logger.warning("[Replay] Pre-roll encoding failed: %s", e)
+                self._pre_roll_path = None
+        else:
+            logger.info("[Replay] Pre-roll skipped: frames=%d size=%dx%d",
+                       len(frames), self.buffer.width, self.buffer.height)
+            self._pre_roll_path = None
+
+        self._start_mono = _time.monotonic()  # 正向录制从此刻计时（不含预卷）
         rtmp_url = f"rtmp://{settings.SRS_HOST}:{settings.SRS_RTMP_PORT}/view/{self.view_id}"
         ffmpeg_cmd = [
             "ffmpeg", "-y",
@@ -122,17 +149,35 @@ class RecordingSession:
                     break
 
     def _stop_ffmpeg(self):
-        """终止 ffmpeg 进程、设停止标志、写 Recording.end_time"""
+        """终止 ffmpeg、拼预卷、写 end_time"""
         self._stop_event.set()
         self._dump_stderr()
         if self._ffmpeg_proc:
             try: self._ffmpeg_proc.terminate()
             except Exception: pass
             try:
-                self._ffmpeg_proc.wait(timeout=3)
+                self._ffmpeg_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 try: self._ffmpeg_proc.kill()
                 except Exception: pass
+
+        # 拼合预卷 + 正向录制
+        if self._pre_roll_path and self.output_path and Path(self._pre_roll_path).exists():
+            import os as _os
+            merged = self.output_path + ".merged.flv"
+            try:
+                subprocess.run([
+                    "ffmpeg", "-y",
+                    "-i", "concat:" + self._pre_roll_path + "|" + self.output_path,
+                    "-c", "copy", "-f", "flv", merged,
+                ], capture_output=True, timeout=30)
+                _os.replace(merged, self.output_path)
+                logger.info("[Replay] Pre-roll merged: %s → %s", self._pre_roll_path, self.output_path)
+            except Exception as e:
+                logger.warning("[Replay] Pre-roll merge failed: %s", e)
+            try: _os.remove(self._pre_roll_path)
+            except Exception: pass
+            self._pre_roll_path = None
         # 回填 end_time（monitor 线程无 db 参数，自己开 session）
         if self.recording_id:
             try:

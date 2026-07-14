@@ -1,8 +1,11 @@
 """录制回放服务层门户。"""
 
+import logging
 from datetime import datetime
 
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from src.config import settings
 from src.repository.recording_repo import RecordingRepo
@@ -32,10 +35,13 @@ def stop_buffer(view_id: int, db: Session) -> None:
         buf.clear()
 
 
-def push_frame(view_id: int, frame_bytes: bytes) -> None:
+def push_frame(view_id: int, frame_bytes: bytes, *, width: int = 0, height: int = 0, fps: int = 20) -> None:
     buf = _buffers.get(view_id)
-    if buf:
-        buf.push(frame_bytes)
+    if buf is not None:
+        buf.push(frame_bytes, width=width, height=height)
+        buf.fps = fps or 20
+    else:
+        logger.warning("Buffer NOT FOUND for view=%d", view_id)
     session = _sessions.get(view_id)
     if session and not session.is_stopped():
         session.push_frame(frame_bytes)

@@ -32,14 +32,43 @@ def get_stats(db: Session) -> dict:
 
 
 def get_trends(db: Session) -> dict:
-    """最近 7 天告警趋势（按严重级别分组）。"""
-    # 当前返回占位数据；后续基于 SituationEvent.exception.severity 聚合
+    """最近 7 天告警趋势（按严重级别 × 日期聚合）。"""
+    from collections import defaultdict
+    from datetime import date, datetime, time, timedelta
     from src.repository.situation_event_repo import SituationEventRepo
+
     repo = SituationEventRepo(db)
-    recent = repo.all(limit=50)
-    return {
-        "points": [
-            {"date": str(e.timestamp.date()) if e.timestamp else "", "severity": "unknown", "count": 1}
-            for e in recent
-        ]
-    }
+    recent = repo.all(limit=500)
+
+    # 按 (date, severity) 聚合
+    buckets: dict[tuple[date, str], int] = defaultdict(int)
+    for e in recent:
+        if e.timestamp is None:
+            continue
+        sev = _trend_severity(e)
+        day = e.timestamp.date() if hasattr(e.timestamp, 'date') else e.timestamp.date()
+        buckets[(day, sev)] += 1
+
+    # 过去 7 天
+    today = date.today()
+    days = [(today - timedelta(days=i)) for i in range(6, -1, -1)]
+    points = []
+    for d in days:
+        for sev in ["INFO", "WARNING", "CRITICAL", "EMERGENCY"]:
+            cnt = buckets.get((d, sev), 0)
+            if cnt > 0:
+                points.append({"date": d.isoformat(), "severity": sev, "count": cnt})
+        # 确保每天至少一个点（避免图表空洞）
+        if not any(p["date"] == d.isoformat() for p in points):
+            points.append({"date": d.isoformat(), "severity": "INFO", "count": 0})
+    return {"points": points}
+
+
+def _trend_severity(e) -> str:
+    """从 SituationEvent 提取可读严重级别。"""
+    try:
+        if e.exception and e.exception.severity:
+            return e.exception.severity.name
+    except Exception:
+        pass
+    return "WARNING"

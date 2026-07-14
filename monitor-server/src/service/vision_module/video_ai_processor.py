@@ -98,12 +98,18 @@ class VideoAIProcessor:
                     self.slowfast_runner.enqueue(track.track_id, crop)  # 同步，只入队不 publish
         action_results = self.slowfast_runner.collect_results() if self._frame_count >= _WARMUP_ACTION_START else []
         if action_results:
-            # 置信度阈值: 低于此值的动作不进标签（Kinetics/AVA 噪声 ~0.50）
-            _MIN_CONF = 0.55
+            # 置信度阈值: 低于此值的动作不进标签
+            _MIN_CONF_DEFAULT = 0.55
+            # 易漏检动作降低阈值（摔倒/躺着姿态变化小，模型置信度天然低）
+            _MIN_CONF_PER_ACTION: dict[int, float] = {
+                SlowFastActionType.FALLING: 0.35,
+                SlowFastActionType.LYING_DOWN: 0.4,
+            }
             # 同 track 多模型/多类合并 — 全部保留，管道分隔
             all_names: dict[int, set[str]] = {}
             for r in action_results:
-                if r.confidence >= _MIN_CONF:
+                _min = _MIN_CONF_PER_ACTION.get(r.action_type_id, _MIN_CONF_DEFAULT)
+                if r.confidence >= _min:
                     all_names.setdefault(r.track_id, set()).add(_action_type_name(r))
             _prev_al = dict(_al)
             _al.update({tid: "|".join(sorted(names)) for tid, names in all_names.items()})
@@ -117,7 +123,8 @@ class VideoAIProcessor:
             # 同步写入整数 ID 缓存（跨帧保留+TTL，引用替换无锁安全）
             import time as _t
             import src.service.vision_module.vision_annotation as _van
-            _new_ids = frozenset(r.action_type_id for r in action_results if r.confidence >= _MIN_CONF)
+            _new_ids = frozenset(r.action_type_id for r in action_results
+                                if r.confidence >= _MIN_CONF_PER_ACTION.get(r.action_type_id, _MIN_CONF_DEFAULT))
             _van._active_action_type_ids[self.view_id] = \
                 _van._active_action_type_ids.get(self.view_id, frozenset()).union(_new_ids)
             _van._active_action_ids_updated_at[self.view_id] = _t.time()

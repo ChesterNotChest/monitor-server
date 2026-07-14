@@ -20,11 +20,16 @@ class FrameRingBuffer:
         self._frames: deque[bytes] = deque(maxlen=max_sec * fps)
         self._lock = threading.Lock()
         self.format = format  # "raw_bgr24" | "jpeg"
+        self.width: int = 0
+        self.height: int = 0
+        self.fps: int = 20  # 默认 20fps，由管线设置
 
-    def push(self, frame_bytes: bytes) -> None:
+    def push(self, frame_bytes: bytes, *, width: int = 0, height: int = 0) -> None:
         """写入一帧。超出容量时自动丢弃最旧帧。"""
         with self._lock:
             self._frames.append(frame_bytes)
+        if width and height:
+            self.width, self.height = width, height
 
     def dump_all(self) -> list[bytes]:
         """返回当前缓存的所有帧（快照），不清空。"""
