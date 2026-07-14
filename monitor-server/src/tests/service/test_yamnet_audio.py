@@ -87,10 +87,10 @@ class TestYamnetRealAudio:
 
     @pytest.mark.timeout(60)
     def test_sound_type_map_valid(self):
-        """验证所有 15 个 SoundType 映射值在 0-520 范围内。"""
+        """验证所有 15 个 SoundType 映射值在有效范围内。"""
         for sound_type_val, class_id in SOUND_TYPE_MAP.items():
             assert 0 <= class_id <= 520, f"SOUND_TYPE_MAP[{sound_type_val}]={class_id} out of range"
-            assert 0 <= sound_type_val <= 14, f"SoundType value {sound_type_val} out of 0-14"
+            assert 1 <= sound_type_val <= 15, f"SoundType value {sound_type_val} out of 1-15"
         print(f"\n  SOUND_TYPE_MAP: {len(SOUND_TYPE_MAP)} entries, all in range")
         print("  [PASS] All SoundType mappings valid")
 
