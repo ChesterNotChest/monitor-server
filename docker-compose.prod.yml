@@ -32,6 +32,7 @@ services:
       - ./media:/app/media
       - ./face_images:/app/face_images
       - ${MODEL_DIR:-/home/liusu/video/models}:/app/src/third-party:ro
+      - ${UNIFACE_MODEL_DIR:-/home/liusu/video/models/uniface}:/root/.uniface/models:ro
     expose:
       - "8000"
     gpus: all
