@@ -82,6 +82,7 @@ class RecordingSession:
         ]
 
         self._ffmpeg_proc = subprocess.Popen(ffmpeg_cmd,
+                                              stdin=subprocess.PIPE,
                                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         self._stderr_reader = threading.Thread(target=self._drain_stderr, daemon=True)
         self._stderr_reader.start()
@@ -149,32 +150,47 @@ class RecordingSession:
                     break
 
     def _stop_ffmpeg(self):
-        """终止 ffmpeg、拼预卷、写 end_time"""
+        """终止 ffmpeg（优雅退出）、拼预卷、写 end_time"""
         self._stop_event.set()
-        self._dump_stderr()
-        if self._ffmpeg_proc:
-            try: self._ffmpeg_proc.terminate()
-            except Exception: pass
+        if self._ffmpeg_proc and self._ffmpeg_proc.poll() is None:
+            # 优雅退出：写 'q' → ffmpeg 正常关闭并写 FLV trailer（duration 元数据）
             try:
-                self._ffmpeg_proc.wait(timeout=5)
+                self._ffmpeg_proc.stdin.write(b"q")
+                self._ffmpeg_proc.stdin.flush()
+            except Exception:
+                pass
+            try:
+                self._ffmpeg_proc.wait(timeout=8)
             except subprocess.TimeoutExpired:
-                try: self._ffmpeg_proc.kill()
+                try: self._ffmpeg_proc.terminate()
                 except Exception: pass
+                try: self._ffmpeg_proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    try: self._ffmpeg_proc.kill()
+                    except Exception: pass
+        self._dump_stderr()
 
         # 拼合预卷 + 正向录制
         if self._pre_roll_path and self.output_path and Path(self._pre_roll_path).exists():
             import os as _os
             merged = self.output_path + ".merged.flv"
             try:
-                subprocess.run([
+                result = subprocess.run([
                     "ffmpeg", "-y",
                     "-i", "concat:" + self._pre_roll_path + "|" + self.output_path,
                     "-c", "copy", "-f", "flv", merged,
                 ], capture_output=True, timeout=30)
-                _os.replace(merged, self.output_path)
-                logger.info("[Replay] Pre-roll merged: %s → %s", self._pre_roll_path, self.output_path)
+                if result.returncode != 0:
+                    _stderr_tail = result.stderr.decode("utf-8", errors="replace")[-500:] if result.stderr else "(empty)"
+                    logger.error(
+                        "[Replay] Pre-roll merge FAILED rc=%d: %s",
+                        result.returncode, _stderr_tail,
+                    )
+                else:
+                    _os.replace(merged, self.output_path)
+                    logger.info("[Replay] Pre-roll merged: %s → %s", self._pre_roll_path, self.output_path)
             except Exception as e:
-                logger.warning("[Replay] Pre-roll merge failed: %s", e)
+                logger.warning("[Replay] Pre-roll merge exception: %s", e)
             try: _os.remove(self._pre_roll_path)
             except Exception: pass
             self._pre_roll_path = None
@@ -189,10 +205,13 @@ class RecordingSession:
                     if rec and rec.end_time is None:
                         rec.end_time = datetime.now(timezone.utc)
                         _db.commit()
+                        logger.debug("[Replay] end_time set for rec=%d", self.recording_id)
+                    elif rec is None:
+                        logger.warning("[Replay] recording %d not found for end_time update", self.recording_id)
                 finally:
                     _db.close()
             except Exception:
-                pass
+                logger.exception("[Replay] Failed to set end_time for rec=%d", self.recording_id)
 
     def on_new_alert(self):
         self._alert_ended = False
@@ -216,12 +235,20 @@ class RecordingSession:
 
     def stop(self, db) -> int | None:
         self._stop_event.set()
-        if self._ffmpeg_proc:
-            try: self._ffmpeg_proc.terminate()
-            except Exception: pass
-            try: self._ffmpeg_proc.wait(timeout=5)
+        if self._ffmpeg_proc and self._ffmpeg_proc.poll() is None:
+            try:
+                self._ffmpeg_proc.stdin.write(b"q")
+                self._ffmpeg_proc.stdin.flush()
+            except Exception:
+                pass
+            try:
+                self._ffmpeg_proc.wait(timeout=8)
             except subprocess.TimeoutExpired:
-                self._ffmpeg_proc.kill(); self._ffmpeg_proc.wait()
+                self._ffmpeg_proc.terminate()
+                try: self._ffmpeg_proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self._ffmpeg_proc.kill()
+                    self._ffmpeg_proc.wait()
 
         if self.recording_id:
             from src.repository.recording_repo import RecordingRepo
