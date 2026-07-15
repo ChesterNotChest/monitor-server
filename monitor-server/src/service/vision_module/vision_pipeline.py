@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
+import cv2
 import numpy as np
 
 from src.config import settings
@@ -379,6 +380,18 @@ class AIPipeline:
                     break
                 merge_started = True
                 self.pipeline_ready.set()
+
+            # 预处理：夜间/模糊画面增益（unsharp mask + CLAHE）
+            if settings.PREPROCESS_ENHANCE:
+                # Unsharp mask — 锐化边缘，对小目标/模糊源有效
+                blurred = cv2.GaussianBlur(frame, (0, 0), 1.5)
+                frame = cv2.addWeighted(frame, 1.8, blurred, -0.8, 0)
+                # CLAHE — 局部对比度增强，暗区提亮
+                lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+                l, a, b = cv2.split(lab)
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                l = clahe.apply(l)
+                frame = cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2BGR)
 
             # YOLO 检测
             try:

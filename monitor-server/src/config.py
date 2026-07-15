@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     YOLO_MODEL_PATH: str = "src/third-party/yolo/yolo11n.pt"
     # --- 车辆检测旁路 ---
     VEHICLE_BYPASS_ONLY: bool = False  # true=仅车辆检测（跳过 SlowFast/Face/Fence/Alert/YAMNet）
+    PREPROCESS_ENHANCE: bool = False   # true=YOLO 前锐化+CLAHE（夜间/模糊画面增益）
     VEHICLE_CONFIDENCE: float = 0.4
     VEHICLE_IOU_THRESHOLD: float = 0.5
     VEHICLE_DEDUP_FRAMES: int = 30

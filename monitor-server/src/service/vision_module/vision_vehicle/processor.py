@@ -115,6 +115,20 @@ class VehicleProcessor:
         """处理当前帧：过滤车辆 detections → 去重 → 统计 → 填充 ctx.vehicle_detections。"""
         self._frame_count += 1
 
+        # 0. 诊断：统计原始 YOLO 车辆检测置信度分布
+        raw_vehicles = [
+            d for d in ctx.detections
+            if d.entity_type_id in _VEHICLE_CLASSES
+        ]
+        if raw_vehicles and self._frame_count % 30 == 0:
+            confs = [d.confidence for d in raw_vehicles]
+            confs.sort()
+            below = sum(1 for c in confs if c < self._confidence)
+            logger.info("[Vehicle] frame=%d raw_vehicles=%d below_%.2f=%d min=%.2f max=%.2f avg=%.2f",
+                        self._frame_count, len(raw_vehicles), self._confidence,
+                        below, min(confs), max(confs),
+                        sum(confs) / len(confs) if confs else 0)
+
         # 1. 过滤车辆类 Detection
         vehicles = [
             d for d in ctx.detections
